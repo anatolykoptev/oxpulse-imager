@@ -1,0 +1,116 @@
+<?php
+/**
+ * Plugin Name:       OXPulse Imager
+ * Plugin URI:        https://github.com/anatolykoptev/oxpulse-imager
+ * Description:       Optional bring-your-own imgproxy image delivery for WordPress. Generates signed, deterministic imgproxy URLs for approved local origins while preserving the original URL whenever configuration, source policy, signing, or delivery cannot safely proceed. Disabled by default; no SaaS, no FFI, no telemetry.
+ * Version:           0.1.0
+ * Requires at least: 6.2
+ * Requires PHP:      8.3
+ * Author:            Anatoly Koptev
+ * Author URI:        https://anatolykoptev.com
+ * License:           GPL-2.0-or-later
+ * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain:       oxpulse-imager
+ * Domain Path:       /languages
+ *
+ * @package OXPulse\Imager
+ * @copyright Copyright (c) 2026 Anatoly Koptev
+ * @license GPL-2.0-or-later
+ */
+
+declare(strict_types=1);
+
+defined('ABSPATH') || exit;
+
+define('OXPULSE_IMAGER_VERSION', '0.1.0');
+define('OXPULSE_IMAGER_FILE', __FILE__);
+define('OXPULSE_IMAGER_DIR', plugin_dir_path(__FILE__));
+define('OXPULSE_IMAGER_URL', plugin_dir_url(__FILE__));
+define('OXPULSE_IMAGER_BASENAME', plugin_basename(__FILE__));
+define('OXPULSE_IMAGER_OPTION_PREFIX', 'oxpulse_imager_');
+define('OXPULSE_IMAGER_CAPABILITY', 'manage_oxpulse_imager');
+
+/**
+ * Runtime requirements guard.
+ *
+ * The plugin targets PHP 8.3+ and WordPress 6.2+. When the runtime does
+ * not satisfy those requirements, register an admin-only notice and bail
+ * before any service registration or output handling happens. This guard
+ * never fatal-errors the site and never changes frontend output.
+ *
+ * @return bool True if the runtime is supported, false otherwise.
+ */
+function oxpulse_imager_runtime_supported(): bool {
+    if (version_compare(PHP_VERSION, '8.3.0', '<')) {
+        add_action('admin_notices', static function (): void {
+            echo '<div class="notice notice-error"><p>';
+            echo esc_html(sprintf(
+                /* translators: %s: PHP version requirement. */
+                __('OXPulse Imager requires PHP 8.3 or higher. You are running %s.', 'oxpulse-imager'),
+                PHP_VERSION
+            ));
+            echo '</p></div>';
+        });
+        return false;
+    }
+
+    if (version_compare($GLOBALS['wp_version'] ?? '0.0.0', '6.2', '<')) {
+        add_action('admin_notices', static function (): void {
+            echo '<div class="notice notice-error"><p>';
+            echo esc_html(sprintf(
+                /* translators: %s: WordPress version requirement. */
+                __('OXPulse Imager requires WordPress 6.2 or higher. You are running %s.', 'oxpulse-imager'),
+                $GLOBALS['wp_version'] ?? 'unknown'
+            ));
+            echo '</p></div>';
+        });
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Activation hook.
+ *
+ * Registers disabled default options. Never mutates media, attachments,
+ * post content, or external systems. The plugin must remain a no-op on
+ * the frontend until an administrator explicitly enables delivery.
+ */
+function oxpulse_imager_activate(): void {
+    $defaults = [
+        OXPULSE_IMAGER_OPTION_PREFIX . 'enabled' => false,
+        OXPULSE_IMAGER_OPTION_PREFIX . 'endpoint' => '',
+        OXPULSE_IMAGER_OPTION_PREFIX . 'allowed_sources' => [],
+        OXPULSE_IMAGER_OPTION_PREFIX . 'remove_on_uninstall' => false,
+        OXPULSE_IMAGER_OPTION_PREFIX . 'diagnostic_level' => 'off',
+        OXPULSE_IMAGER_OPTION_PREFIX . 'schema_version' => 1,
+    ];
+
+    foreach ($defaults as $key => $value) {
+        if (get_option($key, null) === null) {
+            add_option($key, $value, '', false);
+        }
+    }
+}
+
+/**
+ * Deactivation hook.
+ *
+ * Clears only ephemeral transients if any. Never deletes settings, media,
+ * attachments, post content, or external state.
+ */
+function oxpulse_imager_deactivate(): void {
+    delete_transient(OXPULSE_IMAGER_OPTION_PREFIX . 'health_check');
+}
+
+register_activation_hook(__FILE__, 'oxpulse_imager_activate');
+register_deactivation_hook(__FILE__, 'oxpulse_imager_deactivate');
+
+if (!oxpulse_imager_runtime_supported()) {
+    return;
+}
+
+require_once OXPULSE_IMAGER_DIR . 'src/Plugin.php';
+
+\OXPulse\Imager\Plugin::load(OXPULSE_IMAGER_FILE);

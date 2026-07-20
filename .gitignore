@@ -1,0 +1,14 @@
+/vendor/
+/node_modules/
+/dist/
+/build/
+/.wordpress-org/
+*.zip
+*.tar.gz
+.DS_Store
+Thumbs.db
+phpunit.result.cache
+.phpunit.result.cache
+.idea/
+.vscode/
+*.log

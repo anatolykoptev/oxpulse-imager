@@ -1,0 +1,39 @@
+{
+    "name": "anatolykoptev/oxpulse-imager",
+    "description": "Optional bring-your-own imgproxy image delivery for WordPress.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "authors": [
+        {
+            "name": "Anatoly Koptev",
+            "homepage": "https://anatolykoptev.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.3"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0 || ^11.0",
+        "yoast/phpunit-polyfills": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "OXPulse\\Imager\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "OXPulse\\Imager\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "composer/installers": true
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test:unit": "phpunit --testsuite unit",
+        "test:integration": "phpunit --testsuite integration"
+    }
+}
