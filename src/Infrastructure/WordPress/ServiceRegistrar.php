@@ -16,6 +16,10 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\WordPress;
 
+use OXPulse\Imager\Application\Health\HealthCheckService;
+use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
+use OXPulse\Imager\Integration\WordPress\Admin\SettingsController;
+use OXPulse\Imager\Integration\WordPress\Admin\SettingsPage;
 use OXPulse\Imager\Plugin;
 
 final class ServiceRegistrar
@@ -24,9 +28,7 @@ final class ServiceRegistrar
     {
         self::registerTextDomain($plugin);
         self::registerHealthGate($plugin);
-        // Settings, source policy, signing, delivery, and WordPress hook
-        // adapters are added in later phases. Phase 0 only ships the
-        // inert bootstrap, lifecycle hooks, and admin compatibility notices.
+        self::registerAdminSettings($plugin);
     }
 
     private static function registerTextDomain(Plugin $plugin): void
@@ -55,6 +57,27 @@ final class ServiceRegistrar
                 return;
             }
         });
+    }
+
+    /**
+     * Register the admin settings page, controller, and health check
+     * service. Only wired when is_admin() is true so the frontend never
+     * loads admin dependencies.
+     */
+    private static function registerAdminSettings(Plugin $plugin): void
+    {
+        if (!is_admin()) {
+            return;
+        }
+
+        $repository = new OptionSettingsRepository();
+        $validator = new SettingsValidator();
+        $healthClient = new WordPressHealthClient();
+        $healthCheck = new HealthCheckService($healthClient);
+        $controller = new SettingsController($repository, $validator, $healthCheck);
+        $page = new SettingsPage($repository, $validator, $controller);
+
+        $page->register();
     }
 
     private static function deliveryEnabled(): bool

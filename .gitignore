@@ -9,6 +9,7 @@
 Thumbs.db
 phpunit.result.cache
 .phpunit.result.cache
+.phpunit.cache/
 .idea/
 .vscode/
 *.log

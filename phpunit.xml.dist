@@ -1,26 +1,16 @@
 <?xml version="1.0"?>
-<phpunit
-    bootstrap="tests/bootstrap.php"
-    backupGlobals="false"
-    backupStaticAttributes="false"
-    convertErrorsToExceptions="true"
-    convertNoticesToExceptions="true"
-    convertWarningsToExceptions="true"
-    convertDeprecationsToExceptions="false"
-    failOnRisky="true"
-    failOnWarning="true"
->
-    <testsuites>
-        <testsuite name="unit">
-            <directory>tests/Unit</directory>
-        </testsuite>
-        <testsuite name="integration">
-            <directory>tests/Integration</directory>
-        </testsuite>
-    </testsuites>
-    <coverage>
-        <include>
-            <directory suffix=".php">src</directory>
-        </include>
-    </coverage>
+<phpunit bootstrap="tests/bootstrap.php" backupGlobals="false" failOnRisky="true" failOnWarning="true" cacheDirectory=".phpunit.cache" backupStaticProperties="false">
+  <testsuites>
+    <testsuite name="unit">
+      <directory>tests/Unit</directory>
+    </testsuite>
+    <testsuite name="integration">
+      <directory>tests/Integration</directory>
+    </testsuite>
+  </testsuites>
+  <source>
+    <include>
+      <directory suffix=".php">src</directory>
+    </include>
+  </source>
 </phpunit>

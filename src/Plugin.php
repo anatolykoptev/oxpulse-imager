@@ -32,15 +32,41 @@ final class Plugin
 
         self::$instance = new self($file);
 
+        self::$instance->registerAutoloader();
         self::$instance->registerServices();
 
         return self::$instance;
     }
 
+    /**
+     * PSR-4 autoloader for the OXPulse\Imager namespace.
+     *
+     * WordPress plugins cannot rely on Composer's autoloader at runtime,
+     * so we register a minimal PSR-4 loader for the src/ directory. This
+     * keeps class loading lazy and avoids a long require_once list.
+     */
+    private function registerAutoloader(): void
+    {
+        $srcDir = dirname($this->file) . '/src';
+        $namespacePrefix = 'OXPulse\\Imager\\';
+
+        spl_autoload_register(static function (string $class) use ($srcDir, $namespacePrefix): void {
+            if (!str_starts_with($class, $namespacePrefix)) {
+                return;
+            }
+
+            $relative = substr($class, strlen($namespacePrefix));
+            $relative = str_replace('\\', '/', $relative);
+            $path = $srcDir . '/' . $relative . '.php';
+
+            if (is_file($path)) {
+                require_once $path;
+            }
+        });
+    }
+
     private function registerServices(): void
     {
-        require_once dirname($this->file) . '/src/Infrastructure/WordPress/ServiceRegistrar.php';
-
         ServiceRegistrar::register($this);
     }
 
