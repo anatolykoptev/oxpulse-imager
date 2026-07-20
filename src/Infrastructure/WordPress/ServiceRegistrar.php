@@ -16,10 +16,15 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\WordPress;
 
+use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Application\Health\HealthCheckService;
+use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsController;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsPage;
+use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
+use OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter;
+use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
 use OXPulse\Imager\Plugin;
 
 final class ServiceRegistrar
@@ -43,20 +48,48 @@ final class ServiceRegistrar
     }
 
     /**
-     * Frontend health gate. While delivery is disabled (default state),
-     * no URL-rewriting hooks are registered. This is the primary safety
-     * invariant of Phase 0 and remains the rollback path later.
+     * Frontend delivery gate. While delivery is disabled (default state),
+     * no URL-rewriting hooks are registered. When enabled, wires the
+     * three rewriting adapters (content img tags, srcset, attachment
+     * image src) only on frontend requests.
      */
     private static function registerHealthGate(Plugin $plugin): void
     {
         add_action('plugins_loaded', static function (): void {
-            if (self::deliveryEnabled()) {
-                // Future phases will register image_downsize/srcset/
-                // wp_content_img_tag adapters only here, after strict
-                // source-policy and signing availability checks pass.
+            if (!self::deliveryEnabled()) {
                 return;
             }
+
+            // Never rewrite in admin context — admin must see original
+            // URLs for media library, regeneration, and debugging.
+            if (is_admin()) {
+                return;
+            }
+
+            self::registerDeliveryAdapters();
         });
+    }
+
+    /**
+     * Register the three frontend delivery adapters. Each adapter
+     * delegates to the shared UrlRewriter which enforces source policy,
+     * signing availability, and fail-safe preservation.
+     */
+    private static function registerDeliveryAdapters(): void
+    {
+        $repository = new OptionSettingsRepository();
+        $delivery = $repository->loadDeliveryConfig();
+        $signing = $repository->loadSigningConfig();
+
+        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
+
+        $contentRewriter = new ContentImgTagRewriter($rewriter);
+        $srcsetRewriter = new SrcsetRewriter($rewriter);
+        $attachmentRewriter = new AttachmentImageSrcRewriter($rewriter);
+
+        add_filter('wp_content_img_tag', [$contentRewriter, 'rewrite'], 10, 3);
+        add_filter('wp_calculate_image_srcset', [$srcsetRewriter, 'rewrite'], 10, 5);
+        add_filter('wp_get_attachment_image_src', [$attachmentRewriter, 'rewrite'], 10, 4);
     }
 
     /**

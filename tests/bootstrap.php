@@ -64,6 +64,16 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             ];
         }
     }
+    if (!function_exists('add_filter')) {
+        function add_filter($hook, $callback, $priority = 10, $accepted_args = 1) {
+            $GLOBALS['__oxpulse_filters'][] = [
+                'hook' => $hook,
+                'callback' => $callback,
+                'priority' => $priority,
+                'accepted_args' => $accepted_args,
+            ];
+        }
+    }
     if (!function_exists('add_option')) {
         function add_option($option, $value = '', $deprecated = '', $autoload = true) {
             $GLOBALS['__oxpulse_options'][$option] = $value;
