@@ -23,15 +23,13 @@ class PluginLifecycleTest extends TestCase
     {
         parent::setUp();
         $GLOBALS['__oxpulse_options'] = [];
-        // Override stub functions to simulate a real option store.
-        $GLOBALS['__oxpulse_options_store'] = &$GLOBALS['__oxpulse_options'];
     }
 
     public function test_activation_creates_disabled_defaults(): void
     {
         oxpulse_imager_activate();
 
-        $store = $GLOBALS['__oxpulse_options_store'] ?? [];
+        $store = $GLOBALS['__oxpulse_options'];
         $this->assertArrayHasKey('oxpulse_imager_enabled', $store);
         $this->assertFalse($store['oxpulse_imager_enabled']);
         $this->assertArrayHasKey('oxpulse_imager_remove_on_uninstall', $store);
@@ -41,12 +39,12 @@ class PluginLifecycleTest extends TestCase
     public function test_activation_does_not_overwrite_existing_options(): void
     {
         // Simulate pre-existing configuration.
-        $GLOBALS['__oxpulse_options_store']['oxpulse_imager_enabled'] = true;
-        $GLOBALS['__oxpulse_options_store']['oxpulse_imager_endpoint'] = 'https://imgproxy.example.test';
+        $GLOBALS['__oxpulse_options']['oxpulse_imager_enabled'] = true;
+        $GLOBALS['__oxpulse_options']['oxpulse_imager_endpoint'] = 'https://imgproxy.example.test';
 
         oxpulse_imager_activate();
 
-        $store = $GLOBALS['__oxpulse_options_store'];
+        $store = $GLOBALS['__oxpulse_options'];
         $this->assertTrue($store['oxpulse_imager_enabled']);
         $this->assertSame('https://imgproxy.example.test', $store['oxpulse_imager_endpoint']);
     }

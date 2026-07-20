@@ -26,13 +26,10 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
 } else {
     // Minimal stub environment for unit tests without WordPress.
     define('ABSPATH', '/tmp/wp-stub');
-    define('OXPULSE_IMAGER_VERSION', '0.1.0');
-    define('OXPULSE_IMAGER_FILE', '/tmp/oxpulse-imager/oxpulse-imager.php');
-    define('OXPULSE_IMAGER_DIR', '/tmp/oxpulse-imager/');
-    define('OXPULSE_IMAGER_URL', 'https://example.test/wp-content/plugins/oxpulse-imager/');
-    define('OXPULSE_IMAGER_BASENAME', 'oxpulse-imager/oxpulse-imager.php');
-    define('OXPULSE_IMAGER_OPTION_PREFIX', 'oxpulse_imager_');
-    define('OXPULSE_IMAGER_CAPABILITY', 'manage_oxpulse_imager');
+
+    // The main plugin file defines OXPULSE_IMAGER_* constants and the
+    // activation/deactivation stubs. We load it below after declaring the
+    // WordPress polyfills, so we do NOT pre-define those constants here.
 
     $GLOBALS['wp_version'] = '6.8';
 
@@ -46,13 +43,29 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
         function add_action($hook, $callback, $priority = 10, $accepted_args = 1) {}
     }
     if (!function_exists('add_option')) {
-        function add_option($option, $value = '', $deprecated = '', $autoload = true) { return true; }
+        function add_option($option, $value = '', $deprecated = '', $autoload = true) {
+            $GLOBALS['__oxpulse_options'][$option] = $value;
+            return true;
+        }
     }
     if (!function_exists('get_option')) {
-        function get_option($option, $default = false) { return $default; }
+        function get_option($option, $default = false) {
+            return array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? [])
+                ? $GLOBALS['__oxpulse_options'][$option]
+                : $default;
+        }
+    }
+    if (!function_exists('update_option')) {
+        function update_option($option, $value, $autoload = null) {
+            $GLOBALS['__oxpulse_options'][$option] = $value;
+            return true;
+        }
     }
     if (!function_exists('delete_option')) {
-        function delete_option($option) { return true; }
+        function delete_option($option) {
+            unset($GLOBALS['__oxpulse_options'][$option]);
+            return true;
+        }
     }
     if (!function_exists('delete_transient')) {
         function delete_transient($transient) { return true; }
@@ -75,4 +88,9 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('load_plugin_textdomain')) {
         function load_plugin_textdomain($domain, $deprecated = false, $plugin_rel_path = false) { return true; }
     }
+
+    // Load the main plugin file in the stub environment so its
+    // top-level functions (activation/deactivation guards, constants)
+    // are available to unit tests.
+    require_once dirname(__DIR__) . '/oxpulse-imager.php';
 }

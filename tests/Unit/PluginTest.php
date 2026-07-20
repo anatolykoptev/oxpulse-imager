@@ -44,9 +44,11 @@ class PluginTest extends TestCase
     {
         oxpulse_imager_activate();
 
-        $this->assertFalse(get_option(OXPULSE_IMAGER_OPTION_PREFIX . 'enabled', true));
-        $this->assertSame('', get_option(OXPULSE_IMAGER_OPTION_PREFIX . 'endpoint', ''));
-        $this->assertFalse(get_option(OXPULSE_IMAGER_OPTION_PREFIX . 'remove_on_uninstall', true));
-        $this->assertSame(1, (int) get_option(OXPULSE_IMAGER_OPTION_PREFIX . 'schema_version', 0));
+        $store = $GLOBALS['__oxpulse_options'] ?? [];
+        $this->assertArrayHasKey('oxpulse_imager_enabled', $store);
+        $this->assertFalse($store['oxpulse_imager_enabled']);
+        $this->assertSame('', $store['oxpulse_imager_endpoint'] ?? '');
+        $this->assertFalse($store['oxpulse_imager_remove_on_uninstall'] ?? true);
+        $this->assertSame(1, (int) ($store['oxpulse_imager_schema_version'] ?? 0));
     }
 }
