@@ -86,8 +86,15 @@ final class UrlRewriter
         }
 
         try {
+            // For 'local' source mode, use the resolved filesystem path as the
+            // source; for 'http' mode, use the canonical URL. The sourceMode is
+            // passed through to TransformRequest so ImgproxyPathBuilder can emit
+            // the correct segment (local:// vs plain/).
+            $sourceForRequest = $decision->fsPath ?? (string) $decision->url;
+            $sourceMode = $decision->fsPath !== null ? 'local' : 'http';
+
             $request = new TransformRequest(
-                sourceUrl: (string) $decision->url,
+                sourceUrl: $sourceForRequest,
                 width: $width,
                 height: $height,
                 resize: $this->resolveResizeType($width, $height),
@@ -98,6 +105,7 @@ final class UrlRewriter
                 blur: 0,
                 watermark: $this->delivery->watermark,
                 formatQuality: $this->delivery->formatQuality,
+                sourceMode: $sourceMode,
             );
 
             $filename = $this->buildContentDispositionFilename($sourceUrl);
@@ -158,11 +166,14 @@ final class UrlRewriter
         }
 
         try {
+            $sourceForRequest = $decision->fsPath ?? (string) $decision->url;
+            $sourceMode = $decision->fsPath !== null ? 'local' : 'http';
+
             // LQIP: small width + blur. No resize dimensions = use blur only,
             // imgproxy will serve a small blurred version. We add a modest
             // width cap (20px) so the placeholder is genuinely tiny.
             $request = new TransformRequest(
-                sourceUrl: (string) $decision->url,
+                sourceUrl: $sourceForRequest,
                 width: 20,
                 height: 20,
                 resize: 'fit',
@@ -173,6 +184,7 @@ final class UrlRewriter
                 blur: $this->delivery->lqipBlur > 0 ? $this->delivery->lqipBlur : 1,
                 watermark: null, // Never watermark the placeholder
                 formatQuality: [],
+                sourceMode: $sourceMode,
             );
 
             return RewriteResult::rewritten($this->generator()->generate($request));
@@ -214,8 +226,11 @@ final class UrlRewriter
         }
 
         try {
+            $sourceForRequest = $decision->fsPath ?? (string) $decision->url;
+            $sourceMode = $decision->fsPath !== null ? 'local' : 'http';
+
             $request = new TransformRequest(
-                sourceUrl: (string) $decision->url,
+                sourceUrl: $sourceForRequest,
                 width: $width,
                 height: 0,
                 resize: 'fit',
@@ -226,6 +241,7 @@ final class UrlRewriter
                 blur: 0,
                 watermark: $this->delivery->watermark,
                 formatQuality: $this->delivery->formatQuality,
+                sourceMode: $sourceMode,
             );
 
             $filename = $this->buildContentDispositionFilename($sourceUrl);

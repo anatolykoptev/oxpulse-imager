@@ -19,7 +19,7 @@ namespace OXPulse\Imager\Domain\Transform;
 final readonly class TransformRequest
 {
     /**
-     * @param string $sourceUrl Canonical source URL.
+     * @param string $sourceUrl Canonical source URL (for 'http' mode) or resolved filesystem path (for 'local' mode).
      * @param int $width Target width (0 = auto).
      * @param int $height Target height (0 = auto).
      * @param string $resize Resize type: 'fit', 'fill', 'auto', or '' (no resize).
@@ -30,6 +30,7 @@ final readonly class TransformRequest
      * @param float $blur Blur sigma for LQIP placeholders (0 = disabled, 1-100 typical).
      * @param Watermark|null $watermark Watermark configuration, or null to skip.
      * @param array<string,int> $formatQuality Per-format quality overrides, e.g. ['avif' => 70, 'webp' => 80]. Empty = use global quality.
+     * @param string $sourceMode Source addressing: 'http' (sourceUrl is a URL) or 'local' (sourceUrl is a filesystem path).
      */
     public function __construct(
         public string $sourceUrl,
@@ -42,7 +43,8 @@ final readonly class TransformRequest
         public float $dpr = 0,
         public float $blur = 0,
         public ?Watermark $watermark = null,
-        public array $formatQuality = []
+        public array $formatQuality = [],
+        public string $sourceMode = 'http'
     ) {
         if ($width < 0 || $width > 10000) {
             throw new \InvalidArgumentException('Width must be between 0 and 10000.');
@@ -58,6 +60,9 @@ final readonly class TransformRequest
         }
         if ($blur < 0 || $blur > 100) {
             throw new \InvalidArgumentException('Blur must be between 0 and 100.');
+        }
+        if (!in_array($sourceMode, ['http', 'local'], true)) {
+            throw new \InvalidArgumentException('sourceMode must be "http" or "local".');
         }
         foreach ($formatQuality as $fmt => $q) {
             if (!is_string($fmt) || !in_array($fmt, ['avif', 'webp', 'jpeg', 'png'], true)) {

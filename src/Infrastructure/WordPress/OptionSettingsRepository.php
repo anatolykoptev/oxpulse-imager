@@ -42,6 +42,11 @@ final class OptionSettingsRepository
     public const OPTION_FORMAT_QUALITY = 'oxpulse_imager_format_quality';
     public const OPTION_WATERMARK = 'oxpulse_imager_watermark';
 
+    // Source addressing mode (Ф1): 'http' (imgproxy fetches via HTTP) or
+    // 'local' (imgproxy reads from filesystem via local:// transport).
+    public const OPTION_SOURCE_MODE = 'oxpulse_imager_source_mode';
+    public const OPTION_LOCAL_BASE_PATH = 'oxpulse_imager_local_base_path';
+
     public function loadDeliveryConfig(): DeliveryConfig
     {
         return new DeliveryConfig(
@@ -57,6 +62,8 @@ final class OptionSettingsRepository
             dprVariants: $this->loadDprVariants(),
             watermark: $this->loadWatermark(),
             formatQuality: $this->loadFormatQuality(),
+            sourceMode: (string) get_option(self::OPTION_SOURCE_MODE, 'http'),
+            localBasePath: (string) get_option(self::OPTION_LOCAL_BASE_PATH, ''),
         );
     }
 
@@ -127,6 +134,17 @@ final class OptionSettingsRepository
         }
         if (array_key_exists('watermark', $values)) {
             update_option(self::OPTION_WATERMARK, $values['watermark']);
+        }
+
+        // Source addressing mode (Ф1).
+        if (array_key_exists('source_mode', $values)) {
+            $mode = (string) $values['source_mode'];
+            if (in_array($mode, ['http', 'local'], true)) {
+                update_option(self::OPTION_SOURCE_MODE, $mode);
+            }
+        }
+        if (array_key_exists('local_base_path', $values)) {
+            update_option(self::OPTION_LOCAL_BASE_PATH, (string) $values['local_base_path']);
         }
     }
 

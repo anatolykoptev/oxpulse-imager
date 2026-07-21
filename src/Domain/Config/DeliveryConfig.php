@@ -23,6 +23,7 @@ final readonly class DeliveryConfig
     /**
      * @param bool $enabled Whether delivery is enabled.
      * @param string $endpoint Validated imgproxy base URL (HTTPS in production).
+     *        May be relative (e.g. '/imgproxy') for same-host reverse-proxy setups.
      * @param array<string> $allowedSources Canonical source URL prefixes with trailing path boundary.
      * @param string $outputFormat Default output format: 'auto', 'avif', 'webp', or 'jpeg'.
      * @param int $defaultQuality Default quality (1-100). Used when formatQuality is empty.
@@ -33,6 +34,10 @@ final readonly class DeliveryConfig
      * @param array<int> $dprVariants DPR multipliers to emit, e.g. [1, 2, 3]. Empty = disabled.
      * @param Watermark|null $watermark Watermark configuration, or null to skip.
      * @param array<string,int> $formatQuality Per-format quality overrides, e.g. ['avif' => 70, 'webp' => 80]. Empty = use defaultQuality.
+     * @param string $sourceMode Source addressing mode: 'http' (imgproxy fetches via HTTP)
+     *        or 'local' (imgproxy reads from filesystem via local:// transport).
+     * @param string $localBasePath Filesystem root for 'local' source mode (e.g. ABSPATH).
+     *        Must be an absolute, existing, readable directory. Empty when sourceMode='http'.
      */
     public function __construct(
         public bool $enabled,
@@ -46,6 +51,12 @@ final readonly class DeliveryConfig
         public bool $dprEnabled = false,
         public array $dprVariants = [],
         public ?Watermark $watermark = null,
-        public array $formatQuality = []
-    ) {}
+        public array $formatQuality = [],
+        public string $sourceMode = 'http',
+        public string $localBasePath = ''
+    ) {
+        if (!in_array($sourceMode, ['http', 'local'], true)) {
+            throw new \InvalidArgumentException('sourceMode must be "http" or "local".');
+        }
+    }
 }

@@ -51,6 +51,17 @@ final class SourcePolicy
         // Component-aware prefix match against allowed sources.
         foreach ($config->allowedSources as $allowed) {
             if ($this->matchesPrefix($url, $allowed)) {
+                // For 'local' source mode, resolve the URL path to a filesystem
+                // path and verify it's inside localBasePath. This is the security
+                // boundary: a path traversal or symlink escape stops here.
+                if ($config->sourceMode === 'local') {
+                    $fsPath = $this->resolveLocalPath($url, $config);
+                    if ($fsPath === null) {
+                        return SourceDecision::denied('local_path_outside_base');
+                    }
+                    return SourceDecision::authorizedLocal($url, $fsPath);
+                }
+
                 return SourceDecision::authorized($url);
             }
         }
@@ -123,5 +134,76 @@ final class SourcePolicy
         } catch (\InvalidArgumentException $e) {
             return '';
         }
+    }
+
+    /**
+     * Resolve a URL's path to a filesystem path inside localBasePath.
+     *
+     * The URL path (e.g. /wp-content/uploads/2024/01/photo.jpg) is joined
+     * onto localBasePath (e.g. /var/www/wordpress). The result is resolved
+     * via realpath() to collapse '..' segments and resolve symlinks, then
+     * verified to be inside localBasePath.
+     *
+     * rawurldecode is applied to the URL path before joining — HTML src
+     * attributes are percent-encoded (e.g. Cyrillic filenames → %D0%9A),
+     * but the on-disk filename is the raw UTF-8 bytes. Without decoding,
+     * imgproxy would look for a file named "%D0%9A..." and 404.
+     *
+     * Returns null when:
+     * - localBasePath is empty or not a directory
+     * - the resolved path escapes localBasePath (path traversal / symlink)
+     * - the file does not exist (realpath returns false)
+     *
+     * @return string|null Absolute filesystem path, or null on denial.
+     */
+    private function resolveLocalPath(NormalizedUrl $url, DeliveryConfig $config): ?string
+    {
+        if ($config->localBasePath === '' || !is_dir($config->localBasePath)) {
+            return null;
+        }
+
+        // Decode percent-encoding to recover the raw on-disk filename.
+        // rawurldecode (not urldecode) keeps '+' literal — '+' is a valid
+        // filename character and must not be decoded to a space.
+        $decodedPath = rawurldecode($url->path);
+
+        // Strip the leading slash from the URL path before joining —
+        // localBasePath is absolute, the URL path is root-relative.
+        $relativePath = ltrim($decodedPath, '/');
+
+        // Construct the candidate filesystem path.
+        $candidate = $config->localBasePath . '/' . $relativePath;
+
+        // realpath() resolves '..', symlinks, and './/' segments. Returns
+        // false when the file does not exist. We require the file to exist
+        // — pre-warming and on-demand delivery both need a real file.
+        $resolved = realpath($candidate);
+        if ($resolved === false) {
+            return null;
+        }
+
+        // Security boundary: the resolved path must be inside localBasePath.
+        // Compare against realpath(localBasePath) to handle the case where
+        // localBasePath itself is a symlink.
+        $baseResolved = realpath($config->localBasePath);
+        if ($baseResolved === false) {
+            return null;
+        }
+
+        // Ensure the resolved path is the base itself or a descendant.
+        // str_starts_with alone is insufficient: /var/www/wp-content-evil
+        // starts with /var/www/wp-content. Add a trailing slash to the base
+        // and require the resolved path to start with it (or be exactly the base).
+        $baseWithSlash = $baseResolved . '/';
+        if ($resolved === $baseResolved) {
+            // The base directory itself — unlikely for an image, but allowed.
+            return $resolved;
+        }
+        if (!str_starts_with($resolved, $baseWithSlash)) {
+            // Path escaped localBasePath (traversal or symlink).
+            return null;
+        }
+
+        return $resolved;
     }
 }
