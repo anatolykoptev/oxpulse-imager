@@ -179,6 +179,9 @@ final class SettingsValidator
         }
         $values['local_base_path'] = $localBasePath;
 
+        // Buffer rewriting (Ф2) — boolean toggle.
+        $values['buffer_rewriting_enabled'] = !empty($input['buffer_rewriting_enabled']);
+
         return ['values' => $values, 'errors' => $errors];
     }
 

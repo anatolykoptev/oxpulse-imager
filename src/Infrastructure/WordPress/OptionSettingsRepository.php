@@ -47,6 +47,9 @@ final class OptionSettingsRepository
     public const OPTION_SOURCE_MODE = 'oxpulse_imager_source_mode';
     public const OPTION_LOCAL_BASE_PATH = 'oxpulse_imager_local_base_path';
 
+    // Buffer rewriting (Ф2): ob_start + regex for theme-hardcoded <img> tags.
+    public const OPTION_BUFFER_REWRITING_ENABLED = 'oxpulse_imager_buffer_rewriting_enabled';
+
     public function loadDeliveryConfig(): DeliveryConfig
     {
         return new DeliveryConfig(
@@ -64,6 +67,7 @@ final class OptionSettingsRepository
             formatQuality: $this->loadFormatQuality(),
             sourceMode: (string) get_option(self::OPTION_SOURCE_MODE, 'http'),
             localBasePath: (string) get_option(self::OPTION_LOCAL_BASE_PATH, ''),
+            bufferRewritingEnabled: (bool) get_option(self::OPTION_BUFFER_REWRITING_ENABLED, false),
         );
     }
 
@@ -145,6 +149,11 @@ final class OptionSettingsRepository
         }
         if (array_key_exists('local_base_path', $values)) {
             update_option(self::OPTION_LOCAL_BASE_PATH, (string) $values['local_base_path']);
+        }
+
+        // Buffer rewriting (Ф2).
+        if (array_key_exists('buffer_rewriting_enabled', $values)) {
+            update_option(self::OPTION_BUFFER_REWRITING_ENABLED, (bool) $values['buffer_rewriting_enabled']);
         }
     }
 
