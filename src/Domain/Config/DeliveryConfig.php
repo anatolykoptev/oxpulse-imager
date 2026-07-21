@@ -46,12 +46,17 @@ final readonly class DeliveryConfig
      *        so RankMath's wp_check_filetype() validation doesn't drop them). Default true.
      * @param int $saveDataQualityReduction Points to subtract from image quality when
      *        the browser sends Save-Data: on (mobile data saver). 0 disables. Default 15.
-     * @param array<int,int> $sizeQualityTiers Map of maxWidth => quality for size-based
-     *        quality tiers. When the requested width <= a tier's maxWidth, that tier's
-     *        quality is used. Tiers are matched smallest-first. Empty = disabled (use
-     *        defaultQuality for all sizes). Example: [400 => 75, 800 => 70, 1200 => 65]
-     *        means widths ≤400 get q75, ≤800 get q70, ≤1200 get q65, >1200 get
-     *        defaultQuality. Default empty (disabled).
+     * @param array<int, int|array<string,int>> $sizeQualityTiers Map of
+     *        maxWidth => quality for size-based quality tiers. Two forms:
+     *        - Simple: `int` quality applied to all formats (emits `q:`).
+     *          Example: `[400 => 75, 800 => 70]`
+     *        - Per-format: `array<string,int>` map of format => quality
+     *          (emits `fq:`). Example:
+     *          `[400 => ['avif' => 55, 'webp' => 60, 'jpeg' => 70]]`
+     *        Tiers are matched smallest-first: the first tier whose
+     *        maxWidth >= requested width wins. Empty = disabled (use
+     *        defaultQuality for all sizes). Mixed forms are allowed
+     *        (some tiers int, some per-format). Default empty (disabled).
      */
     public function __construct(
         public bool $enabled,
@@ -83,8 +88,24 @@ final readonly class DeliveryConfig
             if (!is_int($maxWidth) || $maxWidth <= 0) {
                 throw new \InvalidArgumentException('sizeQualityTiers keys must be positive integers.');
             }
-            if (!is_int($quality) || $quality < 1 || $quality > 100) {
-                throw new \InvalidArgumentException('sizeQualityTiers values must be integers 1-100.');
+            if (is_int($quality)) {
+                if ($quality < 1 || $quality > 100) {
+                    throw new \InvalidArgumentException('sizeQualityTiers int values must be 1-100.');
+                }
+            } elseif (is_array($quality)) {
+                if (empty($quality)) {
+                    throw new \InvalidArgumentException('sizeQualityTiers per-format values must not be empty.');
+                }
+                foreach ($quality as $fmt => $q) {
+                    if (!is_string($fmt) || $fmt === '') {
+                        throw new \InvalidArgumentException('sizeQualityTiers per-format keys must be non-empty strings.');
+                    }
+                    if (!is_int($q) || $q < 1 || $q > 100) {
+                        throw new \InvalidArgumentException('sizeQualityTiers per-format values must be integers 1-100.');
+                    }
+                }
+            } else {
+                throw new \InvalidArgumentException('sizeQualityTiers values must be int or array<string,int>.');
             }
         }
     }

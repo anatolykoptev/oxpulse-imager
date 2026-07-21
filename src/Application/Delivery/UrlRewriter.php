@@ -341,9 +341,10 @@ final class UrlRewriter
      * defaultQuality.
      *
      * @param int $width Requested width in pixels (0 = auto/original).
-     * @return int|null Resolved quality, or null when no tier matches.
+     * @return int|array<string,int>|null Resolved quality (int for simple
+     *         tier, array for per-format tier), or null when no tier matches.
      */
-    private function resolveSizeQuality(int $width): ?int
+    private function resolveSizeQuality(int $width): int|array|null
     {
         if ($width <= 0 || empty($this->delivery->sizeQualityTiers)) {
             return null;
@@ -366,12 +367,18 @@ final class UrlRewriter
     }
 
     /**
-     * Ф7 + Ф8: Apply size-based quality tiers, then Save-Data reduction.
+     * Ф7 + Ф8 + Ф11: Apply size-based quality tiers, then Save-Data reduction.
      *
      * Order matters: size-based quality is applied first (selects the
      * appropriate base quality for the image size), then Save-Data
      * reduction stacks on top (further reduces for data-saving browsers).
      * Both are no-ops when their respective configs are empty/zero.
+     *
+     * Ф11: sizeQualityTiers now supports per-format quality maps. When a
+     * tier value is an array (e.g. ['avif' => 55, 'webp' => 60, 'jpeg' =>
+     * 70]), it replaces formatQuality and defaultQuality is zeroed (fq:
+     * is emitted). When a tier value is int, it replaces defaultQuality
+     * and formatQuality is cleared (q: is emitted).
      *
      * @param int $width Requested width in pixels.
      * @param int $defaultQuality Configured default quality.
@@ -380,10 +387,16 @@ final class UrlRewriter
      */
     private function applyQualityAdjustments(int $width, int $defaultQuality, array $formatQuality): array
     {
-        // Ф8: Size-based quality tier overrides defaultQuality.
+        // Ф8/Ф11: Size-based quality tier overrides defaultQuality and/or
+        // formatQuality. Int tier → replaces defaultQuality (q: emitted).
+        // Per-format tier → replaces formatQuality (fq: emitted).
         $sizeQuality = $this->resolveSizeQuality($width);
-        if ($sizeQuality !== null) {
+        if (is_int($sizeQuality)) {
             $defaultQuality = $sizeQuality;
+            $formatQuality = [];
+        } elseif (is_array($sizeQuality)) {
+            $formatQuality = $sizeQuality;
+            $defaultQuality = 0;
         }
 
         // Ф7: Save-Data reduction stacks on top.
