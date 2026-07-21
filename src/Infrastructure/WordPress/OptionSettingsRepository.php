@@ -56,6 +56,9 @@ final class OptionSettingsRepository
     // Save-Data header support (Ф7): reduce quality when browser sends Save-Data: on.
     public const OPTION_SAVE_DATA_QUALITY_REDUCTION = 'oxpulse_imager_save_data_quality_reduction';
 
+    // Size-based quality tiers (Ф8): map of maxWidth => quality.
+    public const OPTION_SIZE_QUALITY_TIERS = 'oxpulse_imager_size_quality_tiers';
+
     public function loadDeliveryConfig(): DeliveryConfig
     {
         return new DeliveryConfig(
@@ -76,6 +79,7 @@ final class OptionSettingsRepository
             bufferRewritingEnabled: (bool) get_option(self::OPTION_BUFFER_REWRITING_ENABLED, false),
             rankMathCompatibility: (bool) get_option(self::OPTION_RANKMATH_COMPATIBILITY, true),
             saveDataQualityReduction: (int) get_option(self::OPTION_SAVE_DATA_QUALITY_REDUCTION, 15),
+            sizeQualityTiers: $this->loadSizeQualityTiers(),
         );
     }
 
@@ -173,6 +177,23 @@ final class OptionSettingsRepository
         if (array_key_exists('save_data_quality_reduction', $values)) {
             $reduction = (int) $values['save_data_quality_reduction'];
             update_option(self::OPTION_SAVE_DATA_QUALITY_REDUCTION, max(0, min(50, $reduction)));
+        }
+
+        // Size-based quality tiers (Ф8).
+        if (array_key_exists('size_quality_tiers', $values)) {
+            $tiers = $values['size_quality_tiers'];
+            $clean = [];
+            if (is_array($tiers)) {
+                foreach ($tiers as $maxWidth => $quality) {
+                    $mw = (int) $maxWidth;
+                    $q = (int) $quality;
+                    if ($mw > 0 && $q >= 1 && $q <= 100) {
+                        $clean[$mw] = $q;
+                    }
+                }
+            }
+            ksort($clean, SORT_NUMERIC);
+            update_option(self::OPTION_SIZE_QUALITY_TIERS, $clean);
         }
     }
 
@@ -277,6 +298,29 @@ final class OptionSettingsRepository
                 $result[$fmt] = $q;
             }
         }
+        return $result;
+    }
+
+    /**
+     * Ф8: Load size-based quality tiers. Stored as an associative array
+     * [maxWidth => quality], e.g. [400 => 75, 800 => 70, 1200 => 65].
+     * Returns empty array when the option is missing or malformed.
+     *
+     * @return array<int,int>
+     */
+    private function loadSizeQualityTiers(): array
+    {
+        $stored = get_option(self::OPTION_SIZE_QUALITY_TIERS, []);
+        if (!is_array($stored)) {
+            return [];
+        }
+        $result = [];
+        foreach ($stored as $maxWidth => $quality) {
+            if (is_int($maxWidth) && $maxWidth > 0 && is_int($quality) && $quality >= 1 && $quality <= 100) {
+                $result[$maxWidth] = $quality;
+            }
+        }
+        ksort($result, SORT_NUMERIC);
         return $result;
     }
 

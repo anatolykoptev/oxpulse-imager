@@ -46,6 +46,12 @@ final readonly class DeliveryConfig
      *        so RankMath's wp_check_filetype() validation doesn't drop them). Default true.
      * @param int $saveDataQualityReduction Points to subtract from image quality when
      *        the browser sends Save-Data: on (mobile data saver). 0 disables. Default 15.
+     * @param array<int,int> $sizeQualityTiers Map of maxWidth => quality for size-based
+     *        quality tiers. When the requested width <= a tier's maxWidth, that tier's
+     *        quality is used. Tiers are matched smallest-first. Empty = disabled (use
+     *        defaultQuality for all sizes). Example: [400 => 75, 800 => 70, 1200 => 65]
+     *        means widths ≤400 get q75, ≤800 get q70, ≤1200 get q65, >1200 get
+     *        defaultQuality. Default empty (disabled).
      */
     public function __construct(
         public bool $enabled,
@@ -64,13 +70,22 @@ final readonly class DeliveryConfig
         public string $localBasePath = '',
         public bool $bufferRewritingEnabled = false,
         public bool $rankMathCompatibility = true,
-        public int $saveDataQualityReduction = 15
+        public int $saveDataQualityReduction = 15,
+        public array $sizeQualityTiers = []
     ) {
         if (!in_array($sourceMode, ['http', 'local'], true)) {
             throw new \InvalidArgumentException('sourceMode must be "http" or "local".');
         }
         if ($saveDataQualityReduction < 0 || $saveDataQualityReduction > 50) {
             throw new \InvalidArgumentException('saveDataQualityReduction must be between 0 and 50.');
+        }
+        foreach ($sizeQualityTiers as $maxWidth => $quality) {
+            if (!is_int($maxWidth) || $maxWidth <= 0) {
+                throw new \InvalidArgumentException('sizeQualityTiers keys must be positive integers.');
+            }
+            if (!is_int($quality) || $quality < 1 || $quality > 100) {
+                throw new \InvalidArgumentException('sizeQualityTiers values must be integers 1-100.');
+            }
         }
     }
 }
