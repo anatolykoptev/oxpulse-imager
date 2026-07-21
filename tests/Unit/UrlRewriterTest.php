@@ -460,7 +460,13 @@ class UrlRewriterTest extends TestCase
 
             $this->assertTrue($result->rewritten);
             $this->assertStringStartsWith('/imgproxy/', $result->url);
-            $this->assertStringContainsString('local://', $result->url);
+            // Encoded source format: `local:///path` is base64url-encoded
+            // as a single string, so `local://` is NOT visible in the URL.
+            // Decode the last path segment to verify it contains local:///.
+            $segments = explode('/', $result->url);
+            $lastSegment = end($segments);
+            $decoded = base64_decode(strtr($lastSegment, '-_', '+/'), true);
+            $this->assertStringStartsWith('local:///', $decoded);
             $this->assertStringNotContainsString('plain/', $result->url);
         } finally {
             unlink($imagePath);

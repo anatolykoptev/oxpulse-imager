@@ -83,24 +83,36 @@ final class ImgproxyPathBuilder
      * Build the source segment of the imgproxy path.
      *
      * - 'http' mode: `plain/{url}` (imgproxy fetches via HTTP).
-     * - 'local' mode: `local://{base64url(path)}` (imgproxy reads from filesystem).
-     *   The path is base64url-encoded per imgproxy spec. No padding (=) — imgproxy
-     *   accepts unpadded base64url.
+     * - 'local' mode: `{base64url(local:///path)}` (imgproxy reads from
+     *   filesystem). Uses imgproxy's ENCODED source format — the entire
+     *   source string `local:///path` is base64url-encoded and placed
+     *   directly after the processing options (no `plain/` prefix).
+     *
+     *   imgproxy supports three source formats:
+     *     1. `plain/{source_url}@ext` — plain source URL
+     *     2. `{base64url(source_url)}.{ext}` — encoded source (this one)
+     *     3. `enc/{encrypted_source_url}.{ext}` — encrypted source
+     *
+     *   The mu-plugin this replaces uses format 2 for local:// sources,
+     *   base64url-encoding the full `local:///wp-content/...` string.
+     *   Using `local://` in plain text (without `plain/` prefix) is NOT
+     *   a valid imgproxy source format and 403s.
      *
      *   imgproxy expects `local:///path/to/image.jpg` (three slashes —
-     *   `local://` + `/path`). The leading slash in the path is REQUIRED:
-     *   without it imgproxy treats the path as relative and 403s. The
-     *   fsPath from SourcePolicy is relative to localBasePath (no leading
-     *   slash), so we prepend '/' before base64url-encoding.
+     *   `local://` + `/path`). The leading slash in the path is REQUIRED.
+     *   SourcePolicy returns a relative path (no leading slash), so we
+     *   prepend '/' before constructing the full `local:///path` string.
      */
     private function sourceSegment(TransformRequest $request): string
     {
         if ($request->sourceMode === 'local') {
-            // Prepend leading slash — imgproxy expects local:///path, and
-            // SourcePolicy returns a relative path (no leading slash).
-            $path = '/' . ltrim($request->sourceUrl, '/');
-            $encoded = rtrim(strtr(base64_encode($path), '+/', '-_'), '=');
-            return 'local://' . $encoded;
+            // Build the full local:///path source string. Prepend leading
+            // slash — imgproxy expects local:///path, and SourcePolicy
+            // returns a relative path (no leading slash).
+            $source = 'local:///' . ltrim($request->sourceUrl, '/');
+            // Encode the ENTIRE source string (encoded format, no plain/ prefix).
+            $encoded = rtrim(strtr(base64_encode($source), '+/', '-_'), '=');
+            return $encoded;
         }
 
         return 'plain/' . $request->sourceUrl;

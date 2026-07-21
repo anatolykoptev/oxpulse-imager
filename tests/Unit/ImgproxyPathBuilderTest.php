@@ -258,6 +258,10 @@ class ImgproxyPathBuilderTest extends TestCase
     }
 
     // --- Ф1: local:// source mode tests ---
+    // imgproxy encoded source format: {base64url(local:///path)} — the
+    // ENTIRE source string `local:///path` is base64url-encoded and placed
+    // directly after processing options (no `local://` prefix in the URL).
+    // imgproxy docs: https://docs.imgproxy.net/generating_the_url#source-url
 
     public function test_local_mode_emits_local_segment_with_base64url_path(): void
     {
@@ -273,9 +277,11 @@ class ImgproxyPathBuilderTest extends TestCase
 
         $path = $this->builder->build($request);
 
-        // Expected: /rs:fit:800:0/local://{base64url($fsPath)}@avif
-        $expectedB64 = rtrim(strtr(base64_encode($fsPath), '+/', '-_'), '=');
-        $this->assertSame('/rs:fit:800:0/local://' . $expectedB64 . '@avif', $path);
+        // Expected: /rs:fit:800:0/{base64url(local:///path)}@avif
+        // ImgproxyPathBuilder prepends '/' to the path, producing local:///path.
+        $source = 'local:///' . ltrim($fsPath, '/');
+        $expectedB64 = rtrim(strtr(base64_encode($source), '+/', '-_'), '=');
+        $this->assertSame('/rs:fit:800:0/' . $expectedB64 . '@avif', $path);
     }
 
     public function test_local_mode_without_resize_emits_local_segment_only(): void
@@ -291,8 +297,9 @@ class ImgproxyPathBuilderTest extends TestCase
 
         $path = $this->builder->build($request);
 
-        $expectedB64 = rtrim(strtr(base64_encode($fsPath), '+/', '-_'), '=');
-        $this->assertSame('/local://' . $expectedB64, $path);
+        $source = 'local:///' . ltrim($fsPath, '/');
+        $expectedB64 = rtrim(strtr(base64_encode($source), '+/', '-_'), '=');
+        $this->assertSame('/' . $expectedB64, $path);
     }
 
     public function test_local_mode_with_filename_option(): void
@@ -310,9 +317,10 @@ class ImgproxyPathBuilderTest extends TestCase
         $filename = 'photo.webp';
         $path = $this->builder->build($request, $filename);
 
-        $expectedB64 = rtrim(strtr(base64_encode($fsPath), '+/', '-_'), '=');
+        $source = 'local:///' . ltrim($fsPath, '/');
+        $expectedB64 = rtrim(strtr(base64_encode($source), '+/', '-_'), '=');
         $expectedFn = rtrim(strtr(base64_encode($filename), '+/', '-_'), '=');
-        $this->assertSame('/rs:fill:300:200/fn:' . $expectedFn . ':1/local://' . $expectedB64 . '@webp', $path);
+        $this->assertSame('/rs:fill:300:200/fn:' . $expectedFn . ':1/' . $expectedB64 . '@webp', $path);
     }
 
     public function test_local_mode_path_is_base64url_no_padding(): void
@@ -328,8 +336,8 @@ class ImgproxyPathBuilderTest extends TestCase
 
         $path = $this->builder->build($request);
 
-        // Extract the base64 part and verify no padding.
-        $this->assertStringContainsString('local://', $path);
+        // Encoded format: no `local://` prefix in URL (it's inside the base64).
+        $this->assertStringNotContainsString('local://', $path);
         $this->assertStringNotContainsString('=', $path);
     }
 
@@ -363,7 +371,8 @@ class ImgproxyPathBuilderTest extends TestCase
 
         $path = $this->builder->build($request);
 
-        $expectedB64 = rtrim(strtr(base64_encode($fsPath), '+/', '-_'), '=');
-        $this->assertStringContainsString('local://' . $expectedB64, $path);
+        $source = 'local:///' . ltrim($fsPath, '/');
+        $expectedB64 = rtrim(strtr(base64_encode($source), '+/', '-_'), '=');
+        $this->assertStringContainsString($expectedB64, $path);
     }
 }
