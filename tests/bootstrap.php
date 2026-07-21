@@ -259,6 +259,18 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return parse_url($url, $component);
         }
     }
+    if (!function_exists('wp_upload_dir')) {
+        function wp_upload_dir() {
+            return [
+                'baseurl'    => 'https://example.com/wp-content/uploads',
+                'basedir'    => '/tmp/wp-content/uploads',
+                'url'        => 'https://example.com/wp-content/uploads',
+                'path'       => '/tmp/wp-content/uploads',
+                'subdir'     => '',
+                'error'      => false,
+            ];
+        }
+    }
     if (!function_exists('wp_json_encode')) {
         function wp_json_encode($data, $options = 0, $depth = 512) {
             return json_encode($data, $options, $depth);

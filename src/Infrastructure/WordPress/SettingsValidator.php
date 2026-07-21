@@ -121,6 +121,9 @@ final class SettingsValidator
         $diagLevel = (string) ($input['diagnostic_level'] ?? 'off');
         $values['diagnostic_level'] = in_array($diagLevel, self::ALLOWED_DIAGNOSTIC_LEVELS, true) ? $diagLevel : 'off';
 
+        // Onboarding flag (Phase 5.5) — boolean pass-through.
+        $values['onboarded'] = !empty($input['onboarded']);
+
         // --- Phase 5.1: imgproxy-native enhancements ---
 
         // LQIP placeholders.

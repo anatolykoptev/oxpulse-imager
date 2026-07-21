@@ -85,6 +85,11 @@ function oxpulse_imager_activate(): void {
         OXPULSE_IMAGER_OPTION_PREFIX . 'remove_on_uninstall' => false,
         OXPULSE_IMAGER_OPTION_PREFIX . 'diagnostic_level' => 'off',
         OXPULSE_IMAGER_OPTION_PREFIX . 'schema_version' => 1,
+        // Phase 5.5: onboarding wizard flag. False on activation →
+        // the SPA shows the wizard. Set to true by POST /onboarding/complete
+        // or by the "Skip" link. Re-activation does NOT reset this —
+        // only a fresh install (no option in DB) gets the wizard.
+        OXPULSE_IMAGER_OPTION_PREFIX . 'onboarded' => false,
     ];
 
     foreach ($defaults as $key => $value) {

@@ -32,6 +32,7 @@ final class OptionSettingsRepository
     public const OPTION_REMOVE_ON_UNINSTALL = 'oxpulse_imager_remove_on_uninstall';
     public const OPTION_DIAGNOSTIC_LEVEL = 'oxpulse_imager_diagnostic_level';
     public const OPTION_SCHEMA_VERSION = 'oxpulse_imager_schema_version';
+    public const OPTION_ONBOARDED = 'oxpulse_imager_onboarded';
 
     // Phase 5.1: imgproxy-native enhancement options.
     public const OPTION_LQIP_ENABLED = 'oxpulse_imager_lqip_enabled';

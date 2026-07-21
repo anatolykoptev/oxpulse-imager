@@ -106,6 +106,7 @@ final class SettingsPage
                 'restUrl'   => esc_url_raw(rest_url('oxpulse/v1/options')),
                 'nonce'     => wp_create_nonce('wp_rest'),
                 'version'   => $version,
+                'uploadsUrl' => esc_url_raw(wp_upload_dir()['baseurl']),
                 'mountFailureMessage' => __(
                     'OXPulse Imager admin failed to load. Try a hard refresh; if it still does not load, check for caching plugins or contact your site administrator.',
                     'oxpulse-imager'

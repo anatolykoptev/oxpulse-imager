@@ -27,7 +27,7 @@ export const normalizeOptions = (raw) => {
     'enabled', 'endpoint', 'allowedSources', 'outputFormat',
     'defaultQuality', 'lqipEnabled', 'lqipBlur', 'dprEnabled',
     'dprVariants', 'formatQuality', 'diagnosticLevel',
-    'devHttpOverride', 'removeOnUninstall', 'secretStatus',
+    'devHttpOverride', 'removeOnUninstall', 'onboarded', 'secretStatus',
   ];
 
   for (const field of scalarFields) {

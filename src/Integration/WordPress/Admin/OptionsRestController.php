@@ -108,6 +108,10 @@ final class OptionsRestController
                 OptionSettingsRepository::OPTION_REMOVE_ON_UNINSTALL,
                 false
             ),
+            'onboarded' => (bool) get_option(
+                OptionSettingsRepository::OPTION_ONBOARDED,
+                false
+            ),
         ];
 
         $camel = OptionsMapper::toCamel($snake);
@@ -174,6 +178,12 @@ final class OptionsRestController
             update_option(
                 OptionSettingsRepository::OPTION_REMOVE_ON_UNINSTALL,
                 (bool) $values['remove_on_uninstall']
+            );
+        }
+        if (array_key_exists('onboarded', $values)) {
+            update_option(
+                OptionSettingsRepository::OPTION_ONBOARDED,
+                (bool) $values['onboarded']
             );
         }
 

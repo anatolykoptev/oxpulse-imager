@@ -13,6 +13,7 @@ import { __ } from '@utils/i18n';
 import TopNav from '@components/layout/TopNav';
 import Notification from '@components/layout/Notification';
 import Section from '@components/layout/Section';
+import OnboardingWizard from '@components/OnboardingWizard';
 import ConnectionSection from '@sections/ConnectionSection';
 import FormatSection from '@sections/FormatSection';
 import EnhancementsSection from '@sections/EnhancementsSection';
@@ -37,6 +38,7 @@ const App = () => {
   const isLoading = useOptionsStore((s) => s.isLoading);
   const error = useOptionsStore((s) => s.error);
   const loadOptions = useOptionsStore((s) => s.loadOptions);
+  const onboarded = useOptionsStore((s) => s.options.onboarded);
 
   useEffect(() => {
     loadOptions();
@@ -71,6 +73,19 @@ const App = () => {
           </button>
         </div>
       </div>
+    );
+  }
+
+  // Phase 5.5: first-run onboarding wizard. Shown when `onboarded`
+  // is false (the default on activation). The wizard sets `onboarded:
+  // true` on completion or skip, which unmounts it and shows the main
+  // settings UI.
+  if (!onboarded) {
+    return (
+      <>
+        <OnboardingWizard />
+        <Notification />
+      </>
     );
   }
 

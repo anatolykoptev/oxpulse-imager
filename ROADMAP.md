@@ -100,22 +100,24 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 
 **Effort:** ~900 lines + tests. 310 PHP tests green on 8.3/8.4/8.5.
 
-### Phase 5.5 — Onboarding wizard
+### Phase 5.5 — Onboarding wizard ✅
 
-**Why:** Optimole, Imagify, ShortPixel all have first-run wizards. Reduces friction for new users.
+**Shipped:**
+- **`onboarded` option** — boolean flag, `false` on fresh activation, `true` after wizard completes or is skipped. Re-activation does NOT reset this (only a fresh install with no option in DB gets the wizard).
+- **Backend wiring** — `OPTION_ONBOARDED` constant, `OptionsMapper` camel↔snake entry, `SettingsValidator` boolean pass-through, `OptionsRestController` GET returns `onboarded`, POST persists it.
+- **`OnboardingWizard.jsx`** — modal overlay shown when `!options.onboarded`. Six steps:
+  1. Endpoint URL (with HTTPS validation)
+  2. Signing key + salt (with "Generate random 32-byte key + salt" button using `crypto.getRandomValues`)
+  3. Test connection (POST /health with the endpoint from step 1)
+  4. Allowed sources (with "Auto-detect uploads URL" button reading `window.oxpulseAdmin.uploadsUrl`)
+  5. Test AVIF support (POST /avif-check, warns about WebP fallback)
+  6. Enable delivery + finish (sets `enabled: true, onboarded: true`)
+- **Incremental save** — each step saves via the existing POST /options endpoint, so a user who quits mid-wizard keeps their progress.
+- **"Skip for now"** — dismisses the wizard and sets `onboarded: true` without enabling delivery (for advanced users who want to configure manually).
+- **`SettingsPage.php`** — localizes `uploadsUrl` via `wp_upload_dir()['baseurl']` for the auto-detect button.
+- **`App.jsx`** — renders `<OnboardingWizard />` when `!onboarded`, main settings UI otherwise.
 
-**Scope:**
-- First-run detection (option flag on activation).
-- Wizard steps:
-  1. Enter imgproxy endpoint URL
-  2. Enter key + salt (or generate)
-  3. Test connection
-  4. Configure allowed sources (auto-detect `wp-content/uploads/`)
-  5. Test AVIF support
-  6. Enable delivery
-- Redirect to wizard on first plugin activation. Skip option for advanced users.
-
-**Effort:** Medium. ~400 lines + tests.
+**Effort:** ~600 lines + tests. 317 PHP tests green on 8.3/8.4/8.5. Build deterministic.
 
 ### Phase 5.6 — wordpress.org release prep
 
@@ -162,6 +164,6 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 | 0.3.0 | 5.2 (modern React admin SPA) | Released (`ffbd612`) |
 | 0.4.0 | 5.3 (REST API for health/AVIF + synchronous bulk pre-warm) | Released (`71f1cbc`) |
 | 0.5.0 | 5.4 (diagnostics + admin bar) | Released |
-| 0.6.0 | 5.5 (onboarding wizard) | Planned |
+| 0.6.0 | 5.5 (onboarding wizard) | Released |
 | 0.7.0 | 5.7 (WP-CLI, Optimization Detective, async cron pre-warm, /status, /info) | Released |
 | 1.0.0 | 5.6 (wordpress.org release) | Planned — first stable release |

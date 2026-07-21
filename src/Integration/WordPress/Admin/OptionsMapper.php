@@ -52,6 +52,8 @@ final class OptionsMapper
         'diagnosticLevel'     => 'diagnostic_level',
         'devHttpOverride'     => 'dev_http_override',
         'removeOnUninstall'   => 'remove_on_uninstall',
+        // Onboarding (Phase 5.5)
+        'onboarded'           => 'onboarded',
     ];
 
     /**

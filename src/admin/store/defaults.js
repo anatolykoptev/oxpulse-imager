@@ -25,6 +25,8 @@ export const defaultOptions = {
   diagnosticLevel: 'off',
   devHttpOverride: false,
   removeOnUninstall: false,
+  // Onboarding (Phase 5.5) — false until the wizard completes or is skipped
+  onboarded: false,
   // Secrets (status only — never the actual values)
   secretStatus: 'empty',
 };
