@@ -284,7 +284,9 @@ class SourcePolicyTest extends TestCase
             );
 
             $this->assertTrue($decision->authorized);
-            $this->assertSame($imagePath, $decision->fsPath);
+            // fsPath is RELATIVE to localBasePath (the form imgproxy's
+            // local:// transport expects — joined onto IMGPROXY_LOCAL_FILESYSTEM_ROOT).
+            $this->assertSame('wp-content/uploads/2024/01/photo.jpg', $decision->fsPath);
         } finally {
             unlink($imagePath);
             rmdir($subDir);
@@ -395,7 +397,8 @@ class SourcePolicyTest extends TestCase
             $decision = $this->policy->authorize($encodedUrl, $config);
 
             $this->assertTrue($decision->authorized);
-            $this->assertSame($imagePath, $decision->fsPath);
+            // Relative path with raw UTF-8 filename (percent-decoded).
+            $this->assertSame('wp-content/uploads/2024/01/' . $cyrillicName, $decision->fsPath);
         } finally {
             unlink($imagePath);
             rmdir($subDir);

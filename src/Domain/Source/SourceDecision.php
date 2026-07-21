@@ -34,10 +34,11 @@ final readonly class SourceDecision
 
     /**
      * Authorized for local:// source mode. The filesystem path is the
-     * resolved, realpath()-verified, traversal-safe path to the source
-     * image. The rewriter passes this path (not the URL) to the
-     * TransformRequest so ImgproxyPathBuilder can base64url-encode it
-     * into the local:// segment.
+     * path RELATIVE to localBasePath (e.g. "wp-content/uploads/photo.jpg")
+     * — this is the form imgproxy's local:// transport expects, joined
+     * onto IMGPROXY_LOCAL_FILESYSTEM_ROOT. The rewriter passes this path
+     * (not the URL) to the TransformRequest so ImgproxyPathBuilder can
+     * base64url-encode it into the local:// segment.
      */
     public static function authorizedLocal(NormalizedUrl $url, string $fsPath): self
     {

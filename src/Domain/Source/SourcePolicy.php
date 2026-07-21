@@ -137,12 +137,22 @@ final class SourcePolicy
     }
 
     /**
-     * Resolve a URL's path to a filesystem path inside localBasePath.
+     * Resolve a URL's path to a filesystem path INSIDE localBasePath and
+     * return the path RELATIVE to localBasePath (the form imgproxy's
+     * local:// transport expects).
      *
-     * The URL path (e.g. /wp-content/uploads/2024/01/photo.jpg) is joined
-     * onto localBasePath (e.g. /var/www/wordpress). The result is resolved
-     * via realpath() to collapse '..' segments and resolve symlinks, then
-     * verified to be inside localBasePath.
+     * imgproxy is configured with IMGPROXY_LOCAL_FILESYSTEM_ROOT=<root>
+     * and expects local://<base64url(path-relative-to-root>. The plugin's
+     * localBasePath maps 1:1 to that root (the operator configures both
+     * to the same directory). Returning an absolute path here would make
+     * imgproxy look for <root>/<absolute-path> — a double-prefixed path
+     * that 404s.
+     *
+     * Security: the candidate path is resolved via realpath() to collapse
+     * '..' segments and resolve symlinks, then verified to be inside
+     * localBasePath. Only the relative portion (the part of the resolved
+     * path beyond localBasePath) is returned — the absolute path never
+     * leaves this method.
      *
      * rawurldecode is applied to the URL path before joining — HTML src
      * attributes are percent-encoded (e.g. Cyrillic filenames → %D0%9A),
@@ -154,7 +164,8 @@ final class SourcePolicy
      * - the resolved path escapes localBasePath (path traversal / symlink)
      * - the file does not exist (realpath returns false)
      *
-     * @return string|null Absolute filesystem path, or null on denial.
+     * @return string|null Path relative to localBasePath (e.g.
+     *         "wp-content/uploads/2024/01/photo.jpg"), or null on denial.
      */
     private function resolveLocalPath(NormalizedUrl $url, DeliveryConfig $config): ?string
     {
@@ -197,13 +208,16 @@ final class SourcePolicy
         $baseWithSlash = $baseResolved . '/';
         if ($resolved === $baseResolved) {
             // The base directory itself — unlikely for an image, but allowed.
-            return $resolved;
+            // Relative path is empty.
+            return '';
         }
         if (!str_starts_with($resolved, $baseWithSlash)) {
             // Path escaped localBasePath (traversal or symlink).
             return null;
         }
 
-        return $resolved;
+        // Return the path RELATIVE to localBasePath — this is what imgproxy's
+        // local:// transport expects (joined onto IMGPROXY_LOCAL_FILESYSTEM_ROOT).
+        return substr($resolved, strlen($baseWithSlash));
     }
 }
