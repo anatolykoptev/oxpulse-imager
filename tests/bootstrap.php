@@ -138,6 +138,16 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return $map[$id] ?? false;
         }
     }
+    if (!function_exists('wp_get_registered_image_subsizes')) {
+        function wp_get_registered_image_subsizes() {
+            return $GLOBALS['__oxpulse_registered_subsizes'] ?? [
+                'thumbnail' => ['width' => 150, 'height' => 150],
+                'medium' => ['width' => 300, 'height' => 300],
+                'medium_large' => ['width' => 768, 'height' => 0],
+                'large' => ['width' => 1024, 'height' => 1024],
+            ];
+        }
+    }
     if (!function_exists('get_posts')) {
         function get_posts($args = []) {
             return $GLOBALS['__oxpulse_posts'] ?? [];
