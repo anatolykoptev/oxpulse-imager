@@ -83,6 +83,37 @@ final class OptionSettingsRepository
         );
     }
 
+    /**
+     * Resolve a configured imgproxy endpoint to an ABSOLUTE URL.
+     *
+     * Relative endpoints (e.g. '/imgproxy' for same-host nginx
+     * reverse-proxy setups) are resolved against home_url() so that
+     * generated imgproxy URLs are always absolute — required by
+     * wp_get_attachment_url (contractually absolute), JSON-LD
+     * ImageObject.url, og:image, RSS/feeds, REST, and sitemaps.
+     *
+     * Absolute endpoints (e.g. 'https://imgproxy.example.com') pass
+     * through unchanged. Empty endpoints return empty.
+     *
+     * This is the WordPress-infrastructure boundary where the endpoint
+     * option is read; callers resolve BEFORE injecting the endpoint
+     * into ImgproxyUrlGenerator, keeping the generator pure.
+     */
+    public static function resolveEndpoint(string $endpoint): string
+    {
+        if ($endpoint === '') {
+            return '';
+        }
+
+        // Relative endpoint — resolve against the site host.
+        if (str_starts_with($endpoint, '/')) {
+            return home_url($endpoint);
+        }
+
+        // Already absolute — keep as-is.
+        return $endpoint;
+    }
+
     public function loadSigningConfig(): ?SigningConfig
     {
         $keyHex = (string) get_option(self::OPTION_KEY, '');
