@@ -256,4 +256,114 @@ class ImgproxyPathBuilderTest extends TestCase
         $this->assertSame($url1, $url2);
         $this->assertStringStartsWith('https://imgproxy.example.com/', $url1);
     }
+
+    // --- Ф1: local:// source mode tests ---
+
+    public function test_local_mode_emits_local_segment_with_base64url_path(): void
+    {
+        $fsPath = '/var/www/wordpress/wp-content/uploads/2024/01/photo.jpg';
+        $request = new TransformRequest(
+            sourceUrl: $fsPath,
+            width: 800,
+            height: 0,
+            resize: 'fit',
+            format: 'avif',
+            sourceMode: 'local',
+        );
+
+        $path = $this->builder->build($request);
+
+        // Expected: /rs:fit:800:0/local://{base64url($fsPath)}@avif
+        $expectedB64 = rtrim(strtr(base64_encode($fsPath), '+/', '-_'), '=');
+        $this->assertSame('/rs:fit:800:0/local://' . $expectedB64 . '@avif', $path);
+    }
+
+    public function test_local_mode_without_resize_emits_local_segment_only(): void
+    {
+        $fsPath = '/var/www/wordpress/wp-content/uploads/photo.jpg';
+        $request = new TransformRequest(
+            sourceUrl: $fsPath,
+            width: 0,
+            height: 0,
+            format: 'auto',
+            sourceMode: 'local',
+        );
+
+        $path = $this->builder->build($request);
+
+        $expectedB64 = rtrim(strtr(base64_encode($fsPath), '+/', '-_'), '=');
+        $this->assertSame('/local://' . $expectedB64, $path);
+    }
+
+    public function test_local_mode_with_filename_option(): void
+    {
+        $fsPath = '/var/www/wordpress/wp-content/uploads/photo.jpg';
+        $request = new TransformRequest(
+            sourceUrl: $fsPath,
+            width: 300,
+            height: 200,
+            resize: 'fill',
+            format: 'webp',
+            sourceMode: 'local',
+        );
+
+        $filename = 'photo.webp';
+        $path = $this->builder->build($request, $filename);
+
+        $expectedB64 = rtrim(strtr(base64_encode($fsPath), '+/', '-_'), '=');
+        $expectedFn = rtrim(strtr(base64_encode($filename), '+/', '-_'), '=');
+        $this->assertSame('/rs:fill:300:200/fn:' . $expectedFn . ':1/local://' . $expectedB64 . '@webp', $path);
+    }
+
+    public function test_local_mode_path_is_base64url_no_padding(): void
+    {
+        // Path that produces base64 with padding when standard-encoded.
+        $fsPath = '/var/www/wp-content/uploads/2024/01/abc';
+        $request = new TransformRequest(
+            sourceUrl: $fsPath,
+            width: 100,
+            height: 100,
+            sourceMode: 'local',
+        );
+
+        $path = $this->builder->build($request);
+
+        // Extract the base64 part and verify no padding.
+        $this->assertStringContainsString('local://', $path);
+        $this->assertStringNotContainsString('=', $path);
+    }
+
+    public function test_http_mode_is_default_when_source_mode_omitted(): void
+    {
+        $request = new TransformRequest(
+            sourceUrl: 'https://example.com/image.jpg',
+            width: 800,
+            height: 0,
+            format: 'avif',
+            // sourceMode omitted — defaults to 'http'
+        );
+
+        $path = $this->builder->build($request);
+
+        $this->assertStringContainsString('plain/', $path);
+        $this->assertStringNotContainsString('local://', $path);
+    }
+
+    public function test_local_mode_with_cyrillic_path_base64url_encoded(): void
+    {
+        // Cyrillic filesystem path — rawurldecode was applied upstream by
+        // SourcePolicy, so the path here is the raw UTF-8 bytes.
+        $fsPath = '/var/www/wp-content/uploads/2024/01/Фото.jpg';
+        $request = new TransformRequest(
+            sourceUrl: $fsPath,
+            width: 800,
+            height: 0,
+            sourceMode: 'local',
+        );
+
+        $path = $this->builder->build($request);
+
+        $expectedB64 = rtrim(strtr(base64_encode($fsPath), '+/', '-_'), '=');
+        $this->assertStringContainsString('local://' . $expectedB64, $path);
+    }
 }

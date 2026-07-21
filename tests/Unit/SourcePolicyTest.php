@@ -247,4 +247,176 @@ class SourcePolicyTest extends TestCase
         $this->assertFalse($decision->authorized);
         $this->assertSame('source_not_in_allowlist', $decision->reason);
     }
+
+    // --- Ф1: local:// source mode tests ---
+
+    private function localConfig(string $basePath, array $sources = ['https://example.com/']): DeliveryConfig
+    {
+        return new DeliveryConfig(
+            enabled: true,
+            endpoint: '/imgproxy',
+            allowedSources: $sources,
+            sourceMode: 'local',
+            localBasePath: $basePath,
+        );
+    }
+
+    public function test_local_mode_authorizes_path_inside_base(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/oxpulse-local-test-' . uniqid();
+        mkdir($tmpDir, 0755, true);
+        $subDir = $tmpDir . '/wp-content/uploads/2024/01';
+        mkdir($subDir, 0755, true);
+        $imagePath = $subDir . '/photo.jpg';
+        file_put_contents($imagePath, 'fake-image');
+
+        try {
+            $config = $this->localConfig($tmpDir);
+            $decision = $this->policy->authorize(
+                'https://example.com/wp-content/uploads/2024/01/photo.jpg',
+                $config
+            );
+
+            $this->assertTrue($decision->authorized);
+            $this->assertSame($imagePath, $decision->fsPath);
+        } finally {
+            unlink($imagePath);
+            rmdir($subDir);
+            rmdir($tmpDir . '/wp-content/uploads/2024');
+            rmdir($tmpDir . '/wp-content/uploads');
+            rmdir($tmpDir . '/wp-content');
+            rmdir($tmpDir);
+        }
+    }
+
+    public function test_local_mode_denies_path_traversal(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/oxpulse-traversal-test-' . uniqid();
+        mkdir($tmpDir, 0755, true);
+        $outsideDir = sys_get_temp_dir() . '/oxpulse-outside-' . uniqid();
+        mkdir($outsideDir, 0755, true);
+        $outsideFile = $outsideDir . '/secret.txt';
+        file_put_contents($outsideFile, 'secret');
+
+        try {
+            $config = $this->localConfig($tmpDir);
+            // Attempt traversal: /wp-content/../../../outside/secret.txt
+            $decision = $this->policy->authorize(
+                'https://example.com/wp-content/../../../' . basename($outsideDir) . '/secret.txt',
+                $config
+            );
+
+            $this->assertFalse($decision->authorized);
+            $this->assertSame('local_path_outside_base', $decision->reason);
+        } finally {
+            unlink($outsideFile);
+            rmdir($outsideDir);
+            rmdir($tmpDir);
+        }
+    }
+
+    public function test_local_mode_denies_when_base_path_empty(): void
+    {
+        $config = $this->localConfig('');
+        $decision = $this->policy->authorize(
+            'https://example.com/wp-content/uploads/photo.jpg',
+            $config
+        );
+
+        $this->assertFalse($decision->authorized);
+        $this->assertSame('local_path_outside_base', $decision->reason);
+    }
+
+    public function test_local_mode_denies_when_file_does_not_exist(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/oxpulse-noexist-test-' . uniqid();
+        mkdir($tmpDir, 0755, true);
+
+        try {
+            $config = $this->localConfig($tmpDir);
+            $decision = $this->policy->authorize(
+                'https://example.com/wp-content/uploads/nonexistent.jpg',
+                $config
+            );
+
+            $this->assertFalse($decision->authorized);
+            $this->assertSame('local_path_outside_base', $decision->reason);
+        } finally {
+            rmdir($tmpDir);
+        }
+    }
+
+    public function test_local_mode_denies_sibling_directory_with_similar_prefix(): void
+    {
+        // /var/www/wp-content-evil should NOT be authorized when base is /var/www/wp-content
+        $tmpBase = sys_get_temp_dir() . '/oxpulse-base-' . uniqid();
+        $tmpSibling = sys_get_temp_dir() . '/oxpulse-base-evil-' . uniqid();
+        mkdir($tmpBase, 0755, true);
+        mkdir($tmpSibling, 0755, true);
+        $evilFile = $tmpSibling . '/secret.jpg';
+        file_put_contents($evilFile, 'evil');
+
+        try {
+            $config = $this->localConfig($tmpBase);
+            // Construct a URL whose path resolves to the sibling directory.
+            $decision = $this->policy->authorize(
+                'https://example.com/' . basename($tmpSibling) . '/secret.jpg',
+                $config
+            );
+
+            $this->assertFalse($decision->authorized);
+        } finally {
+            unlink($evilFile);
+            rmdir($tmpSibling);
+            rmdir($tmpBase);
+        }
+    }
+
+    public function test_local_mode_rawurldecodes_percent_encoded_path(): void
+    {
+        // Cyrillic filename in URL is percent-encoded; on disk it's raw UTF-8.
+        $tmpDir = sys_get_temp_dir() . '/oxpulse-cyr-test-' . uniqid();
+        $subDir = $tmpDir . '/wp-content/uploads/2024/01';
+        mkdir($subDir, 0755, true);
+        $cyrillicName = 'Фото.jpg';
+        $imagePath = $subDir . '/' . $cyrillicName;
+        file_put_contents($imagePath, 'fake-image');
+
+        try {
+            $config = $this->localConfig($tmpDir);
+            // URL-encoded Cyrillic: %D0%A4%D0%BE%D1%82%D0%BE.jpg
+            $encodedUrl = 'https://example.com/wp-content/uploads/2024/01/' . rawurlencode($cyrillicName);
+            $decision = $this->policy->authorize($encodedUrl, $config);
+
+            $this->assertTrue($decision->authorized);
+            $this->assertSame($imagePath, $decision->fsPath);
+        } finally {
+            unlink($imagePath);
+            rmdir($subDir);
+            rmdir($tmpDir . '/wp-content/uploads/2024');
+            rmdir($tmpDir . '/wp-content/uploads');
+            rmdir($tmpDir . '/wp-content');
+            rmdir($tmpDir);
+        }
+    }
+
+    public function test_local_mode_http_mode_still_works_when_source_mode_http(): void
+    {
+        // Regression: sourceMode='http' should NOT try to resolve filesystem paths.
+        $config = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.example.com',
+            allowedSources: ['https://example.com/'],
+            sourceMode: 'http',
+            localBasePath: '',
+        );
+
+        $decision = $this->policy->authorize(
+            'https://example.com/wp-content/uploads/photo.jpg',
+            $config
+        );
+
+        $this->assertTrue($decision->authorized);
+        $this->assertNull($decision->fsPath);
+    }
 }

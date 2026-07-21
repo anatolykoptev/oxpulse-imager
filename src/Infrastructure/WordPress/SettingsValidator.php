@@ -44,19 +44,30 @@ final class SettingsValidator
         // Enabled toggle.
         $values['enabled'] = !empty($input['enabled']);
 
-        // Endpoint URL.
+        // Endpoint URL. May be absolute (https://imgproxy.example.com) or
+        // relative (/imgproxy) for same-host reverse-proxy setups (Ф1).
         $endpoint = trim((string) ($input['endpoint'] ?? ''));
         if ($endpoint !== '') {
-            $parsed = wp_parse_url($endpoint);
-            if ($parsed === false || !isset($parsed['scheme']) || !isset($parsed['host'])) {
-                $errors['endpoint'] = __('Endpoint must be a valid URL.', 'oxpulse-imager');
-            } elseif (strtolower($parsed['scheme']) !== 'https') {
-                if (!empty($input['dev_http_override'])) {
-                    if (strtolower($parsed['scheme']) !== 'http') {
-                        $errors['endpoint'] = __('Endpoint must be HTTP or HTTPS.', 'oxpulse-imager');
+            $isRelative = str_starts_with($endpoint, '/');
+            if ($isRelative) {
+                // Relative endpoint — must start with / and not contain host/scheme.
+                // Used for nginx reverse-proxy setups where /imgproxy/* is proxied
+                // to a local imgproxy daemon. No scheme/host validation needed.
+                if (!preg_match('#^/[a-zA-Z0-9_\-/]*$#', $endpoint)) {
+                    $errors['endpoint'] = __('Relative endpoint must start with / and contain only path characters.', 'oxpulse-imager');
+                }
+            } else {
+                $parsed = wp_parse_url($endpoint);
+                if ($parsed === false || !isset($parsed['scheme']) || !isset($parsed['host'])) {
+                    $errors['endpoint'] = __('Endpoint must be a valid URL or a relative path (e.g. /imgproxy).', 'oxpulse-imager');
+                } elseif (strtolower($parsed['scheme']) !== 'https') {
+                    if (!empty($input['dev_http_override'])) {
+                        if (strtolower($parsed['scheme']) !== 'http') {
+                            $errors['endpoint'] = __('Endpoint must be HTTP or HTTPS.', 'oxpulse-imager');
+                        }
+                    } else {
+                        $errors['endpoint'] = __('Endpoint must use HTTPS in production. Enable dev HTTP override only for local development.', 'oxpulse-imager');
                     }
-                } else {
-                    $errors['endpoint'] = __('Endpoint must use HTTPS in production. Enable dev HTTP override only for local development.', 'oxpulse-imager');
                 }
             }
         }
@@ -148,6 +159,25 @@ final class SettingsValidator
 
         // Watermark.
         $values['watermark'] = $this->parseWatermark($input['watermark'] ?? [], $errors);
+
+        // --- Ф1: Source addressing mode ---
+
+        $sourceMode = (string) ($input['source_mode'] ?? 'http');
+        $values['source_mode'] = in_array($sourceMode, ['http', 'local'], true) ? $sourceMode : 'http';
+
+        $localBasePath = trim((string) ($input['local_base_path'] ?? ''));
+        if ($values['source_mode'] === 'local') {
+            if ($localBasePath === '') {
+                $errors['local_base_path'] = __('Local base path is required when source mode is "local".', 'oxpulse-imager');
+            } elseif (!str_starts_with($localBasePath, '/')) {
+                $errors['local_base_path'] = __('Local base path must be an absolute filesystem path (starting with /).', 'oxpulse-imager');
+            } elseif (!is_dir($localBasePath)) {
+                $errors['local_base_path'] = __('Local base path does not exist or is not a directory.', 'oxpulse-imager');
+            } elseif (!is_readable($localBasePath)) {
+                $errors['local_base_path'] = __('Local base path is not readable by the web server.', 'oxpulse-imager');
+            }
+        }
+        $values['local_base_path'] = $localBasePath;
 
         return ['values' => $values, 'errors' => $errors];
     }

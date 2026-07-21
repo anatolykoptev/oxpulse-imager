@@ -426,4 +426,95 @@ class UrlRewriterTest extends TestCase
         $this->assertTrue($result->rewritten);
         $this->assertStringContainsString('dpr:1', $result->url);
     }
+
+    // --- Ф1: local:// source mode + relative endpoint tests ---
+
+    public function test_local_mode_rewrite_produces_local_segment(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/oxpulse-rewriter-local-' . uniqid();
+        $subDir = $tmpDir . '/wp-content/uploads/2024/01';
+        mkdir($subDir, 0755, true);
+        $imagePath = $subDir . '/photo.jpg';
+        file_put_contents($imagePath, 'fake-image');
+
+        try {
+            $delivery = new DeliveryConfig(
+                enabled: true,
+                endpoint: '/imgproxy',  // relative endpoint
+                allowedSources: ['https://example.com/wp-content/uploads/'],
+                sourceMode: 'local',
+                localBasePath: $tmpDir,
+            );
+            $rewriter = new UrlRewriter(
+                new SourcePolicy(),
+                $delivery,
+                SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX)
+            );
+
+            $result = $rewriter->rewrite(
+                'https://example.com/wp-content/uploads/2024/01/photo.jpg',
+                800,
+                0
+            );
+
+            $this->assertTrue($result->rewritten);
+            $this->assertStringStartsWith('/imgproxy/', $result->url);
+            $this->assertStringContainsString('local://', $result->url);
+            $this->assertStringNotContainsString('plain/', $result->url);
+        } finally {
+            unlink($imagePath);
+            rmdir($subDir);
+            rmdir($tmpDir . '/wp-content/uploads/2024');
+            rmdir($tmpDir . '/wp-content/uploads');
+            rmdir($tmpDir . '/wp-content');
+            rmdir($tmpDir);
+        }
+    }
+
+    public function test_local_mode_preserves_url_when_file_missing(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/oxpulse-rewriter-missing-' . uniqid();
+        mkdir($tmpDir, 0755, true);
+
+        try {
+            $delivery = new DeliveryConfig(
+                enabled: true,
+                endpoint: '/imgproxy',
+                allowedSources: ['https://example.com/wp-content/uploads/'],
+                sourceMode: 'local',
+                localBasePath: $tmpDir,
+            );
+            $rewriter = new UrlRewriter(
+                new SourcePolicy(),
+                $delivery,
+                SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX)
+            );
+
+            $sourceUrl = 'https://example.com/wp-content/uploads/nonexistent.jpg';
+            $result = $rewriter->rewrite($sourceUrl, 800, 0);
+
+            // Fail safe: file doesn't exist → preserve original URL.
+            $this->assertFalse($result->rewritten);
+            $this->assertSame($sourceUrl, $result->url);
+        } finally {
+            rmdir($tmpDir);
+        }
+    }
+
+    public function test_relative_endpoint_produces_relative_url(): void
+    {
+        // Even in HTTP source mode, a relative endpoint should produce a
+        // root-relative imgproxy URL (for nginx reverse-proxy setups).
+        $rewriter = $this->createRewriter(endpoint: '/imgproxy');
+
+        $result = $rewriter->rewrite(
+            'https://example.com/wp-content/uploads/photo.jpg',
+            800,
+            0
+        );
+
+        $this->assertTrue($result->rewritten);
+        $this->assertStringStartsWith('/imgproxy/', $result->url);
+        $this->assertStringNotContainsString('://imgproxy', $result->url);
+    }
 }

@@ -41,15 +41,24 @@ final class ImgproxyPathBuilder
     /**
      * Build the imgproxy path (without signature).
      *
+     * Two source addressing modes:
+     * - 'http': emits `/plain/{url}` — imgproxy fetches the source via HTTP.
+     * - 'local': emits `/local://{base64url(path)}` — imgproxy reads the source
+     *   directly from the filesystem. The path is the resolved filesystem path
+     *   (already validated against localBasePath by SourcePolicy). rawurldecode
+     *   is NOT applied here — the caller (SourcePolicy) is responsible for
+     *   producing a filesystem path that matches the on-disk encoding.
+     *
      * @param TransformRequest $request
      * @param string|null $filename Optional filename for Content-Disposition header.
      *                              When provided, adds fn: option to the path.
      * @return string Path starting with '/', e.g. "/rs:fit:800:0/fn:photo.avif/plain/https://example.com/img.jpg"
+     *         or "/rs:fit:800:0/local://{base64url-path}"
      */
     public function build(TransformRequest $request, ?string $filename = null): string
     {
         $options = $this->profile->buildOptions($request);
-        $source = $request->sourceUrl;
+        $sourceSegment = $this->sourceSegment($request);
         $formatSuffix = $this->formatSuffix($request->format);
         $filenameOption = $this->filenameOption($filename);
 
@@ -59,12 +68,33 @@ final class ImgproxyPathBuilder
             $allOptions = $allOptions !== '' ? $allOptions . '/' . $filenameOption : $filenameOption;
         }
 
-        // Build path: /options/plain/source@format
+        // Build path: /options/{source-segment}{@format}
+        // For 'http' mode: /options/plain/{url}@format
+        // For 'local' mode: /options/local://{base64url}@format
+        // The @format suffix applies to both modes — imgproxy honours it for local:// too.
         if ($allOptions !== '') {
-            return '/' . $allOptions . '/plain/' . $source . $formatSuffix;
+            return '/' . $allOptions . '/' . $sourceSegment . $formatSuffix;
         }
 
-        return '/plain/' . $source . $formatSuffix;
+        return '/' . $sourceSegment . $formatSuffix;
+    }
+
+    /**
+     * Build the source segment of the imgproxy path.
+     *
+     * - 'http' mode: `plain/{url}` (imgproxy fetches via HTTP).
+     * - 'local' mode: `local://{base64url(path)}` (imgproxy reads from filesystem).
+     *   The path is base64url-encoded per imgproxy spec. No padding (=) — imgproxy
+     *   accepts unpadded base64url.
+     */
+    private function sourceSegment(TransformRequest $request): string
+    {
+        if ($request->sourceMode === 'local') {
+            $encoded = rtrim(strtr(base64_encode($request->sourceUrl), '+/', '-_'), '=');
+            return 'local://' . $encoded;
+        }
+
+        return 'plain/' . $request->sourceUrl;
     }
 
     /**

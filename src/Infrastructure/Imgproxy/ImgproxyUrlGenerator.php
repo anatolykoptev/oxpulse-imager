@@ -27,15 +27,23 @@ final class ImgproxyUrlGenerator
     {
         $this->pathBuilder = $pathBuilder;
         $this->signer = $signer;
-        $this->endpoint = rtrim($endpoint, '/');
+        // Preserve relative endpoints (e.g. '/imgproxy' for same-host reverse-proxy
+        // setups via nginx). Only strip trailing slashes; do NOT prepend a scheme.
+        $this->endpoint = $endpoint === '' ? '' : rtrim($endpoint, '/');
     }
 
     /**
      * Generate a complete signed imgproxy URL.
      *
+     * For absolute endpoints (https://imgproxy.example.com): returns the full URL.
+     * For relative endpoints (/imgproxy): returns a root-relative URL — the browser
+     * resolves it against the current page's host, and nginx reverse-proxies it to
+     * the imgproxy daemon. This is the standard same-host deployment pattern.
+     *
      * @param TransformRequest $request
      * @param string|null $filename Optional filename for Content-Disposition.
      * @return string Full signed URL, e.g. "https://imgproxy.example.com/sig/rs:fit:800:0/plain/..."
+     *         or "/imgproxy/sig/rs:fit:800:0/local://..." for relative endpoints.
      */
     public function generate(TransformRequest $request, ?string $filename = null): string
     {
