@@ -28,9 +28,7 @@ use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Diagnostics\LogEntry;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Domain\Transform\TransformRequest;
-use OXPulse\Imager\Infrastructure\Imgproxy\HmacSigner;
-use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyPathBuilder;
-use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyUrlGenerator;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
 
 final class UrlRewriter
 {
@@ -39,13 +37,21 @@ final class UrlRewriter
     private ?SigningConfig $signing;
     private ?DiagnosticLoggerInterface $logger;
 
-    private ?ImgproxyUrlGenerator $generator = null;
-
+    /**
+     * @param DeliveryBackend|null $backend Injected delivery backend. When
+     *        null (the default — preserves backward compatibility with all
+     *        pre-seam callers), an ImgproxyBackend is lazily constructed from
+     *        the delivery + signing config, reproducing the pre-seam
+     *        UrlRewriter::generator() path byte-for-byte. When a backend is
+     *        injected (e.g. a LocalBackend or a test stub), UrlRewriter
+     *        delegates URL production to it.
+     */
     public function __construct(
         SourcePolicy $policy,
         DeliveryConfig $delivery,
         ?SigningConfig $signing,
-        ?DiagnosticLoggerInterface $logger = null
+        ?DiagnosticLoggerInterface $logger = null,
+        private ?DeliveryBackend $backend = null
     ) {
         $this->policy = $policy;
         $this->delivery = $delivery;
@@ -69,7 +75,7 @@ final class UrlRewriter
             return RewriteResult::preserved($sourceUrl, 'delivery_disabled');
         }
 
-        if ($this->delivery->endpoint === '') {
+        if (!$this->backendAvailable()) {
             $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'no_endpoint'));
             return RewriteResult::preserved($sourceUrl, 'no_endpoint');
         }
@@ -124,7 +130,7 @@ final class UrlRewriter
 
             $filename = $this->buildContentDispositionFilename($sourceUrl);
 
-            $url = $this->generator()->generate($request, $filename);
+            $url = $this->backend()->generate($request, $filename);
             $this->log(LogEntry::rewritten($context, $sourceUrl, $width));
             return RewriteResult::rewritten($url);
         } catch (\Throwable $e) {
@@ -166,7 +172,7 @@ final class UrlRewriter
             return RewriteResult::preserved($sourceUrl, 'delivery_disabled');
         }
 
-        if ($this->delivery->endpoint === '') {
+        if (!$this->backendAvailable()) {
             return RewriteResult::preserved($sourceUrl, 'no_endpoint');
         }
 
@@ -201,7 +207,7 @@ final class UrlRewriter
                 sourceMode: $sourceMode,
             );
 
-            return RewriteResult::rewritten($this->generator()->generate($request));
+            return RewriteResult::rewritten($this->backend()->generate($request));
         } catch (\Throwable $e) {
             return RewriteResult::preserved($sourceUrl, 'lqip_generation_error');
         }
@@ -226,7 +232,7 @@ final class UrlRewriter
             return RewriteResult::preserved($sourceUrl, 'delivery_disabled');
         }
 
-        if ($this->delivery->endpoint === '') {
+        if (!$this->backendAvailable()) {
             return RewriteResult::preserved($sourceUrl, 'no_endpoint');
         }
 
@@ -260,25 +266,49 @@ final class UrlRewriter
 
             $filename = $this->buildContentDispositionFilename($sourceUrl);
 
-            return RewriteResult::rewritten($this->generator()->generate($request, $filename));
+            return RewriteResult::rewritten($this->backend()->generate($request, $filename));
         } catch (\Throwable $e) {
             return RewriteResult::preserved($sourceUrl, 'dpr_generation_error');
         }
     }
 
     /**
-     * Get or create the URL generator. The generator is created once
-     * and reused for all subsequent rewrites, avoiding repeated object
-     * instantiation on pages with many images.
+     * Get the delivery backend. When a backend was injected via the
+     * constructor, it is used directly. When none was injected (the
+     * default for all pre-seam callers), an ImgproxyBackend is lazily
+     * constructed from the delivery + signing config, reproducing the
+     * pre-seam UrlRewriter::generator() path byte-for-byte. The backend
+     * is created once and reused for all subsequent rewrites, avoiding
+     * repeated object instantiation on pages with many images.
      */
-    private function generator(): ImgproxyUrlGenerator
+    private function backend(): DeliveryBackend
     {
-        if ($this->generator === null) {
-            $signer = new HmacSigner($this->signing);
-            $pathBuilder = new ImgproxyPathBuilder();
-            $this->generator = new ImgproxyUrlGenerator($pathBuilder, $signer, $this->delivery->endpoint);
+        if ($this->backend !== null) {
+            return $this->backend;
         }
-        return $this->generator;
+
+        // Lazily construct the default ImgproxyBackend. The signing-null
+        // guard in each rewrite method preserves the URL before this point
+        // is reached, so signing is guaranteed non-null here.
+        $this->backend = new ImgproxyBackend($this->delivery, $this->signing);
+        return $this->backend;
+    }
+
+    /**
+     * Whether the active backend can produce delivery URLs under the
+     * current config. Delegates to the injected backend's available()
+     * when one was provided; for the default ImgproxyBackend path, checks
+     * the endpoint directly (matching the pre-seam guard ordering — the
+     * endpoint check ran BEFORE the signing check, so it must not require
+     * a signing config to evaluate).
+     */
+    private function backendAvailable(): bool
+    {
+        if ($this->backend !== null) {
+            return $this->backend->available();
+        }
+
+        return $this->delivery->endpoint !== '';
     }
 
     /**

@@ -1,0 +1,268 @@
+<?php
+/**
+ * WebP transform engine (Phase 6, local delivery).
+ *
+ * Given an absolute source file path + transform params (width, height,
+ * fit, quality), produces optimized WebP bytes. Pure infrastructure — no
+ * WordPress globals beyond what's injected, so it is unit-testable with
+ * fixture images.
+ *
+ * Engine selection (preferred-first):
+ *   1. Imagick  (extension_loaded('imagick'))
+ *   2. GD       (function_exists('imagewebp'))
+ *   3. neither  -> null (FAIL-SAFE: caller serves the original)
+ *
+ * Resize rules:
+ *   - fit:  scale to fit within width x height, preserving aspect ratio.
+ *           Never upscales past the original.
+ *   - fill: crop to the exact width x height box (centered crop).
+ *           Never upscales past the original.
+ *   - width=0 and height=0: no resize (encode the original dimensions).
+ *
+ * Size-guard: if the produced WebP is >= the original file size, returns
+ * null (the caller serves the original — the "WebP larger than original"
+ * pitfall from competitor research).
+ *
+ * @package OXPulse\Imager\Infrastructure\Image
+ * @copyright Copyright (c) 2026 Anatoly Koptev
+ * @license GPL-2.0-or-later
+ */
+
+declare(strict_types=1);
+
+namespace OXPulse\Imager\Infrastructure\Image;
+
+class WebpTransformer
+{
+    /**
+     * Transform a source image to WebP and return the optimized bytes.
+     *
+     * @param string $sourcePath Absolute filesystem path to the source image.
+     * @param int $width Target width (0 = auto/no resize).
+     * @param int $height Target height (0 = auto/no resize).
+     * @param string $fit Resize mode: 'fit' (preserve aspect, no upscale)
+     *        or 'fill' (exact crop). Empty string = no resize.
+     * @param int $quality WebP quality (1-100).
+     * @return string|null WebP bytes, or null when:
+     *         - the source file does not exist / is unreadable
+     *         - neither Imagick nor GD-WebP is available
+     *         - the source format is not decodable
+     *         - the produced WebP is >= the original file size (size-guard)
+     */
+    public function transform(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+    {
+        if (!is_file($sourcePath) || !is_readable($sourcePath)) {
+            return null;
+        }
+
+        if (!$this->hasImagick() && !$this->hasGdWebp()) {
+            return null;
+        }
+
+        $originalSize = filesize($sourcePath);
+        if ($originalSize === false) {
+            return null;
+        }
+
+        $webp = $this->encode($sourcePath, $width, $height, $fit, $quality);
+        if ($webp === null) {
+            return null;
+        }
+
+        // Size-guard: if the WebP is not smaller than the original, serve
+        // the original instead. This handles the "WebP larger than
+        // original" pitfall (small or already-optimized sources).
+        if (strlen($webp) >= $originalSize) {
+            return null;
+        }
+
+        return $webp;
+    }
+
+    /**
+     * Encode the source image to WebP bytes using the available engine.
+     *
+     * Imagick is preferred (better compression + format support); GD is
+     * the fallback. Returns null on any encode failure (corrupt source,
+     * unsupported format, engine error) — the caller's fail-safe serves
+     * the original.
+     *
+     * @return string|null Raw WebP bytes, or null on encode failure.
+     */
+    protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+    {
+        if ($this->hasImagick()) {
+            return $this->encodeImagick($sourcePath, $width, $height, $fit, $quality);
+        }
+
+        if ($this->hasGdWebp()) {
+            return $this->encodeGd($sourcePath, $width, $height, $fit, $quality);
+        }
+
+        return null;
+    }
+
+    protected function hasImagick(): bool
+    {
+        return extension_loaded('imagick');
+    }
+
+    protected function hasGdWebp(): bool
+    {
+        return function_exists('imagewebp');
+    }
+
+    /**
+     * Compute the target dimensions, applying the no-upscale rule.
+     *
+     * Returns [width, height] to resize to. When the requested dimensions
+     * are larger than the original (or zero), the original dimensions are
+     * kept (no upscaling past the original).
+     *
+     * @return array{0:int,1:int} [targetWidth, targetHeight]
+     */
+    private function targetDimensions(int $origW, int $origH, int $reqW, int $reqH, string $fit): array
+    {
+        // No resize requested.
+        if ($reqW <= 0 && $reqH <= 0) {
+            return [$origW, $origH];
+        }
+
+        if ($fit === 'fill') {
+            // Exact crop box. Don't upscale past the original — clamp to
+            // the original dimensions.
+            $tw = $reqW > 0 ? min($reqW, $origW) : $origW;
+            $th = $reqH > 0 ? min($reqH, $origH) : $origH;
+            return [$tw, $th];
+        }
+
+        // 'fit' (default): scale to fit within reqW x reqH, preserve aspect.
+        // If only one dimension is specified, scale by that axis.
+        if ($reqW > 0 && $reqH > 0) {
+            $scale = min($reqW / $origW, $reqH / $origH);
+            // Don't upscale.
+            if ($scale >= 1.0) {
+                return [$origW, $origH];
+            }
+            return [(int) round($origW * $scale), (int) round($origH * $scale)];
+        }
+
+        if ($reqW > 0) {
+            $scale = $reqW / $origW;
+            if ($scale >= 1.0) {
+                return [$origW, $origH];
+            }
+            return [$reqW, (int) round($origH * $scale)];
+        }
+
+        // $reqH > 0 only.
+        $scale = $reqH / $origH;
+        if ($scale >= 1.0) {
+            return [$origW, $origH];
+        }
+        return [(int) round($origW * $scale), $reqH];
+    }
+
+    private function encodeImagick(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+    {
+        try {
+            $image = new \Imagick($sourcePath);
+            $origW = $image->getImageWidth();
+            $origH = $image->getImageHeight();
+
+            [$tw, $th] = $this->targetDimensions($origW, $origH, $width, $height, $fit);
+
+            if ($tw !== $origW || $th !== $origH) {
+                if ($fit === 'fill' && $width > 0 && $height > 0) {
+                    // Crop to exact box: resize-to-cover then center-crop.
+                    $image->cropThumbnailImage($tw, $th);
+                } else {
+                    $image->resizeImage($tw, $th, \Imagick::FILTER_LANCZOS, 1.0);
+                }
+            }
+
+            $image->setImageFormat('webp');
+            $image->setImageCompressionQuality($quality);
+
+            $bytes = $image->getImageBlob();
+            $image->clear();
+
+            return $bytes === '' ? null : $bytes;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private function encodeGd(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+    {
+        // Detect the source format and load via the appropriate GD loader.
+        $info = @getimagesize($sourcePath);
+        if ($info === false) {
+            return null;
+        }
+
+        $mime = $info['mime'] ?? '';
+        $source = match ($mime) {
+            'image/jpeg' => @imagecreatefromjpeg($sourcePath),
+            'image/png' => @imagecreatefrompng($sourcePath),
+            'image/webp' => @imagecreatefromwebp($sourcePath),
+            'image/gif' => @imagecreatefromgif($sourcePath),
+            default => null,
+        };
+
+        if ($source === false || $source === null) {
+            return null;
+        }
+
+        try {
+            $origW = imagesx($source);
+            $origH = imagesy($source);
+
+            [$tw, $th] = $this->targetDimensions($origW, $origH, $width, $height, $fit);
+
+            if ($tw !== $origW || $th !== $origH) {
+                $resized = imagecreatetruecolor($tw, $th);
+                if ($resized === false) {
+                    return null;
+                }
+
+                if ($fit === 'fill' && $width > 0 && $height > 0) {
+                    // Resize-to-cover then center-crop via imagecopyresampled.
+                    $srcRatio = $origW / $origH;
+                    $dstRatio = $tw / $th;
+                    if ($srcRatio > $dstRatio) {
+                        $srcW = (int) round($origH * $dstRatio);
+                        $srcH = $origH;
+                        $srcX = (int) (($origW - $srcW) / 2);
+                        $srcY = 0;
+                    } else {
+                        $srcW = $origW;
+                        $srcH = (int) round($origW / $dstRatio);
+                        $srcX = 0;
+                        $srcY = (int) (($origH - $srcH) / 2);
+                    }
+                    imagecopyresampled($resized, $source, 0, 0, $srcX, $srcY, $tw, $th, $srcW, $srcH);
+                } else {
+                    imagecopyresampled($resized, $source, 0, 0, 0, 0, $tw, $th, $origW, $origH);
+                }
+
+                imagedestroy($source);
+                $source = $resized;
+            }
+
+            ob_start();
+            $ok = imagewebp($source, null, $quality);
+            $bytes = ob_get_clean();
+
+            if ($ok === false || $bytes === false) {
+                return null;
+            }
+
+            return $bytes === '' ? null : $bytes;
+        } finally {
+            if (isset($source) && is_resource($source)) {
+                imagedestroy($source);
+            }
+        }
+    }
+}
