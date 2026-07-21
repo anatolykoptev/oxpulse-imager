@@ -15,59 +15,79 @@ msgstr ""
 "Language-Team: Anatoly Koptev <koptev@koptev.org>\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:59
+#: src/Infrastructure/WordPress/SettingsValidator.php:69
 msgid "Endpoint must use HTTPS in production. Enable dev HTTP override only for local development."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:56
+#: src/Infrastructure/WordPress/SettingsValidator.php:66
 msgid "Endpoint must be HTTP or HTTPS."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:52
-msgid "Endpoint must be a valid URL."
+#: src/Infrastructure/WordPress/SettingsValidator.php:62
+msgid "Endpoint must be a valid URL or a relative path (e.g. /imgproxy)."
+msgstr ""
+
+#: src/Infrastructure/WordPress/SettingsValidator.php:57
+msgid "Relative endpoint must start with / and contain only path characters."
 msgstr ""
 
 #. translators: %d: minimum key length in bytes.
-#: src/Infrastructure/WordPress/SettingsValidator.php:73
+#: src/Infrastructure/WordPress/SettingsValidator.php:84
 msgid "Key must be at least %d bytes after hex decoding."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:69
+#: src/Infrastructure/WordPress/SettingsValidator.php:80
 msgid "Key must be a non-empty even-length hexadecimal string."
 msgstr ""
 
 #. translators: %d: minimum salt length in bytes.
-#: src/Infrastructure/WordPress/SettingsValidator.php:88
+#: src/Infrastructure/WordPress/SettingsValidator.php:99
 msgid "Salt must be at least %d bytes after hex decoding."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:84
+#: src/Infrastructure/WordPress/SettingsValidator.php:95
 msgid "Salt must be a non-empty even-length hexadecimal string."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:101
+#: src/Infrastructure/WordPress/SettingsValidator.php:112
 msgid "Allowed sources must be valid HTTP(S) URLs with trailing path boundary."
 msgstr ""
 
 #. translators: 1: minimum blur, 2: maximum blur.
-#: src/Infrastructure/WordPress/SettingsValidator.php:135
+#: src/Infrastructure/WordPress/SettingsValidator.php:146
 msgid "LQIP blur must be between %1$s and %2$s."
 msgstr ""
 
+#: src/Infrastructure/WordPress/SettingsValidator.php:177
+msgid "Local base path is not readable by the web server."
+msgstr ""
+
+#: src/Infrastructure/WordPress/SettingsValidator.php:175
+msgid "Local base path does not exist or is not a directory."
+msgstr ""
+
+#: src/Infrastructure/WordPress/SettingsValidator.php:173
+msgid "Local base path must be an absolute filesystem path (starting with /)."
+msgstr ""
+
+#: src/Infrastructure/WordPress/SettingsValidator.php:171
+msgid "Local base path is required when source mode is \"local\"."
+msgstr ""
+
 #. translators: 1: format name, 2: minimum, 3: maximum.
-#: src/Infrastructure/WordPress/SettingsValidator.php:248
+#: src/Infrastructure/WordPress/SettingsValidator.php:278
 msgid "Quality for %1$s must be between %2$d and %3$d."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:287
+#: src/Infrastructure/WordPress/SettingsValidator.php:317
 msgid "Watermark opacity must be between 0 and 1."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:293
+#: src/Infrastructure/WordPress/SettingsValidator.php:323
 msgid "Invalid watermark position."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:302
+#: src/Infrastructure/WordPress/SettingsValidator.php:332
 msgid "Watermark scale must be between 0 and 1."
 msgstr ""
 
