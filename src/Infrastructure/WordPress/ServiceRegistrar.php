@@ -52,6 +52,20 @@ final class ServiceRegistrar
      */
     private static ?WordPressDiagnosticLogger $diagnosticLogger = null;
 
+    /**
+     * Shared frontend UrlRewriter instance. Set when
+     * registerDeliveryAdapters() runs (on plugins_loaded when delivery
+     * is enabled + not admin). Accessed by the public
+     * oxpulse_thumb_url() helper so sibling mu-plugins (e.g. piter-api)
+     * can generate signed imgproxy URLs without duplicating the
+     * signing + path-building logic.
+     *
+     * Null when delivery is disabled, not yet initialized, or in admin
+     * context. Callers must handle null (fail-safe: return the
+     * original URL).
+     */
+    private static ?UrlRewriter $rewriter = null;
+
     public static function register(Plugin $plugin): void
     {
         self::registerTextDomain($plugin);
@@ -71,6 +85,20 @@ final class ServiceRegistrar
             self::$diagnosticLogger = new WordPressDiagnosticLogger();
         }
         return self::$diagnosticLogger;
+    }
+
+    /**
+     * Get the shared frontend UrlRewriter instance, or null when delivery
+     * is disabled / not yet initialized / admin context.
+     *
+     * Used by the public oxpulse_thumb_url() global helper so sibling
+     * mu-plugins can generate signed imgproxy URLs without duplicating
+     * the signing + path-building logic. Callers must handle null
+     * (fail-safe: return the original URL).
+     */
+    public static function getRewriter(): ?UrlRewriter
+    {
+        return self::$rewriter;
     }
 
     private static function registerTextDomain(Plugin $plugin): void
@@ -127,6 +155,11 @@ final class ServiceRegistrar
 
         $logger = self::diagnosticLogger();
         $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, $logger);
+
+        // Expose the rewriter for the public oxpulse_thumb_url() helper.
+        // Sibling mu-plugins (e.g. piter-api) call oxpulse_thumb_url()
+        // which delegates to ServiceRegistrar::getRewriter().
+        self::$rewriter = $rewriter;
 
         // Schedule the logger flush at shutdown — writes the
         // accumulated entries to error_log once per request.
