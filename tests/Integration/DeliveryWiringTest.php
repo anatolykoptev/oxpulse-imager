@@ -63,7 +63,7 @@ class DeliveryWiringTest extends TestCase
         $rewrittenTag = $contentRewriter->rewrite($tag, 'the_content', 0);
 
         $this->assertStringContainsString('imgproxy.example.com', $rewrittenTag);
-        $this->assertStringContainsString('rs:fit:400:300', $rewrittenTag);
+        $this->assertStringContainsString('rs:fill:400:300', $rewrittenTag);
         $this->assertStringContainsString('alt="Test"', $rewrittenTag);
 
         // Attachment image src rewriting.

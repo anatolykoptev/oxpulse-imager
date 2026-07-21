@@ -65,7 +65,7 @@ class SiteIconUrlRewriterTest extends TestCase
 
         $this->assertNotSame($url, $result);
         $this->assertStringContainsString('imgproxy.example.com', $result);
-        $this->assertStringContainsString('rs:fit:512:512', $result);
+        $this->assertStringContainsString('rs:fill:512:512', $result);
     }
 
     public function test_preserves_url_when_delivery_disabled(): void
@@ -109,8 +109,8 @@ class SiteIconUrlRewriterTest extends TestCase
         $url = 'https://example.com/wp-content/uploads/icon.png';
         $result = $callback($url, 192, 1);
 
-        // rs:fit:192:192 — square resize.
-        $this->assertStringContainsString('rs:fit:192:192', $result);
+        // rs:fill:192:192 — square resize.
+        $this->assertStringContainsString('rs:fill:192:192', $result);
     }
 
     public function test_deterministic_same_args_produce_same_url(): void

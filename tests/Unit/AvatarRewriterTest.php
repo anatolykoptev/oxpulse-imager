@@ -64,7 +64,7 @@ class AvatarRewriterTest extends TestCase
         $result = $rewriter->rewrite($avatar, 'user@example.com', 128, '', 'User');
 
         // The rewriter should request a 128x128 resize.
-        $this->assertStringContainsString('rs:fit:128:128', $result);
+        $this->assertStringContainsString('rs:fill:128:128', $result);
     }
 
     public function test_preserves_non_allowed_avatar(): void

@@ -55,7 +55,7 @@ class AttachmentImageSrcRewriterTest extends TestCase
         $result = $rewriter->rewrite($image, 1, 'thumbnail', false);
 
         $this->assertStringStartsWith('https://imgproxy.example.com/', $result[0]);
-        $this->assertStringContainsString('rs:fit:300:200', $result[0]);
+        $this->assertStringContainsString('rs:fill:300:200', $result[0]);
         // Dimensions preserved.
         $this->assertSame(300, $result[1]);
         $this->assertSame(200, $result[2]);

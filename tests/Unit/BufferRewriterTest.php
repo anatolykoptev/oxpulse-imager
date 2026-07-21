@@ -127,7 +127,7 @@ class BufferRewriterTest extends TestCase
         $html = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" alt="test">';
         $result = $rewriter->rewrite($html);
 
-        $this->assertStringContainsString('rs:fit:800:600', $result);
+        $this->assertStringContainsString('rs:fill:800:600', $result);
     }
 
     public function test_rewrites_multiple_img_tags_in_one_buffer(): void
