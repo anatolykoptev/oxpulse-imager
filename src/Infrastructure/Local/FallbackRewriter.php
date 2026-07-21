@@ -48,13 +48,18 @@ final class FallbackRewriter
         $cacheUrlPrefix = rtrim($this->homeUrl, '/') . '/wp-content/cache/oxpulse/';
 
         // Match cache URLs: <homeUrl>/wp-content/cache/oxpulse/<sourceHash>/<key>.<fmt>
-        // sourceHash = [0-9a-f]{16}, key = base64url chars, fmt = extension.
-        // Capture group 2 = the key (without extension).
+        // sourceHash = [0-9a-f]{16}, key = base64url(payload).base64url(sig)
+        //   (the key contains an internal '.' separating payload and sig —
+        //   the base64url alphabet [A-Za-z0-9_-] does NOT include '.', so
+        //   the capture must span exactly one internal dot), fmt = extension.
+        // Capture group 2 = the full key (payload + '.' + sig, without the
+        //   format extension). Truncating at the first '.' (the old regex)
+        //   dropped the signature half → endpoint verify() 400'd every image.
         $pattern = '#'
             . preg_quote($cacheUrlPrefix, '#')
             . '([0-9a-f]{16})'
             . '/'
-            . '([A-Za-z0-9_-]+)'
+            . '([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)'
             . '\.(webp|avif|jpg|jpeg|png|gif)'
             . '#';
 

@@ -15,10 +15,13 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Tests\Integration;
 
+use OXPulse\Imager\Application\Delivery\DeliveryBackendFactory;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
+use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter;
@@ -176,5 +179,107 @@ class DeliveryWiringTest extends TestCase
         $this->assertStringContainsString('@avif', $r1->url);
         // Quality should be applied.
         $this->assertStringContainsString('q:82', $r1->url);
+    }
+
+    /**
+     * Dispatch 3 invariant: when an imgproxy endpoint is configured, the
+     * factory-selected backend MUST be ImgproxyBackend and the rewrite
+     * output MUST be byte-identical to the pre-seam path (UrlRewriter
+     * with no injected backend, which lazily constructs ImgproxyBackend
+     * itself). This is the "wiring must NOT change the imgproxy path"
+     * guard — any divergence here breaks every existing imgproxy site
+     * on upgrade.
+     */
+    public function test_imgproxy_wiring_byte_identical_to_pre_seam_path(): void
+    {
+        $repository = new OptionSettingsRepository();
+        $repository->saveDeliverySettings([
+            'enabled' => true,
+            'endpoint' => 'https://imgproxy.example.com',
+            'allowed_sources' => ['https://example.com/wp-content/uploads/'],
+            'output_format' => 'auto',
+            'default_quality' => 80,
+        ]);
+        $repository->saveSecrets(
+            'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+            'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3'
+        );
+
+        $delivery = $repository->loadDeliveryConfig();
+        $signing = $repository->loadSigningConfig();
+
+        // Pre-seam path: UrlRewriter with no injected backend (lazy).
+        $preSeamRewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
+
+        // Dispatch 3 path: factory selects the backend, injected into UrlRewriter.
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+        $this->assertInstanceOf(ImgproxyBackend::class, $backend);
+        $postSeamRewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, null, $backend);
+
+        $url = 'https://example.com/wp-content/uploads/photo.jpg';
+        $pre = $preSeamRewriter->rewrite($url, 400, 300, 'content');
+        $post = $postSeamRewriter->rewrite($url, 400, 300, 'content');
+
+        $this->assertSame(
+            $pre->url,
+            $post->url,
+            'Factory-wired imgproxy path must be byte-identical to the pre-seam lazy path.'
+        );
+        $this->assertStringContainsString('imgproxy.example.com', $post->url);
+    }
+
+    /**
+     * Dispatch 3: when NO imgproxy endpoint is configured, the factory
+     * selects LocalBackend and the rewrite output is a cache URL (not
+     * an imgproxy URL). This is the "LocalBackend is now actually
+     * reached at runtime" guard — pre-seam, UrlRewriter always lazily
+     * built ImgproxyBackend even with an empty endpoint, so LocalBackend
+     * was dead code.
+     */
+    public function test_local_backend_selected_when_no_imgproxy_endpoint(): void
+    {
+        $repository = new OptionSettingsRepository();
+        $repository->saveDeliverySettings([
+            'enabled' => true,
+            'endpoint' => '',
+            'allowed_sources' => ['https://example.com/wp-content/uploads/'],
+            'output_format' => 'auto',
+            'default_quality' => 80,
+        ]);
+        $repository->saveSecrets(
+            'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+            'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3'
+        );
+
+        $delivery = $repository->loadDeliveryConfig();
+        $signing = $repository->loadSigningConfig();
+
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+        $this->assertInstanceOf(LocalBackend::class, $backend);
+
+        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, null, $backend);
+        $url = 'https://example.com/wp-content/uploads/photo.jpg';
+        $result = $rewriter->rewrite($url, 400, 0, 'content');
+
+        // LocalBackend emits cache URLs under /wp-content/cache/oxpulse/.
+        $this->assertStringContainsString('/wp-content/cache/oxpulse/', $result->url);
+        $this->assertStringContainsString('.webp', $result->url);
+        $this->assertStringNotContainsString('imgproxy', $result->url);
+    }
+
+    /**
+     * Factory returns null when signing is missing — callers must treat
+     * this as "delivery inactive" (pass-through, no rewrite).
+     */
+    public function test_factory_returns_null_when_signing_missing(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.example.com',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+        );
+
+        $backend = DeliveryBackendFactory::select($delivery, null);
+        $this->assertNull($backend);
     }
 }

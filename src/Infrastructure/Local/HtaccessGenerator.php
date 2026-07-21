@@ -43,6 +43,18 @@ final class HtaccessGenerator
 
 # Deny PHP execution inside the cache dir (defense-in-depth —
 # cache files must be served as static only).
+#
+# CAVEAT: `php_flag engine off` is Apache mod_php ONLY. Under php-fpm
+# (the modern default) it is silently ignored, and under
+# `AllowOverride None` the whole .htaccess is ignored. It is kept as
+# defense-in-depth for mod_php hosts but is NOT the security boundary.
+# The real guard is the signed-key + format-allowlist invariant in
+# MissEndpointHandler: the cache dir only ever contains
+# <key>.webp files (key = HMAC-signed, format allowlisted to webp),
+# so an attacker cannot plant an executable-named file even with a
+# compromised signing key — the signature check rejects it. nginx
+# hosts must use the try_files snippet in the README nginx section
+# (this .htaccess is never read by nginx).
 php_flag engine off
 RemoveHandler .php .phtml .phar
 

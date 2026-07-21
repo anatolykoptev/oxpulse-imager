@@ -32,6 +32,23 @@ use OXPulse\Imager\Infrastructure\Image\WebpTransformer;
 
 final class MissEndpointHandler
 {
+    /**
+     * Allowed output format extensions (the format segment of the cache
+     * filename is NOT covered by the signature, so it must be
+     * allowlisted). MVP: webp only; avif is added here when the encoder
+     * lands. This is the disk-fill / transcode-DoS boundary: it bounds
+     * the cache to one entry per signed key.
+     */
+    private const ALLOWED_FORMATS = ['webp'];
+
+    /**
+     * Bounded flock retry: how many times to retry a non-blocking lock
+     * acquisition before giving up (fail-safe: serve original). Keeps
+     * FPM workers from parking indefinitely on a held lock.
+     */
+    private const LOCK_RETRY_MICROSECONDS = 50000; // 50ms per retry
+    private const LOCK_RETRY_ATTEMPTS = 10;        // ~500ms total budget
+
     public function __construct(
         private LocalBackend $backend,
         private WebpTransformer $transformer,
@@ -53,6 +70,15 @@ final class MissEndpointHandler
         // 1. Verify signature.
         $payload = $this->backend->verify($key);
         if ($payload === null) {
+            return new MissEndpointResponse(400, '', [], null, null);
+        }
+
+        // 1b. Format allowlist: $format comes from the request basename
+        // and is NOT covered by the signature. Reject anything outside
+        // the allowlist BEFORE any transform or disk write — this bounds
+        // the cache to one entry per signed key and blocks attacker-
+        // named files (<key>.php, <key>.foo). See FIX #2.
+        if (!in_array(strtolower($format), self::ALLOWED_FORMATS, true)) {
             return new MissEndpointResponse(400, '', [], null, null);
         }
 
@@ -129,49 +155,77 @@ final class MissEndpointHandler
         }
 
         try {
-            // Non-blocking lock: if another process is already generating,
-            // we wait briefly, then check if the file appeared; otherwise
-            // we generate independently.
-            if (flock($lockFp, LOCK_EX)) {
-                // Double-check after acquiring lock (another process may
-                // have just written the file).
+            // Bounded non-blocking lock: try LOCK_EX|LOCK_NB up to
+            // LOCK_RETRY_ATTEMPTS times with a brief sleep between
+            // attempts. This keeps FPM workers from parking indefinitely
+            // on a held lock (the original plain LOCK_EX would block
+            // forever if the lock holder died or stalled). Between
+            // attempts we re-check whether another process already
+            // wrote the cache file — if so, serve it without generating.
+            $acquired = false;
+            for ($attempt = 0; $attempt < self::LOCK_RETRY_ATTEMPTS; $attempt++) {
+                if (flock($lockFp, LOCK_EX | LOCK_NB)) {
+                    $acquired = true;
+                    break;
+                }
+                // Another process holds the lock — check whether it
+                // already produced the file before we retry.
                 if (is_file($cacheFile) && is_readable($cacheFile)) {
                     $bytes = file_get_contents($cacheFile);
                     if ($bytes !== false) {
                         return $this->webpResponse($bytes);
                     }
                 }
-
-                // Transform.
-                $webp = $this->transformer->transform(
-                    $sourcePath,
-                    $width,
-                    $height,
-                    $resize,
-                    $quality,
-                );
-
-                if ($webp === null) {
-                    // Fail-safe: serve original.
-                    return $this->serveOriginal($sourcePath);
-                }
-
-                // Atomic write: temp file → rename.
-                $temp = $cacheFile . '.tmp.' . getmypid();
-                if (file_put_contents($temp, $webp) === false) {
-                    @unlink($temp);
-                    return $this->serveOriginal($sourcePath);
-                }
-                if (!@rename($temp, $cacheFile)) {
-                    @unlink($temp);
-                    return $this->serveOriginal($sourcePath);
-                }
-
-                return $this->webpResponse($webp);
+                usleep(self::LOCK_RETRY_MICROSECONDS);
             }
 
-            // Could not acquire lock — fail-safe: serve original.
-            return $this->serveOriginal($sourcePath);
+            if (!$acquired) {
+                // Final re-check after the retry budget is exhausted.
+                if (is_file($cacheFile) && is_readable($cacheFile)) {
+                    $bytes = file_get_contents($cacheFile);
+                    if ($bytes !== false) {
+                        return $this->webpResponse($bytes);
+                    }
+                }
+                // Could not acquire within the budget — fail-safe.
+                return $this->serveOriginal($sourcePath);
+            }
+
+            // Double-check after acquiring lock (another process may
+            // have just written the file).
+            if (is_file($cacheFile) && is_readable($cacheFile)) {
+                $bytes = file_get_contents($cacheFile);
+                if ($bytes !== false) {
+                    return $this->webpResponse($bytes);
+                }
+            }
+
+            // Transform.
+            $webp = $this->transformer->transform(
+                $sourcePath,
+                $width,
+                $height,
+                $resize,
+                $quality,
+            );
+
+            if ($webp === null) {
+                // Fail-safe: serve original.
+                return $this->serveOriginal($sourcePath);
+            }
+
+            // Atomic write: temp file → rename.
+            $temp = $cacheFile . '.tmp.' . getmypid();
+            if (file_put_contents($temp, $webp) === false) {
+                @unlink($temp);
+                return $this->serveOriginal($sourcePath);
+            }
+            if (!@rename($temp, $cacheFile)) {
+                @unlink($temp);
+                return $this->serveOriginal($sourcePath);
+            }
+
+            return $this->webpResponse($webp);
         } finally {
             // Release lock + clean up lock file.
             if (is_resource($lockFp)) {

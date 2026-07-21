@@ -182,6 +182,67 @@ class WebpTransformerTest extends TestCase
         $this->assertNull($result);
     }
 
+    /**
+     * Decompression-bomb guard: a source whose pixel count (W*H) exceeds
+     * the cap (~40MP) must be rejected BEFORE the decoder runs, returning
+     * null (fail-safe: caller serves the original). A crafted "small file,
+     * huge canvas" image would otherwise exhaust memory/CPU during decode.
+     *
+     * The test stubs imageDimensions() to report an oversized canvas
+     * without constructing a real decompression bomb, and asserts the
+     * encoder is never reached (encode() throws if called).
+     */
+    public function test_decompression_bomb_rejected_before_decode(): void
+    {
+        $sourcePath = $this->fixtureDir . '/bomb.jpg';
+        file_put_contents($sourcePath, str_repeat('x', 100));
+
+        $transformer = new class extends WebpTransformer {
+            protected function hasImagick(): bool { return true; }
+            protected function imageDimensions(string $sourcePath): ?array
+            {
+                // 10000 x 10000 = 100MP > 40MP cap → must be rejected.
+                return [10000, 10000];
+            }
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            {
+                throw new \LogicException('encode must not be called for an oversized source (decompression bomb).');
+            }
+        };
+
+        $result = $transformer->transform($sourcePath, 100, 100, 'fit', 80);
+
+        $this->assertNull($result, 'Oversized source (W*H > cap) must be rejected before decode.');
+    }
+
+    /**
+     * A source just under the cap must still be transformed normally.
+     */
+    public function test_source_under_cap_is_transformed(): void
+    {
+        $sourcePath = $this->fixtureDir . '/ok.jpg';
+        file_put_contents($sourcePath, str_repeat('x', 200));
+
+        $transformer = new class (str_repeat('y', 50)) extends WebpTransformer {
+            private string $bytes;
+            public function __construct(string $bytes) { $this->bytes = $bytes; }
+            protected function hasImagick(): bool { return true; }
+            protected function imageDimensions(string $sourcePath): ?array
+            {
+                // 5000 x 5000 = 25MP < 40MP cap → allowed.
+                return [5000, 5000];
+            }
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            {
+                return $this->bytes;
+            }
+        };
+
+        $result = $transformer->transform($sourcePath, 100, 100, 'fit', 80);
+
+        $this->assertNotNull($result, 'Source under the cap must be transformed.');
+    }
+
     // --- Real ext path (guarded skips) ---
 
     public function test_real_jpeg_to_webp_smaller_and_valid(): void

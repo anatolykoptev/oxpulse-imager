@@ -30,12 +30,21 @@ final class DeliveryBackendFactory
     /**
      * Select the delivery backend for the given configuration.
      *
+     * Dispatch 3: signing may be null during early init (secrets not
+     * yet saved) — in that case no backend can sign keys, so we return
+     * null. Callers treat null as "delivery inactive" (UrlRewriter
+     * passes through, prewarm cron skips job processing).
+     *
      * @param DeliveryConfig $delivery
-     * @param SigningConfig $signing
-     * @return DeliveryBackend
+     * @param SigningConfig|null $signing
+     * @return DeliveryBackend|null
      */
-    public static function select(DeliveryConfig $delivery, SigningConfig $signing): DeliveryBackend
+    public static function select(DeliveryConfig $delivery, ?SigningConfig $signing): ?DeliveryBackend
     {
+        if ($signing === null) {
+            return null;
+        }
+
         if ($delivery->endpoint !== '') {
             return new ImgproxyBackend($delivery, $signing);
         }

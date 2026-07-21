@@ -312,6 +312,62 @@ class MissEndpointHandlerTest extends TestCase
         $this->assertNotNull($response->filePath);
         $this->assertSame('image/jpeg', $response->contentType);
     }
+
+    // --- FIX #2: format allowlist (transcode/disk-fill DoS guard) ---
+    //
+    // $format comes from the request basename and is NOT covered by the
+    // signature. Without an allowlist an attacker can request <key>.foo,
+    // <key>.php, etc. and either fill the disk with one file per extension
+    // or attempt to write executable extensions. The allowlist bounds the
+    // cache to one entry per signed key (only <key>.webp is ever written).
+
+    public function test_arbitrary_format_extension_rejected_with_400(): void
+    {
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'foo', 'image/webp');
+
+        $this->assertSame(400, $response->status);
+        $this->assertNull($response->body);
+        $this->assertNull($response->filePath);
+        // No cache file written under any extension.
+        $sourceHash = LocalBackend::sourceHash(self::SOURCE);
+        $cacheSubdir = $this->cacheDir . '/' . $sourceHash;
+        if (is_dir($cacheSubdir)) {
+            $this->assertSame([], glob($cacheSubdir . '/*'), 'No file must be written for a disallowed format.');
+        }
+    }
+
+    public function test_php_extension_rejected_with_400_no_file_written(): void
+    {
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'php', 'image/webp');
+
+        $this->assertSame(400, $response->status);
+        $this->assertNull($response->body);
+        $sourceHash = LocalBackend::sourceHash(self::SOURCE);
+        $cacheSubdir = $this->cacheDir . '/' . $sourceHash;
+        if (is_dir($cacheSubdir)) {
+            $files = glob($cacheSubdir . '/*');
+            $this->assertNotContains($cacheSubdir . '/' . $key . '.php', $files, 'No .php file must be written.');
+        }
+    }
+
+    public function test_allowed_webp_format_still_transforms_and_caches(): void
+    {
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'webp', 'image/webp');
+
+        $this->assertSame(200, $response->status);
+        $this->assertNotNull($response->body);
+        $sourceHash = LocalBackend::sourceHash(self::SOURCE);
+        $this->assertFileExists($this->cacheDir . '/' . $sourceHash . '/' . $key . '.webp');
+    }
 }
 
 /** Stub transformer that returns fixed bytes (bypasses ext checks). */

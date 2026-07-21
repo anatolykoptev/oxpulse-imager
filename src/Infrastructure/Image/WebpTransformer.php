@@ -35,6 +35,16 @@ namespace OXPulse\Imager\Infrastructure\Image;
 class WebpTransformer
 {
     /**
+     * Decompression-bomb cap: reject sources whose pixel count (W*H)
+     * exceeds this many megapixels BEFORE invoking the decoder. A crafted
+     * "tiny file, huge canvas" image (decompression bomb) would otherwise
+     * exhaust memory/CPU during decode. 40MP is well above any reasonable
+     * photo upload but well below the point where decode becomes a DoS
+     * vector (a 40MP RGBA decode is ~640MB — bounded + transient).
+     */
+    private const MAX_MEGAPIXELS = 40;
+
+    /**
      * Transform a source image to WebP and return the optimized bytes.
      *
      * @param string $sourcePath Absolute filesystem path to the source image.
@@ -46,6 +56,7 @@ class WebpTransformer
      * @return string|null WebP bytes, or null when:
      *         - the source file does not exist / is unreadable
      *         - neither Imagick nor GD-WebP is available
+     *         - the source dimensions exceed the decompression-bomb cap
      *         - the source format is not decodable
      *         - the produced WebP is >= the original file size (size-guard)
      */
@@ -57,6 +68,18 @@ class WebpTransformer
 
         if (!$this->hasImagick() && !$this->hasGdWebp()) {
             return null;
+        }
+
+        // Decompression-bomb guard: reject oversized canvases BEFORE the
+        // decoder runs. getimagesize() reads only the header (cheap, safe);
+        // the actual decode happens inside encode() below. Returning null
+        // here makes the caller fail-safe to the original bytes.
+        $dims = $this->imageDimensions($sourcePath);
+        if ($dims !== null) {
+            [$w, $h] = $dims;
+            if ($w > 0 && $h > 0 && ($w * $h) > (self::MAX_MEGAPIXELS * 1_000_000)) {
+                return null;
+            }
         }
 
         $originalSize = filesize($sourcePath);
@@ -77,6 +100,24 @@ class WebpTransformer
         }
 
         return $webp;
+    }
+
+    /**
+     * Read the source image dimensions from the header without decoding.
+     *
+     * Returns [width, height] or null when the header can't be parsed.
+     * Protected so tests can stub it to simulate an oversized canvas
+     * without constructing a real decompression bomb.
+     *
+     * @return array{0:int,1:int}|null
+     */
+    protected function imageDimensions(string $sourcePath): ?array
+    {
+        $info = @getimagesize($sourcePath);
+        if ($info === false || !isset($info[0], $info[1])) {
+            return null;
+        }
+        return [(int) $info[0], (int) $info[1]];
     }
 
     /**
@@ -166,7 +207,25 @@ class WebpTransformer
     private function encodeImagick(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
     {
         try {
-            $image = new \Imagick($sourcePath);
+            // Resource limits: bound memory + pixel-area so a malformed
+            // source that slipped past the header cap (or a decoder that
+            // expands internally) can't exhaust the FPM worker. These are
+            // no-ops on Imagick builds without the policy setter.
+            try {
+                $image = new \Imagick();
+                // @phpstan-ignore-next-line — method exists on Imagick >= 6.2
+                if (method_exists($image, 'setResourceLimit')) {
+                    /** @phan-suppress-next-line PhanUndeclaredMethod */
+                    $image->setResourceLimit(\Imagick::RESOURCETYPE_MEMORY, 256 * 1024 * 1024);
+                    /** @phan-suppress-next-line PhanUndeclaredMethod */
+                    $image->setResourceLimit(\Imagick::RESOURCETYPE_AREA, self::MAX_MEGAPIXELS * 1_000_000);
+                }
+                $image->readImage($sourcePath);
+            } catch (\Throwable $e) {
+                // Fallback: construct directly (no resource limits) for
+                // Imagick builds where readImage on a fresh handle fails.
+                $image = new \Imagick($sourcePath);
+            }
             $origW = $image->getImageWidth();
             $origH = $image->getImageHeight();
 
