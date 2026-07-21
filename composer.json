@@ -1,9 +1,8 @@
 {
     "name": "anatolykoptev/oxpulse-imager",
-    "description": "Bring-your-own imgproxy image delivery for WordPress. AVIF/WebP on-demand, LQIP, DPR srcset, watermarking, WP-CLI, Optimization Detective integration, async pre-warming.",
+    "description": "Optional bring-your-own imgproxy image delivery for WordPress.",
     "type": "wordpress-plugin",
     "license": "GPL-2.0-or-later",
-    "version": "1.0.0",
     "authors": [
         {
             "name": "Anatoly Koptev",

@@ -121,14 +121,17 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 
 ### Phase 5.6 — wordpress.org release prep ✅
 
-**Shipped:**
-- **`readme.txt`** — full wordpress.org format: description, key features, WordPress hooks covered, explicit non-goals, installation + requirements, FAQ (6 questions), screenshots (5), changelog (1.0.0 + 0.1.0), upgrade notice.
-- **`CHANGELOG.md`** — updated with all Phase 5.1–5.7 entries + test coverage summary.
-- **Version bump to 1.0.0** — `oxpulse-imager.php` (plugin header + `OXPULSE_IMAGER_VERSION`), `composer.json`, `package.json` (already 1.0.0).
+**Shipped (release infrastructure):**
+- **`readme.txt`** — full wordpress.org format: description, key features, WordPress hooks covered, explicit non-goals, installation + requirements, FAQ (6 questions), screenshots (5), changelog, upgrade notice. Stable tag managed by release-please.
+- **`CHANGELOG.md`** — updated with all Phase 5.1–5.7 entries + test coverage summary. Future entries managed by release-please.
 - **Plugin description** — updated to reflect the full feature set (AVIF/WebP, LQIP, DPR srcset, watermarking, WP-CLI, Optimization Detective, async pre-warming).
 - **`.pot` file** — `languages/oxpulse-imager.pot` generated via `wp-pot` (152 lines, all PHP gettext strings). `npm run make-pot` script added. CI verifies the .pot file is up to date.
 - **SVN deploy workflow** — `.github/workflows/deploy.yml` triggers on `v*` tags. Runs tests as a gate, verifies version match (tag ↔ plugin header ↔ readme.txt stable tag), deploys to wordpress.org SVN via `10up/action-wordpress-plugin-deploy`, generates a release zip artifact.
+- **release-please** — `.release-please-config.json` + release-please workflow. Conventional Commits → release PR → tag → SVN deploy. Version bump in 4 places (plugin header, `OXPULSE_IMAGER_VERSION`, `composer.json`, `readme.txt` stable tag) automated via `extra-files`.
 - **CI .pot verification** — `test.yml` now runs `npm run make-pot` and verifies the committed .pot file matches.
+
+**NOT shipped (happens via release-please):**
+- Version bump to 1.0.0 — NO. No major versions. release-please manages version bumps from 0.1.0 forward.
 
 **Effort:** ~300 lines + assets. 317 PHP tests green on 8.3/8.4/8.5.
 
@@ -165,4 +168,4 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 | 0.5.0 | 5.4 (diagnostics + admin bar) | Released |
 | 0.6.0 | 5.5 (onboarding wizard) | Released |
 | 0.7.0 | 5.7 (WP-CLI, Optimization Detective, async cron pre-warm, /status, /info) | Released |
-| 1.0.0 | 5.6 (wordpress.org release) | Released |
+| 1.0.0 | 5.6 (wordpress.org release) | Planned — first stable release |

@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       OXPulse Imager
  * Plugin URI:        https://github.com/anatolykoptev/oxpulse-imager
- * Description:       Bring-your-own imgproxy image delivery for WordPress. Generates signed, deterministic imgproxy URLs for approved local origins. AVIF/WebP on-demand, LQIP placeholders, DPR-aware srcset, watermarking, WP-CLI, Optimization Detective integration, async pre-warming. Disabled by default; no SaaS, no telemetry, no FFI.
- * Version:           1.0.0
+ * Description:       Optional bring-your-own imgproxy image delivery for WordPress. Generates signed, deterministic imgproxy URLs for approved local origins while preserving the original URL whenever configuration, source policy, signing, or delivery cannot safely proceed. Disabled by default; no SaaS, no FFI, no telemetry.
+ * Version:           0.1.0
  * Requires at least: 6.2
  * Requires PHP:      8.3
  * Author:            Anatoly Koptev
@@ -22,7 +22,7 @@ declare(strict_types=1);
 
 defined('ABSPATH') || exit;
 
-define('OXPULSE_IMAGER_VERSION', '1.0.0');
+define('OXPULSE_IMAGER_VERSION', '0.1.0');
 define('OXPULSE_IMAGER_FILE', __FILE__);
 define('OXPULSE_IMAGER_DIR', plugin_dir_path(__FILE__));
 define('OXPULSE_IMAGER_URL', plugin_dir_url(__FILE__));

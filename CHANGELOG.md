@@ -1,8 +1,10 @@
 # Changelog
 
-## 1.0.0
+All notable changes are documented here. From 0.2.0 onward, entries are
+managed by [release-please](https://github.com/googleapis/release-please)
+via Conventional Commits.
 
-First stable release. All Phase 5 work shipped.
+## Unreleased
 
 ### Phase 5.1 — imgproxy-native enhancements
 
@@ -59,7 +61,8 @@ First stable release. All Phase 5 work shipped.
 
 ## 0.1.0
 
-- Initial public release.
+Initial public release.
+
 - Optional imgproxy delivery mode (disabled by default).
 - Strict source-policy allowlist validation.
 - HMAC-SHA256 signed imgproxy URLs.

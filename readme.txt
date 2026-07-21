@@ -4,7 +4,7 @@ Tags: images, imgproxy, delivery, avif, webp, performance, cdn, optimization, la
 Requires at least: 6.2
 Tested up to: 6.8
 Requires PHP: 8.3
-Stable tag: 1.0.0
+Stable tag: 0.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -102,19 +102,6 @@ Yes. The plugin provides four WP-CLI commands: `wp oxpulse status`, `wp oxpulse 
 
 == Changelog ==
 
-= 1.0.0 =
-
-* First stable release.
-* **Onboarding wizard** — six-step first-run wizard (endpoint, secrets, test connection, allowed sources, test AVIF, enable delivery).
-* **Diagnostics + admin bar** — per-request logging (off/basic/verbose) + admin bar item showing live rewrite counts + diagnostics REST endpoint.
-* **WP-CLI commands** — `wp oxpulse status`, `wp oxpulse info`, `wp oxpulse warm`, `wp oxpulse flush`.
-* **Optimization Detective integration** — preconnect to imgproxy endpoint + breakpoint-specific preload links for LCP images.
-* **Async pre-warming** — bulk cache pre-warm via WordPress cron with job polling.
-* **REST API** — `/status`, `/info`, `/health`, `/avif-check`, `/prewarm` (sync + async), `/diagnostics`.
-* **imgproxy-native enhancements** — LQIP placeholders, DPR-aware srcset, watermarking, quality-per-format.
-* **Modern React admin SPA** — settings page rebuilt as a Vite + React + Zustand SPA.
-* 317 tests green on PHP 8.3/8.4/8.5.
-
 = 0.1.0 =
 
 * Initial public release.
@@ -123,9 +110,3 @@ Yes. The plugin provides four WP-CLI commands: `wp oxpulse status`, `wp oxpulse 
 * HMAC-SHA256 signed imgproxy URLs.
 * Single settings page with Test Connection action.
 * Original URL fallback on any delivery failure.
-
-== Upgrade Notice ==
-
-= 1.0.0 =
-
-First stable release. If upgrading from 0.1.0, your existing settings are preserved. The first-run wizard only appears on fresh installs. New features (LQIP, DPR srcset, watermark, WP-CLI, async pre-warm, Optimization Detective integration) are opt-in via the settings page.
