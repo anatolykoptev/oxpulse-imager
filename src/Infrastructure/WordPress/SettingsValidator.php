@@ -182,6 +182,9 @@ final class SettingsValidator
         // Buffer rewriting (Ф2) — boolean toggle.
         $values['buffer_rewriting_enabled'] = !empty($input['buffer_rewriting_enabled']);
 
+        // RankMath compatibility (Ф3) — boolean toggle, default true.
+        $values['rankmath_compatibility'] = !empty($input['rankmath_compatibility']);
+
         return ['values' => $values, 'errors' => $errors];
     }
 

@@ -41,6 +41,9 @@ final readonly class DeliveryConfig
      * @param bool $bufferRewritingEnabled Whether to register ob_start buffer rewriting
      *        for theme-hardcoded <img> tags. Default false — opt-in for themes (e.g. Foxiz)
      *        that bypass wp_content_img_tag.
+     * @param bool $rankMathCompatibility Whether to register the RankMath og:image
+     *        compatibility filter (restores direct URLs in OpenGraph/Twitter meta tags
+     *        so RankMath's wp_check_filetype() validation doesn't drop them). Default true.
      */
     public function __construct(
         public bool $enabled,
@@ -57,7 +60,8 @@ final readonly class DeliveryConfig
         public array $formatQuality = [],
         public string $sourceMode = 'http',
         public string $localBasePath = '',
-        public bool $bufferRewritingEnabled = false
+        public bool $bufferRewritingEnabled = false,
+        public bool $rankMathCompatibility = true
     ) {
         if (!in_array($sourceMode, ['http', 'local'], true)) {
             throw new \InvalidArgumentException('sourceMode must be "http" or "local".');

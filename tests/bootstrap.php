@@ -259,6 +259,11 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return parse_url($url, $component);
         }
     }
+    if (!function_exists('home_url')) {
+        function home_url($path = '') {
+            return 'https://example.test/' . ltrim($path, '/');
+        }
+    }
     if (!function_exists('wp_upload_dir')) {
         function wp_upload_dir() {
             return [

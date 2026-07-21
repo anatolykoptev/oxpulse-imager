@@ -50,6 +50,9 @@ final class OptionSettingsRepository
     // Buffer rewriting (Ф2): ob_start + regex for theme-hardcoded <img> tags.
     public const OPTION_BUFFER_REWRITING_ENABLED = 'oxpulse_imager_buffer_rewriting_enabled';
 
+    // RankMath compatibility (Ф3): restore direct URLs in og:image meta tags.
+    public const OPTION_RANKMATH_COMPATIBILITY = 'oxpulse_imager_rankmath_compatibility';
+
     public function loadDeliveryConfig(): DeliveryConfig
     {
         return new DeliveryConfig(
@@ -68,6 +71,7 @@ final class OptionSettingsRepository
             sourceMode: (string) get_option(self::OPTION_SOURCE_MODE, 'http'),
             localBasePath: (string) get_option(self::OPTION_LOCAL_BASE_PATH, ''),
             bufferRewritingEnabled: (bool) get_option(self::OPTION_BUFFER_REWRITING_ENABLED, false),
+            rankMathCompatibility: (bool) get_option(self::OPTION_RANKMATH_COMPATIBILITY, true),
         );
     }
 
@@ -154,6 +158,11 @@ final class OptionSettingsRepository
         // Buffer rewriting (Ф2).
         if (array_key_exists('buffer_rewriting_enabled', $values)) {
             update_option(self::OPTION_BUFFER_REWRITING_ENABLED, (bool) $values['buffer_rewriting_enabled']);
+        }
+
+        // RankMath compatibility (Ф3).
+        if (array_key_exists('rankmath_compatibility', $values)) {
+            update_option(self::OPTION_RANKMATH_COMPATIBILITY, (bool) $values['rankmath_compatibility']);
         }
     }
 
