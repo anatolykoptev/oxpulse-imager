@@ -185,6 +185,13 @@ final class SettingsValidator
         // RankMath compatibility (Ф3) — boolean toggle, default true.
         $values['rankmath_compatibility'] = !empty($input['rankmath_compatibility']);
 
+        // Save-Data quality reduction (Ф7) — 0-50 points, 0 disables.
+        $saveDataReduction = (int) ($input['save_data_quality_reduction'] ?? 15);
+        if ($saveDataReduction < 0 || $saveDataReduction > 50) {
+            $errors['save_data_quality_reduction'] = __('Save-Data quality reduction must be between 0 and 50.', 'oxpulse-imager');
+        }
+        $values['save_data_quality_reduction'] = max(0, min(50, $saveDataReduction));
+
         return ['values' => $values, 'errors' => $errors];
     }
 

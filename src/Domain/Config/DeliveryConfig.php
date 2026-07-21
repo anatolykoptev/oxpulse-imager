@@ -44,6 +44,8 @@ final readonly class DeliveryConfig
      * @param bool $rankMathCompatibility Whether to register the RankMath og:image
      *        compatibility filter (restores direct URLs in OpenGraph/Twitter meta tags
      *        so RankMath's wp_check_filetype() validation doesn't drop them). Default true.
+     * @param int $saveDataQualityReduction Points to subtract from image quality when
+     *        the browser sends Save-Data: on (mobile data saver). 0 disables. Default 15.
      */
     public function __construct(
         public bool $enabled,
@@ -61,10 +63,14 @@ final readonly class DeliveryConfig
         public string $sourceMode = 'http',
         public string $localBasePath = '',
         public bool $bufferRewritingEnabled = false,
-        public bool $rankMathCompatibility = true
+        public bool $rankMathCompatibility = true,
+        public int $saveDataQualityReduction = 15
     ) {
         if (!in_array($sourceMode, ['http', 'local'], true)) {
             throw new \InvalidArgumentException('sourceMode must be "http" or "local".');
+        }
+        if ($saveDataQualityReduction < 0 || $saveDataQualityReduction > 50) {
+            throw new \InvalidArgumentException('saveDataQualityReduction must be between 0 and 50.');
         }
     }
 }

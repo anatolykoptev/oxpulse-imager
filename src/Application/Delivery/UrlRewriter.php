@@ -93,18 +93,27 @@ final class UrlRewriter
             $sourceForRequest = $decision->fsPath ?? (string) $decision->url;
             $sourceMode = $decision->fsPath !== null ? 'local' : 'http';
 
+            // Ф7: Save-Data header support. When the browser sends
+            // Save-Data: on (mobile data saver / lite mode), reduce image
+            // quality by the configured amount. This saves bandwidth on
+            // metered connections with minimal perceptual quality loss.
+            [$quality, $formatQuality] = $this->applySaveDataReduction(
+                $this->delivery->defaultQuality,
+                $this->delivery->formatQuality
+            );
+
             $request = new TransformRequest(
                 sourceUrl: $sourceForRequest,
                 width: $width,
                 height: $height,
                 resize: $this->resolveResizeType($width, $height),
                 format: $this->delivery->outputFormat,
-                quality: $this->delivery->defaultQuality > 0 ? $this->delivery->defaultQuality : 0,
+                quality: $quality > 0 ? $quality : 0,
                 context: $context,
                 dpr: 0,
                 blur: 0,
                 watermark: $this->delivery->watermark,
-                formatQuality: $this->delivery->formatQuality,
+                formatQuality: $formatQuality,
                 sourceMode: $sourceMode,
             );
 
@@ -306,5 +315,54 @@ final class UrlRewriter
             return '';
         }
         return 'fit';
+    }
+
+    /**
+     * Ф7: Check whether the current request has the Save-Data: on header.
+     *
+     * The Save-Data Client Hint header is sent by browsers when the user
+     * has enabled "Data Saver" / "Lite mode" (Chrome on Android, Opera,
+     * Edge). It is an honest signal from the browser — not a security
+     * concern (worst case: user gets lower-quality images when they
+     * didn't need them).
+     *
+     * The header value is case-insensitive "on". Other values ("off",
+     * empty) mean no data-saving.
+     */
+    private function saveDataActive(): bool
+    {
+        $value = $_SERVER['HTTP_SAVE_DATA'] ?? '';
+        return is_string($value) && strtolower(trim($value)) === 'on';
+    }
+
+    /**
+     * Ф7: Apply Save-Data quality reduction to the configured quality values.
+     *
+     * When Save-Data: on is active and saveDataQualityReduction > 0:
+     * - Reduces defaultQuality by the configured amount (floor at 1).
+     * - Reduces each per-format quality in formatQuality (floor at 1).
+     *
+     * When Save-Data is not active or reduction is 0, returns the
+     * original values unchanged (zero overhead).
+     *
+     * @param int $defaultQuality Configured default quality.
+     * @param array<string,int> $formatQuality Configured per-format quality.
+     * @return array{0:int,1:array<string,int>} [reduced defaultQuality, reduced formatQuality]
+     */
+    private function applySaveDataReduction(int $defaultQuality, array $formatQuality): array
+    {
+        $reduction = $this->delivery->saveDataQualityReduction;
+        if ($reduction <= 0 || !$this->saveDataActive()) {
+            return [$defaultQuality, $formatQuality];
+        }
+
+        $reducedDefault = $defaultQuality > 0 ? max(1, $defaultQuality - $reduction) : $defaultQuality;
+
+        $reducedFormat = [];
+        foreach ($formatQuality as $fmt => $q) {
+            $reducedFormat[$fmt] = max(1, $q - $reduction);
+        }
+
+        return [$reducedDefault, $reducedFormat];
     }
 }
