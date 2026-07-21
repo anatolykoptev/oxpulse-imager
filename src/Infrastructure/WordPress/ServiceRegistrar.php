@@ -193,6 +193,19 @@ final class ServiceRegistrar
         $downsizeRewriter = new ImageDownsizeRewriter($rewriter);
         add_filter('image_downsize', [$downsizeRewriter, 'rewrite'], 99, 3);
 
+        // Ф6: get_site_icon_url — favicon/site icon optimization. The
+        // site icon is served through get_site_icon_url() which bypasses
+        // the 5 main filters. Pass $size as both width and height
+        // (favicons are square). UrlRewriter handles fail-safe
+        // preservation (returns original URL when not allowed/disabled).
+        add_filter('get_site_icon_url', static function (string $url, int $size, int $blog_id) use ($rewriter): string {
+            if ($url === '') {
+                return $url;
+            }
+            $result = $rewriter->rewrite($url, $size, $size, 'site_icon');
+            return $result->url;
+        }, 10, 3);
+
         // Ф2: Buffer rewriting for theme-hardcoded <img> tags (e.g. Foxiz).
         // Registered AFTER the 5 filters above so wp_content_img_tag etc.
         // run first; the buffer regex only matches /wp-content/ URLs that
