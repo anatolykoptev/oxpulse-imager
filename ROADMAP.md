@@ -169,3 +169,93 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 | 0.6.0 | 5.5 (onboarding wizard) | Released |
 | 0.7.0 | 5.7 (WP-CLI, Optimization Detective, async cron pre-warm, /status, /info) | Released |
 | 1.0.0 | 5.6 (wordpress.org release) | Planned — first stable release |
+
+## Phase 6 — LocalBackend: standard-hosting local delivery (DESIGN — pending build)
+
+> Moves "libvips/Imagick/GD local processing" out of *Out of scope* into a planned phase.
+> Goal: deliver the optimization on **standard/shared hosting** — no imgproxy daemon, no nginx
+> control — using only **PHP (Imagick→GD) + an on-disk cache**. Grounded in the existing
+> delivery architecture (reuse-first) and in competitor research (WebP Express, Converter for
+> Media, Imagify; the "cloud" plugins — Optimole/Photon/Cloudinary/EasyIO/SPAI — keep **no origin
+> cache** at all, so they are not the model here). Scope below = **MVP** (WebP-only); 6.1 = AVIF +
+> negotiation polish.
+
+### The seam (reuse-first)
+`Application/Delivery/UrlRewriter::generator()` currently returns `Infrastructure/Imgproxy/ImgproxyUrlGenerator`.
+That is the ONLY swap point. Introduce a `DeliveryBackend` interface; `UrlRewriter` delegates URL
+generation to the selected backend. **Reused unchanged:** `SourcePolicy`, `Domain/Signing/Signer`
++ `Infrastructure/Imgproxy/HmacSigner`, `Domain/Config/DeliveryConfig`, `AttachmentOriginResolver`,
+all 8 filter adapters (`ContentImgTagRewriter`/`AttachmentUrlRewriter`/`SrcsetRewriter`/
+`AttachmentImageSrcRewriter`/`IntermediateSizeRewriter`/`ImageDownsizeRewriter`/`AvatarRewriter`/
+`BufferRewriter`), `RankMathCompatibility`, the diagnostic logger, the options repository, the
+fail-safe preservation contract. **New only:** `DeliveryBackend` interface + `LocalBackend` +
+transform engine (Imagick/GD) + the miss handler (`oxpulse-img.php`) + the `.htaccess` generator +
+a capability-tester.
+
+### Backends
+- `ImgproxyBackend` — current behaviour (signed imgproxy URL; requires the daemon).
+- `LocalBackend` (new) — see below.
+- **Selection:** auto — imgproxy endpoint configured AND health-check passes → `ImgproxyBackend`;
+  else → `LocalBackend`. Manual override in settings.
+
+### LocalBackend flow
+1. **URL scheme.** Rewrite `<img>` → `wp-content/cache/oxpulse/<key>.<fmt>` where
+   `key = HmacSigner( source-relpath + transform-params + format )` (reuse `HmacSigner` — the key
+   is **signed**, blocking arbitrary-transform abuse / SSRF). URL is **absolute + stable**
+   (absolute via `home_url()`, reusing the PR #25 `resolveEndpoint` pattern; stable because the
+   key is a pure function of content+transform → SEO/schema-safe, unlike a churned signature).
+2. **Cache HIT** (file exists) → the **webserver serves it directly as a static file, no PHP**.
+   This is the optimization + the cache.
+3. **Cache MISS routing** — two mechanisms, capability-selected:
+   - **Primary (Apache):** `.htaccess` `RewriteCond %{REQUEST_FILENAME} !-f` → `oxpulse-img.php`
+     (WebP-Express "Realizer" Variant-1). Apache serves HITs; PHP runs only on a miss.
+   - **Fallback (nginx / no-.htaccess / mod_rewrite off):** output-buffer rewrites `<img src>` to
+     `wp-content/oxpulse-img.php?k=<key>` (CfM `PassthruLoader` style). The endpoint is
+     **self-contained** — config baked in at write-time (base64), **no `wp-load.php` bootstrap** →
+     no WP tax per image (CfM/WebP-Express trick).
+   - **Capability-test `.htaccess` before trusting it** (WebP-Express `htaccess-capability-tester`
+     approach) → auto-pick primary vs fallback. Ship an nginx `try_files` snippet in the README.
+4. **Miss handler (`oxpulse-img.php`):** verify signature → resolve source via
+   `AttachmentOriginResolver` + a `pathWithoutDirectoryTraversal` guard (WebP-Express `SanityCheck`
+   pattern; never `readfile($_GET['src'])`) → load original → **flock-based miss-dedupe lock**
+   (`.lock` next to destination — the thundering-herd fix NONE of WebP-Express/CfM/Imagify have →
+   our edge) → transform (Imagick preferred, GD fallback) → encode WebP → **size-guard** (if
+   optimized ≥ original, serve original — the "webp larger than original" pitfall) → write to the
+   cache dir → stream with `Cache-Control: public, max-age=31536000, immutable` + `Vary: Accept`.
+5. **Format + negotiation (MVP = WebP):** gate on `Accept: image/webp`
+   (`.htaccess RewriteCond %{HTTP_ACCEPT}` + in the endpoint) → serve original if not accepted
+   (never serve WebP to a non-supporting client). If a CDN is detected in front → switch to
+   `<picture>`/URL-swap to avoid `Vary: Accept` cache-key fragmentation. AVIF + full negotiation =
+   Phase 6.1.
+6. **Invalidation:** hook `wp_update_attachment_metadata` / `delete_attachment` /
+   `clean_post_cache` → delete this attachment's cached variants (key-prefix). `wp oxpulse flush`
+   → clears `wp-content/cache/oxpulse/` — this finally gives `FlushCommand` a **real** cache to
+   purge (today it flushes a `wp_cache_flush_group('oxpulse_imager')` that nothing writes → dead
+   placeholder). Add a size cap + LRU/TTL GC for cache-dir bloat (WebP+originals ≈ 1.5–2× uploads).
+7. **Fail-safe:** no Imagick/GD, transform error, lock timeout, or unwritable cache dir → serve the
+   original (matches the plugin's existing preserve-on-failure contract).
+
+### Pitfalls (from competitor research) — all addressed above
+nginx portability (capability-test + endpoint fallback + nginx snippet) · `Vary: Accept` CDN
+fragmentation (detect CDN → picture mode) · WebP to unsupporting clients (`Accept` gate) ·
+thundering herd (`flock`) · path traversal (`SanityCheck`) · stale-on-reupload (metadata/delete
+hooks) · cache bloat (flush + WP-CLI + GC) · `mod_rewrite`/`AllowOverride` off (capability-test) ·
+webp-larger-than-original (size-guard).
+
+### MVP scope (operator-chosen) vs deferred
+- **MVP:** WebP-only; resize + per-size quality (reuse the existing quality-tier logic);
+  `.htaccess` primary + `oxpulse-img.php?k=` fallback; disk cache + invalidation + real flush;
+  Imagick→GD with fail-safe; signed, absolute, stable URLs; capability-test + nginx snippet doc.
+- **6.1 (deferred):** AVIF (Imagick-only); `<picture>`/`Accept` negotiation polish + CDN mode; LQIP
+  parity with the imgproxy branch; object-storage cache option; backend auto-detect refinement.
+
+### Testing (extend the existing phpunit suites)
+Reuse `UrlRewriterTest`, `SourcePolicyTest` (already has path-traversal + local-mode cases),
+`OptionSettingsRepositoryTest`. New: `LocalBackend` URL scheme; the miss-handler (signature verify,
+traversal reject, transform, cache-write, `flock` dedupe, size-guard, fail-safe); `.htaccess`
+rule generation + capability-test; the invalidation hooks. Keep the deterministic-output invariant
+(`DeliveryWiringTest`).
+
+### Build note
+Implementation is delegated to Devin (glm-5.2) after this design is approved — one arc for the MVP,
+reviewed against the phpunit suite + a code-quality gate before merge. This section is the spec.
