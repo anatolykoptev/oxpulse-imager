@@ -78,20 +78,28 @@ msgstr ""
 msgid "Save-Data quality reduction must be between 0 and 50."
 msgstr ""
 
+#: src/Infrastructure/WordPress/SettingsValidator.php:203
+msgid "Size quality tier widths must be positive integers."
+msgstr ""
+
+#: src/Infrastructure/WordPress/SettingsValidator.php:207
+msgid "Size quality tier values must be between 1 and 100."
+msgstr ""
+
 #. translators: 1: format name, 2: minimum, 3: maximum.
-#: src/Infrastructure/WordPress/SettingsValidator.php:291
+#: src/Infrastructure/WordPress/SettingsValidator.php:312
 msgid "Quality for %1$s must be between %2$d and %3$d."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:330
+#: src/Infrastructure/WordPress/SettingsValidator.php:351
 msgid "Watermark opacity must be between 0 and 1."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:336
+#: src/Infrastructure/WordPress/SettingsValidator.php:357
 msgid "Invalid watermark position."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:345
+#: src/Infrastructure/WordPress/SettingsValidator.php:366
 msgid "Watermark scale must be between 0 and 1."
 msgstr ""
 
