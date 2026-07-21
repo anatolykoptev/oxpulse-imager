@@ -1,22 +1,22 @@
 /**
  * Generate per-locale JS translation JSON files from a compiled .po.
  *
- * WordPress' wp_set_script_translations() expects a file named:
- *   languages/<domain>-<locale>-<domain>.json
- * (e.g. languages/oxpulse-imager-ru_RU-oxpulse-imager.json) containing
- * a Jed-formatted JSON object:
+ * WordPress' wp_set_script_translations() looks up a file named:
+ *   languages/<domain>-<locale>-<handle>.json
+ * (e.g. languages/oxpulse-imager-ru_RU-oxpulse-admin-app.json) where
+ * <handle> is the wp_enqueue_script handle. The file contains a
+ * Jed-formatted JSON object:
  *   { "locale": "ru_RU", "domain": "oxpulse-imager",
  *     "locale_data": { "oxpulse-imager": { "": { "domain": "...",
- *       "lang": "ru_RU", "plural-forms": "nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);" },
+ *       "lang": "ru_RU", "plural-forms": "nplurals=3; plural=..." },
  *       "Source string": ["Translation", null, null] }, ... } }
  *
- * This script parses a .po file (compiled by msgfmt or hand-edited) and
- * emits the JSON file. Only entries whose #: references point at JS
- * files (src/admin/) are included — PHP-only strings bloat the JS
- * payload and are not needed at runtime (PHP translates its own strings
- * server-side via load_plugin_textdomain + .mo).
+ * This script parses a .po file and emits the JSON file. Only entries
+ * whose #: references point at JS files (src/admin/) are included —
+ * PHP-only strings bloat the JS payload and are not needed at runtime.
  *
  * Run: npm run make-json -- --locale=ru_RU
+ *      npm run make-json -- --locale=ru_RU --handle=oxpulse-admin-app
  *      (or npm run make-json to process all .po files in languages/)
  */
 
@@ -26,11 +26,19 @@ import { resolve, basename, join } from 'path';
 const ROOT = process.cwd();
 const LANG_DIR = resolve(ROOT, 'languages');
 const DOMAIN = 'oxpulse-imager';
+const DEFAULT_HANDLE = 'oxpulse-admin-app';
 
-// Parse CLI args: --locale=ru_RU
-const argLocale = process.argv
-  .find((a) => a.startsWith('--locale='))
-  ?.split('=')[1];
+// Parse CLI args: --locale=ru_RU --handle=oxpulse-admin-app
+const args = Object.fromEntries(
+  process.argv
+    .filter((a) => a.startsWith('--'))
+    .map((a) => {
+      const [k, v] = a.slice(2).split('=');
+      return [k, v];
+    })
+);
+const argLocale = args.locale;
+const handle = args.handle || DEFAULT_HANDLE;
 
 /** Parse a .po file into a list of entries. Each entry is:
  *   { msgctxt?, msgid, msgidPlural?, msgstr (string or string[]), references: string[] }
@@ -220,7 +228,7 @@ function processPo(poPath, locale) {
   console.log(`  ${entries.length} total entries, ${jsEntries.length} JS-only.`);
 
   const json = buildJedJson(locale, jsEntries, pluralForms);
-  const outPath = join(LANG_DIR, `${DOMAIN}-${locale}-${DOMAIN}.json`);
+  const outPath = join(LANG_DIR, `${DOMAIN}-${locale}-${handle}.json`);
   writeFileSync(outPath, JSON.stringify(json, null, 2) + '\n');
   console.log(`✓ Wrote ${outPath}`);
 }
