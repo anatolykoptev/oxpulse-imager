@@ -1,0 +1,28 @@
+# Exclude non-distributable files from release ZIPs (git archive + 10up SVN action).
+# This is the WordPress/performance team standard (issue #217) — one file for both
+# git archive and the 10up deploy action.
+#
+# Files NOT listed here ARE included in the release ZIP. That includes:
+# oxpulse-imager.php, readme.txt, src/, assets/{js,css,manifest.json}, languages/
+
+/.git export-ignore
+/.github export-ignore
+/node_modules export-ignore
+/vendor export-ignore
+/tests export-ignore
+/build export-ignore
+/.gitignore export-ignore
+/.gitattributes export-ignore
+/.distignore export-ignore
+/.editorconfig export-ignore
+/.phpunit.result.cache export-ignore
+/phpunit.xml.dist export-ignore
+/composer.json export-ignore
+/composer.lock export-ignore
+/package.json export-ignore
+/package-lock.json export-ignore
+/CHANGELOG.md export-ignore
+/ROADMAP.md export-ignore
+/SECURITY.md export-ignore
+/.release-please-manifest.json export-ignore
+/release-please-config.json export-ignore
