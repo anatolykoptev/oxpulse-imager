@@ -141,12 +141,12 @@ msgid "No source URL provided."
 msgstr ""
 
 #. translators: %s: PHP version requirement.
-#: oxpulse-imager.php:49
+#: oxpulse-imager.php:51
 msgid "OXPulse Imager requires PHP 8.3 or higher. You are running %s."
 msgstr ""
 
 #. translators: %s: WordPress version requirement.
-#: oxpulse-imager.php:62
+#: oxpulse-imager.php:64
 msgid "OXPulse Imager requires WordPress 6.2 or higher. You are running %s."
 msgstr ""
 

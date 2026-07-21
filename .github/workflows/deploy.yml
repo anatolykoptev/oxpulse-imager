@@ -39,6 +39,9 @@ jobs:
       - name: Build admin SPA
         run: npm run build
 
+      - name: Generate .pot file
+        run: npm run make-pot
+
       - name: Run tests (gate the deploy)
         run: |
           composer test:unit

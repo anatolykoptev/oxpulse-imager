@@ -3,6 +3,7 @@
     "description": "Optional bring-your-own imgproxy image delivery for WordPress.",
     "type": "wordpress-plugin",
     "license": "GPL-2.0-or-later",
+    "version": "0.1.0",
     "authors": [
         {
             "name": "Anatoly Koptev",
