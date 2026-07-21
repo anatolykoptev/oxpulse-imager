@@ -86,11 +86,20 @@ final class ImgproxyPathBuilder
      * - 'local' mode: `local://{base64url(path)}` (imgproxy reads from filesystem).
      *   The path is base64url-encoded per imgproxy spec. No padding (=) — imgproxy
      *   accepts unpadded base64url.
+     *
+     *   imgproxy expects `local:///path/to/image.jpg` (three slashes —
+     *   `local://` + `/path`). The leading slash in the path is REQUIRED:
+     *   without it imgproxy treats the path as relative and 403s. The
+     *   fsPath from SourcePolicy is relative to localBasePath (no leading
+     *   slash), so we prepend '/' before base64url-encoding.
      */
     private function sourceSegment(TransformRequest $request): string
     {
         if ($request->sourceMode === 'local') {
-            $encoded = rtrim(strtr(base64_encode($request->sourceUrl), '+/', '-_'), '=');
+            // Prepend leading slash — imgproxy expects local:///path, and
+            // SourcePolicy returns a relative path (no leading slash).
+            $path = '/' . ltrim($request->sourceUrl, '/');
+            $encoded = rtrim(strtr(base64_encode($path), '+/', '-_'), '=');
             return 'local://' . $encoded;
         }
 
