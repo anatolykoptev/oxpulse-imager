@@ -117,6 +117,8 @@ class UrlRewriterTest extends TestCase
         $this->assertStringStartsWith(self::ENDPOINT . '/', $result->url);
         // The signed URL must contain the plain source URL.
         $this->assertStringContainsString('plain/https://example.com/wp-content/uploads/img.jpg', $result->url);
+        // Content-Disposition filename option must be present.
+        $this->assertStringContainsString('fn:', $result->url);
     }
 
     public function test_rewritten_url_contains_signature(): void
@@ -203,5 +205,81 @@ class UrlRewriterTest extends TestCase
 
         // Context is diagnostic only, does not change the signed URL.
         $this->assertSame($fromContent->url, $fromSrcset->url);
+    }
+
+    public function test_auto_format_omits_at_suffix_for_accept_negotiation(): void
+    {
+        $rewriter = $this->createRewriter();
+        $result = $rewriter->rewrite('https://example.com/wp-content/uploads/img.jpg');
+
+        $this->assertTrue($result->rewritten);
+        // No @avif or @webp suffix — imgproxy uses Accept header.
+        $this->assertStringNotContainsString('@avif', $result->url);
+        $this->assertStringNotContainsString('@webp', $result->url);
+    }
+
+    public function test_explicit_avif_format_adds_at_suffix(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: self::ENDPOINT,
+            allowedSources: [self::ALLOWED],
+            outputFormat: 'avif',
+        );
+        $rewriter = new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX)
+        );
+
+        $result = $rewriter->rewrite('https://example.com/wp-content/uploads/img.jpg');
+
+        $this->assertTrue($result->rewritten);
+        $this->assertStringContainsString('@avif', $result->url);
+    }
+
+    public function test_content_disposition_filename_preserves_original_in_auto_mode(): void
+    {
+        $rewriter = $this->createRewriter();
+        $result = $rewriter->rewrite('https://example.com/wp-content/uploads/photo.jpg');
+
+        $this->assertTrue($result->rewritten);
+        // In auto mode, the filename is the original basename.
+        // Verify the base64url-encoded 'photo.jpg' appears in the URL.
+        $expected = rtrim(strtr(base64_encode('photo.jpg'), '+/', '-_'), '=');
+        $this->assertStringContainsString('fn:' . $expected . ':1', $result->url);
+    }
+
+    public function test_content_disposition_filename_replaces_extension_in_explicit_format(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: self::ENDPOINT,
+            allowedSources: [self::ALLOWED],
+            outputFormat: 'avif',
+        );
+        $rewriter = new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX)
+        );
+
+        $result = $rewriter->rewrite('https://example.com/wp-content/uploads/photo.jpg');
+
+        $this->assertTrue($result->rewritten);
+        // In explicit format mode, the filename extension is replaced.
+        $expected = rtrim(strtr(base64_encode('photo.avif'), '+/', '-_'), '=');
+        $this->assertStringContainsString('fn:' . $expected . ':1', $result->url);
+    }
+
+    public function test_content_disposition_filename_handles_no_extension(): void
+    {
+        $rewriter = $this->createRewriter();
+        $result = $rewriter->rewrite('https://example.com/wp-content/uploads/photo');
+
+        $this->assertTrue($result->rewritten);
+        // Original filename passed through in auto mode.
+        $expected = rtrim(strtr(base64_encode('photo'), '+/', '-_'), '=');
+        $this->assertStringContainsString('fn:' . $expected . ':1', $result->url);
     }
 }

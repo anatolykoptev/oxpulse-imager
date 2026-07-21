@@ -7,6 +7,12 @@
  * (ImgproxyUrlGenerator). Always fails safe: on any denial, error, or
  * missing configuration, the original URL is preserved unchanged.
  *
+ * Generates Content-Disposition filenames from the source URL so that
+ * "Save As" in browsers produces meaningful filenames. When an explicit
+ * output format is configured (avif/webp), the filename extension
+ * reflects the output format; in 'auto' mode (Accept negotiation), the
+ * source filename is passed without extension modification.
+ *
  * @package OXPulse\Imager\Application\Delivery
  * @copyright Copyright (c) 2026 Anatoly Koptev
  * @license GPL-2.0-or-later
@@ -83,11 +89,49 @@ final class UrlRewriter
             $pathBuilder = new ImgproxyPathBuilder();
             $generator = new ImgproxyUrlGenerator($pathBuilder, $signer, $this->delivery->endpoint);
 
-            return RewriteResult::rewritten($generator->generate($request));
+            $filename = $this->buildContentDispositionFilename($sourceUrl);
+
+            return RewriteResult::rewritten($generator->generate($request, $filename));
         } catch (\Throwable $e) {
             // Fail safe: any unexpected error preserves the original URL.
             return RewriteResult::preserved($sourceUrl, 'generation_error');
         }
+    }
+
+    /**
+     * Build a Content-Disposition filename from the source URL.
+     *
+     * When an explicit output format is configured (avif/webp/jpeg),
+     * the filename extension is replaced to match. In 'auto' mode
+     * (Accept negotiation), the original filename is preserved —
+     * imgproxy will set the correct extension in Content-Disposition
+     * based on the negotiated format.
+     */
+    private function buildContentDispositionFilename(string $sourceUrl): ?string
+    {
+        $path = parse_url($sourceUrl, PHP_URL_PATH);
+        if (!is_string($path) || $path === '') {
+            return null;
+        }
+
+        $basename = basename($path);
+        if ($basename === '' || $basename === '.') {
+            return null;
+        }
+
+        $format = $this->delivery->outputFormat;
+        if ($format === '' || $format === 'auto') {
+            // In auto mode, pass the original filename. imgproxy will
+            // adjust the extension based on the negotiated format.
+            return $basename;
+        }
+
+        // Replace the extension with the explicit output format.
+        $dotPos = strrpos($basename, '.');
+        if ($dotPos === false) {
+            return $basename . '.' . $format;
+        }
+        return substr($basename, 0, $dotPos) . '.' . $format;
     }
 
     private function resolveResizeType(int $width, int $height): string

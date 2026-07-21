@@ -157,6 +157,7 @@ $saveAction = admin_url('admin-post.php');
                             <option value="<?php echo esc_attr($fmt); ?>" <?php selected($fmt, $outputFormat); ?>><?php echo esc_html($fmt); ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <p class="description"><?php esc_html_e('auto = Accept header negotiation (AVIF/WebP/original based on browser support, requires IMGPROXY_AUTO_AVIF on the server). Explicit format overrides negotiation.', 'oxpulse-imager'); ?></p>
                 </td>
             </tr>
 

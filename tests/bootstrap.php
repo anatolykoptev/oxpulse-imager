@@ -220,10 +220,12 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     }
     if (!function_exists('wp_remote_head')) {
         function wp_remote_head($url, $args = []) {
-            if (!empty($GLOBALS['__oxpulse_http_responses'][$url])) {
-                return $GLOBALS['__oxpulse_http_responses'][$url];
-            }
-            return new \WP_Error('stub', 'No stub response registered for ' . $url);
+            return self_stub_http_response($url, $args, 'head');
+        }
+    }
+    if (!function_exists('wp_remote_get')) {
+        function wp_remote_get($url, $args = []) {
+            return self_stub_http_response($url, $args, 'get');
         }
     }
     if (!function_exists('wp_remote_retrieve_response_code')) {
@@ -232,6 +234,14 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
                 return (int) $response['response']['code'];
             }
             return 0;
+        }
+    }
+    if (!function_exists('wp_remote_retrieve_headers')) {
+        function wp_remote_retrieve_headers($response) {
+            if (is_array($response) && isset($response['headers'])) {
+                return $response['headers'];
+            }
+            return [];
         }
     }
     if (!function_exists('is_wp_error')) {
@@ -247,6 +257,26 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
                 if ($code === '') { $code = array_key_first($this->errors); }
                 return $this->errors[$code][0] ?? '';
             }
+        }
+    }
+
+    // Helper for stub HTTP responses. Tests register responses in
+    // $GLOBALS['__oxpulse_http_responses'] keyed by URL. If a custom
+    // header-based key is registered, that takes precedence.
+    if (!function_exists('self_stub_http_response')) {
+        function self_stub_http_response($url, $args, $method) {
+            $headers = $args['headers'] ?? [];
+            $key = $url;
+            if (!empty($headers['Accept'])) {
+                $key = $url . '#Accept=' . $headers['Accept'];
+            }
+            if (isset($GLOBALS['__oxpulse_http_responses'][$key])) {
+                return $GLOBALS['__oxpulse_http_responses'][$key];
+            }
+            if (isset($GLOBALS['__oxpulse_http_responses'][$url])) {
+                return $GLOBALS['__oxpulse_http_responses'][$url];
+            }
+            return new \WP_Error('stub', 'No stub response registered for ' . $url);
         }
     }
     if (!function_exists('http_build_query')) {

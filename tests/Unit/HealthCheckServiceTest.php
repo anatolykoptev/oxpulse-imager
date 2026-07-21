@@ -2,8 +2,9 @@
 /**
  * HealthCheckService tests.
  *
- * Verifies endpoint validation, HTTP status interpretation, and error
- * handling using a stub HTTP client. No network access.
+ * Verifies endpoint validation, HTTP status interpretation, error
+ * handling, and AVIF format negotiation detection using a stub HTTP
+ * client. No network access.
  *
  * @package OXPulse\Imager
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -52,7 +53,7 @@ class HealthCheckServiceTest extends TestCase
 
     public function test_200_response_returns_ok(): void
     {
-        $this->client->nextResponse = ['status' => 200, 'error' => null];
+        $this->client->nextHeadResponse = ['status' => 200, 'error' => null, 'headers' => []];
         $result = $this->service->checkEndpoint('https://imgproxy.example.com');
 
         $this->assertTrue($result->ok);
@@ -62,7 +63,7 @@ class HealthCheckServiceTest extends TestCase
 
     public function test_endpoint_trailing_slash_normalized(): void
     {
-        $this->client->nextResponse = ['status' => 200, 'error' => null];
+        $this->client->nextHeadResponse = ['status' => 200, 'error' => null, 'headers' => []];
         $this->service->checkEndpoint('https://imgproxy.example.com/');
 
         $this->assertSame('https://imgproxy.example.com/health', $this->client->lastUrl);
@@ -70,7 +71,7 @@ class HealthCheckServiceTest extends TestCase
 
     public function test_404_returns_failed_with_status_code(): void
     {
-        $this->client->nextResponse = ['status' => 404, 'error' => null];
+        $this->client->nextHeadResponse = ['status' => 404, 'error' => null, 'headers' => []];
         $result = $this->service->checkEndpoint('https://imgproxy.example.com');
 
         $this->assertFalse($result->ok);
@@ -80,7 +81,7 @@ class HealthCheckServiceTest extends TestCase
 
     public function test_500_returns_failed_with_status_code(): void
     {
-        $this->client->nextResponse = ['status' => 503, 'error' => null];
+        $this->client->nextHeadResponse = ['status' => 503, 'error' => null, 'headers' => []];
         $result = $this->service->checkEndpoint('https://imgproxy.example.com');
 
         $this->assertFalse($result->ok);
@@ -90,7 +91,7 @@ class HealthCheckServiceTest extends TestCase
 
     public function test_transport_error_returns_unreachable(): void
     {
-        $this->client->nextResponse = ['status' => 0, 'error' => 'Connection refused'];
+        $this->client->nextHeadResponse = ['status' => 0, 'error' => 'Connection refused', 'headers' => []];
         $result = $this->service->checkEndpoint('https://imgproxy.example.com');
 
         $this->assertFalse($result->ok);
@@ -100,7 +101,7 @@ class HealthCheckServiceTest extends TestCase
 
     public function test_unexpected_status_returns_failed(): void
     {
-        $this->client->nextResponse = ['status' => 418, 'error' => null];
+        $this->client->nextHeadResponse = ['status' => 418, 'error' => null, 'headers' => []];
         $result = $this->service->checkEndpoint('https://imgproxy.example.com');
 
         $this->assertFalse($result->ok);
@@ -110,12 +111,146 @@ class HealthCheckServiceTest extends TestCase
 
     public function test_timeout_is_passed_to_client(): void
     {
-        $this->client->nextResponse = ['status' => 200, 'error' => null];
+        $this->client->nextHeadResponse = ['status' => 200, 'error' => null, 'headers' => []];
         $this->service->checkEndpoint('https://imgproxy.example.com');
 
-        // The service uses a 10-second timeout constant; verify it is
-        // forwarded to the HTTP client rather than being silently dropped.
         $this->assertSame(10, $this->client->lastTimeout);
+    }
+
+    // --- AVIF format negotiation tests ---
+
+    public function test_avif_support_detected_when_content_type_is_avif(): void
+    {
+        $this->client->nextGetResponse = [
+            'status' => 200,
+            'error' => null,
+            'headers' => ['content-type' => 'image/avif'],
+        ];
+
+        $result = $this->service->checkAvifSupport(
+            'https://imgproxy.example.com',
+            'https://example.com/photo.jpg'
+        );
+
+        $this->assertTrue($result->ok);
+        $this->assertStringContainsString('AVIF', $result->message);
+    }
+
+    public function test_avif_support_failed_when_content_type_is_webp(): void
+    {
+        $this->client->nextGetResponse = [
+            'status' => 200,
+            'error' => null,
+            'headers' => ['content-type' => 'image/webp'],
+        ];
+
+        $result = $this->service->checkAvifSupport(
+            'https://imgproxy.example.com',
+            'https://example.com/photo.jpg'
+        );
+
+        $this->assertFalse($result->ok);
+        $this->assertStringContainsString('IMGPROXY_AUTO_AVIF', $result->message);
+    }
+
+    public function test_avif_support_failed_when_content_type_is_jpeg(): void
+    {
+        $this->client->nextGetResponse = [
+            'status' => 200,
+            'error' => null,
+            'headers' => ['content-type' => 'image/jpeg'],
+        ];
+
+        $result = $this->service->checkAvifSupport(
+            'https://imgproxy.example.com',
+            'https://example.com/photo.jpg'
+        );
+
+        $this->assertFalse($result->ok);
+        $this->assertStringContainsString('IMGPROXY_AUTO_AVIF', $result->message);
+    }
+
+    public function test_avif_support_failed_on_non_200(): void
+    {
+        $this->client->nextGetResponse = [
+            'status' => 404,
+            'error' => null,
+            'headers' => [],
+        ];
+
+        $result = $this->service->checkAvifSupport(
+            'https://imgproxy.example.com',
+            'https://example.com/photo.jpg'
+        );
+
+        $this->assertFalse($result->ok);
+        $this->assertSame(404, $result->statusCode);
+    }
+
+    public function test_avif_support_failed_on_transport_error(): void
+    {
+        $this->client->nextGetResponse = [
+            'status' => 0,
+            'error' => 'Connection refused',
+            'headers' => [],
+        ];
+
+        $result = $this->service->checkAvifSupport(
+            'https://imgproxy.example.com',
+            'https://example.com/photo.jpg'
+        );
+
+        $this->assertFalse($result->ok);
+        $this->assertSame('unreachable', $result->status);
+    }
+
+    public function test_avif_support_empty_endpoint_returns_failed(): void
+    {
+        $result = $this->service->checkAvifSupport('', 'https://example.com/photo.jpg');
+
+        $this->assertFalse($result->ok);
+        $this->assertStringContainsString('empty', $result->message);
+    }
+
+    public function test_avif_support_empty_sample_image_returns_failed(): void
+    {
+        $result = $this->service->checkAvifSupport('https://imgproxy.example.com', '');
+
+        $this->assertFalse($result->ok);
+        $this->assertStringContainsString('empty', $result->message);
+    }
+
+    public function test_avif_support_sends_accept_header(): void
+    {
+        $this->client->nextGetResponse = [
+            'status' => 200,
+            'error' => null,
+            'headers' => ['content-type' => 'image/avif'],
+        ];
+
+        $this->service->checkAvifSupport(
+            'https://imgproxy.example.com',
+            'https://example.com/photo.jpg'
+        );
+
+        $this->assertNotNull($this->client->lastHeaders);
+        $this->assertStringContainsString('image/avif', $this->client->lastHeaders['Accept'] ?? '');
+    }
+
+    public function test_avif_support_case_insensitive_content_type(): void
+    {
+        $this->client->nextGetResponse = [
+            'status' => 200,
+            'error' => null,
+            'headers' => ['Content-Type' => 'image/AVIF'],
+        ];
+
+        $result = $this->service->checkAvifSupport(
+            'https://imgproxy.example.com',
+            'https://example.com/photo.jpg'
+        );
+
+        $this->assertTrue($result->ok);
     }
 }
 
@@ -126,12 +261,22 @@ final class StubHealthClient implements HealthCheckHttpClient
 {
     public ?string $lastUrl = null;
     public ?int $lastTimeout = null;
-    public array $nextResponse = ['status' => 0, 'error' => 'no response stubbed'];
+    public ?array $lastHeaders = null;
+    public array $nextHeadResponse = ['status' => 0, 'error' => 'no response stubbed', 'headers' => []];
+    public array $nextGetResponse = ['status' => 0, 'error' => 'no response stubbed', 'headers' => []];
 
     public function head(string $url, int $timeoutSeconds): array
     {
         $this->lastUrl = $url;
         $this->lastTimeout = $timeoutSeconds;
-        return $this->nextResponse;
+        return $this->nextHeadResponse;
+    }
+
+    public function get(string $url, int $timeoutSeconds, array $headers = []): array
+    {
+        $this->lastUrl = $url;
+        $this->lastTimeout = $timeoutSeconds;
+        $this->lastHeaders = $headers;
+        return $this->nextGetResponse;
     }
 }

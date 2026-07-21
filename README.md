@@ -4,11 +4,63 @@ Optional bring-your-own imgproxy image delivery for WordPress.
 
 Generates signed, deterministic imgproxy URLs for approved local origins while preserving the original URL whenever configuration, source policy, signing, or delivery cannot safely proceed. Disabled by default. No SaaS, no telemetry, no FFI.
 
+## How it works
+
+The plugin rewrites image URLs on the frontend (never in admin) to signed imgproxy URLs. imgproxy fetches the original image, transforms it (resize, format conversion, quality), and serves the result. The original image is never modified.
+
+### Format negotiation (2026 industry standard)
+
+The default output format is `auto`, which uses **Accept header content negotiation** — the same approach used by Cloudflare Images, Cloudinary, Imgix, and Vercel:
+
+1. Browser sends `Accept: image/avif,image/webp,...` on every image request
+2. imgproxy inspects the Accept header and serves the best format the browser supports:
+   - `image/avif` → AVIF (~50% smaller than JPEG)
+   - `image/webp` → WebP (~30% smaller)
+   - neither → original format (JPEG fallback)
+3. Response includes `Vary: Accept` so caches store one variant per format
+
+**No `<picture>` / `<source>` tags needed.** One URL serves the optimal format per browser.
+
+### Content-Disposition
+
+The plugin adds a `fn:` (filename) option to every imgproxy URL so that "Save As" in browsers produces a meaningful filename. In `auto` mode, the original filename is preserved; in explicit format mode (`avif`/`webp`), the extension is replaced to match.
+
 ## Requirements
 
 - PHP 8.3+
 - WordPress 6.2+
 - imgproxy v4+ endpoint (bring your own)
+
+## imgproxy server configuration
+
+For `auto` format mode (Accept header negotiation), configure your imgproxy server with:
+
+```bash
+IMGPROXY_AUTO_AVIF=true
+IMGPROXY_AUTO_WEBP=true
+```
+
+Without these, `auto` mode will serve the original format (no conversion). Use the "Test Connection" button in the plugin settings to verify that AVIF negotiation is working.
+
+## CDN / caching proxy configuration
+
+**Critical:** When using `auto` format mode, your CDN or caching proxy MUST include the `Accept` header in the cache key. Otherwise, the CDN will serve an AVIF response to a browser that requested WebP (or vice versa).
+
+### Nginx cache key
+
+```nginx
+proxy_cache_key "$scheme$proxy_host$request_uri$http_accept";
+```
+
+### CDN settings
+
+- Include `Accept` header in cache key
+- Do not strip or normalize the `Accept` header
+- Honor the `Vary: Accept` response header from imgproxy
+
+### Security note
+
+Headers cannot be signed. An attacker can bypass your CDN cache by varying the `Accept` header. This is a cache-poisoning vector, not a security vulnerability in the plugin — imgproxy will still only serve allowed formats. Configure your CDN to limit the number of distinct `Accept` header variants it will cache.
 
 ## License
 

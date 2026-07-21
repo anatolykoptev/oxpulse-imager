@@ -136,7 +136,7 @@ class SettingsControllerTest extends TestCase
 
     public function test_do_test_connection_uses_form_endpoint_when_provided(): void
     {
-        $this->healthClient->nextResponse = ['status' => 200, 'error' => null];
+        $this->healthClient->nextResponse = ['status' => 200, 'error' => null, 'headers' => []];
 
         $url = $this->controller->doTestConnection('https://imgproxy.example.com');
 
@@ -146,7 +146,7 @@ class SettingsControllerTest extends TestCase
 
     public function test_do_test_connection_falls_back_to_stored_endpoint(): void
     {
-        $this->healthClient->nextResponse = ['status' => 200, 'error' => null];
+        $this->healthClient->nextResponse = ['status' => 200, 'error' => null, 'headers' => []];
         update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://stored.example.com');
 
         $url = $this->controller->doTestConnection('');
@@ -157,7 +157,7 @@ class SettingsControllerTest extends TestCase
 
     public function test_do_test_connection_reports_unreachable(): void
     {
-        $this->healthClient->nextResponse = ['status' => 0, 'error' => 'Connection refused'];
+        $this->healthClient->nextResponse = ['status' => 0, 'error' => 'Connection refused', 'headers' => []];
 
         $url = $this->controller->doTestConnection('https://imgproxy.example.com');
 
@@ -167,7 +167,7 @@ class SettingsControllerTest extends TestCase
 
     public function test_do_test_connection_reports_404(): void
     {
-        $this->healthClient->nextResponse = ['status' => 404, 'error' => null];
+        $this->healthClient->nextResponse = ['status' => 404, 'error' => null, 'headers' => []];
 
         $url = $this->controller->doTestConnection('https://imgproxy.example.com');
 
@@ -201,9 +201,16 @@ final class StubHealthClient implements HealthCheckHttpClient
 {
     public ?string $lastUrl = null;
     public ?int $lastTimeout = null;
-    public array $nextResponse = ['status' => 0, 'error' => 'no response stubbed'];
+    public array $nextResponse = ['status' => 0, 'error' => 'no response stubbed', 'headers' => []];
 
     public function head(string $url, int $timeoutSeconds): array
+    {
+        $this->lastUrl = $url;
+        $this->lastTimeout = $timeoutSeconds;
+        return $this->nextResponse;
+    }
+
+    public function get(string $url, int $timeoutSeconds, array $headers = []): array
     {
         $this->lastUrl = $url;
         $this->lastTimeout = $timeoutSeconds;
