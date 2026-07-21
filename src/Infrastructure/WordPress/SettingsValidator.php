@@ -192,6 +192,27 @@ final class SettingsValidator
         }
         $values['save_data_quality_reduction'] = max(0, min(50, $saveDataReduction));
 
+        // Size-based quality tiers (Ф8) — map of maxWidth => quality.
+        $sizeTiers = $input['size_quality_tiers'] ?? [];
+        $cleanTiers = [];
+        if (is_array($sizeTiers)) {
+            foreach ($sizeTiers as $maxWidth => $quality) {
+                $mw = (int) $maxWidth;
+                $q = (int) $quality;
+                if ($mw <= 0) {
+                    $errors['size_quality_tiers'] = __('Size quality tier widths must be positive integers.', 'oxpulse-imager');
+                    continue;
+                }
+                if ($q < 1 || $q > 100) {
+                    $errors['size_quality_tiers'] = __('Size quality tier values must be between 1 and 100.', 'oxpulse-imager');
+                    continue;
+                }
+                $cleanTiers[$mw] = $q;
+            }
+        }
+        ksort($cleanTiers, SORT_NUMERIC);
+        $values['size_quality_tiers'] = $cleanTiers;
+
         return ['values' => $values, 'errors' => $errors];
     }
 

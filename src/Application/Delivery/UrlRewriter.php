@@ -97,7 +97,12 @@ final class UrlRewriter
             // Save-Data: on (mobile data saver / lite mode), reduce image
             // quality by the configured amount. This saves bandwidth on
             // metered connections with minimal perceptual quality loss.
-            [$quality, $formatQuality] = $this->applySaveDataReduction(
+            // Ф8: Size-based quality tiers. When the requested width falls
+            // within a configured tier (maxWidth), use that tier's quality
+            // instead of defaultQuality. Applied BEFORE Save-Data reduction
+            // so Save-Data stacks on top of the size-appropriate quality.
+            [$quality, $formatQuality] = $this->applyQualityAdjustments(
+                $width,
                 $this->delivery->defaultQuality,
                 $this->delivery->formatQuality
             );
@@ -315,6 +320,65 @@ final class UrlRewriter
             return '';
         }
         return 'fit';
+    }
+
+    /**
+     * Ф8: Resolve the quality for a given requested width from the
+     * size-based quality tiers configuration.
+     *
+     * Tiers are matched smallest-first: the first tier whose maxWidth >=
+     * $width wins. If no tier matches (width larger than the largest
+     * tier, or width is 0/auto), returns null → caller uses
+     * defaultQuality.
+     *
+     * @param int $width Requested width in pixels (0 = auto/original).
+     * @return int|null Resolved quality, or null when no tier matches.
+     */
+    private function resolveSizeQuality(int $width): ?int
+    {
+        if ($width <= 0 || empty($this->delivery->sizeQualityTiers)) {
+            return null;
+        }
+
+        // Sort tiers by maxWidth ascending so the smallest matching tier
+        // wins. The config is a map [maxWidth => quality]; PHP preserves
+        // insertion order but we sort for determinism.
+        $tiers = $this->delivery->sizeQualityTiers;
+        ksort($tiers, SORT_NUMERIC);
+
+        foreach ($tiers as $maxWidth => $quality) {
+            if ($width <= $maxWidth) {
+                return $quality;
+            }
+        }
+
+        // Width larger than the largest tier → use defaultQuality.
+        return null;
+    }
+
+    /**
+     * Ф7 + Ф8: Apply size-based quality tiers, then Save-Data reduction.
+     *
+     * Order matters: size-based quality is applied first (selects the
+     * appropriate base quality for the image size), then Save-Data
+     * reduction stacks on top (further reduces for data-saving browsers).
+     * Both are no-ops when their respective configs are empty/zero.
+     *
+     * @param int $width Requested width in pixels.
+     * @param int $defaultQuality Configured default quality.
+     * @param array<string,int> $formatQuality Configured per-format quality.
+     * @return array{0:int,1:array<string,int>} [adjusted quality, adjusted formatQuality]
+     */
+    private function applyQualityAdjustments(int $width, int $defaultQuality, array $formatQuality): array
+    {
+        // Ф8: Size-based quality tier overrides defaultQuality.
+        $sizeQuality = $this->resolveSizeQuality($width);
+        if ($sizeQuality !== null) {
+            $defaultQuality = $sizeQuality;
+        }
+
+        // Ф7: Save-Data reduction stacks on top.
+        return $this->applySaveDataReduction($defaultQuality, $formatQuality);
     }
 
     /**
