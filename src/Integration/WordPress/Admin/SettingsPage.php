@@ -107,11 +107,12 @@ final class SettingsPage
         );
 
         // Load translations for the admin SPA. WordPress looks up
-        // languages/oxpulse-imager-<locale>-oxpulse-imager.json (the
+        // {$languagesPath}/{$domain}-{$locale}-{$handle}.json (the
         // JS-specific translation file generated from the .po by
         // build/make-json.mjs) and inlines it as a <script> before our
         // bundle, populating @wordpress/i18n's locale data registry.
-        wp_set_script_translations('oxpulse-admin-app', 'oxpulse-imager', $pluginPath);
+        // $path must point at the languages/ directory itself.
+        wp_set_script_translations('oxpulse-admin-app', 'oxpulse-imager', $pluginPath . '/languages');
 
         wp_localize_script(
             'oxpulse-admin-app',
