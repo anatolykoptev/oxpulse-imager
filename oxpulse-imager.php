@@ -116,6 +116,15 @@ function oxpulse_imager_activate(): void {
     }
 
     oxpulse_imager_grant_capability();
+
+    // Phase 6 Dispatch 3: generate the LocalBackend miss-endpoint +
+    // cache .htaccess when LocalBackend is active. No-op at fresh
+    // activation (delivery disabled, no signing secrets yet) — the
+    // real generation fires on settings-save once the operator
+    // configures secrets without an imgproxy endpoint.
+    if (class_exists(\OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::class)) {
+        \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::installLocalDelivery();
+    }
 }
 
 /**
@@ -126,6 +135,14 @@ function oxpulse_imager_activate(): void {
  */
 function oxpulse_imager_deactivate(): void {
     delete_transient(OXPULSE_IMAGER_OPTION_PREFIX . 'health_check');
+
+    // Phase 6 Dispatch 3: remove the generated LocalBackend miss-endpoint
+    // + cache .htaccess so they don't go stale while the plugin is
+    // inactive. No-op when ImgproxyBackend was active (nothing was
+    // generated). Settings are preserved (not deleted).
+    if (class_exists(\OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::class)) {
+        \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::uninstallLocalDelivery();
+    }
 }
 
 register_activation_hook(__FILE__, 'oxpulse_imager_activate');

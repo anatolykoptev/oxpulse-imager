@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\WordPress;
 
+use OXPulse\Imager\Application\Delivery\DeliveryBackendFactory;
 use OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Application\Diagnostics\DiagnosticLoggerInterface;
@@ -25,6 +26,9 @@ use OXPulse\Imager\Application\Prewarm\PrewarmJobStore;
 use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
+use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
+use OXPulse\Imager\Infrastructure\Local\FallbackRewriter;
+use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminBarDiagnostics;
 use OXPulse\Imager\Integration\WordPress\Admin\DiagnosticsRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\HealthRestController;
@@ -43,6 +47,7 @@ use OXPulse\Imager\Integration\WordPress\Delivery\IntermediateSizeRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
 use OXPulse\Imager\Integration\WordPress\Compatibility\RankMathCompatibility;
 use OXPulse\Imager\Integration\WordPress\Performance\OptimizationDetectiveIntegration;
+use OXPulse\Imager\Infrastructure\Local\CacheInvalidator;
 use OXPulse\Imager\Plugin;
 
 final class ServiceRegistrar
@@ -76,6 +81,8 @@ final class ServiceRegistrar
         self::registerCli($plugin);
         self::registerPerformanceIntegration($plugin);
         self::registerAsyncPrewarmCron($plugin);
+        self::registerLocalCacheInvalidation($plugin);
+        self::registerLocalDeliverySettingsSync($plugin);
     }
 
     /**
@@ -163,7 +170,17 @@ final class ServiceRegistrar
         );
 
         $logger = self::diagnosticLogger();
-        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, $logger);
+
+        // Dispatch 3: select the delivery backend via the factory seam.
+        // imgproxy endpoint non-empty → ImgproxyBackend (byte-identical
+        // to the pre-seam lazy path, verified by DeliveryBackendSeamTest);
+        // empty → LocalBackend (on-disk WebP delivery). The selected
+        // backend is injected into UrlRewriter so the rewrite path
+        // actually exercises it (previously the backend was left null
+        // and UrlRewriter always lazily constructed an ImgproxyBackend,
+        // so LocalBackend was never reached at runtime).
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, $logger, $backend);
 
         // Expose the rewriter for the public oxpulse_thumb_url() helper.
         // Sibling mu-plugins (e.g. piter-api) call oxpulse_thumb_url()
@@ -244,6 +261,42 @@ final class ServiceRegistrar
             $rankMath = new RankMathCompatibility();
             $rankMath->register();
         }
+
+        // Dispatch 3: LocalBackend fallback rewriter. When LocalBackend
+        // is active (no imgproxy endpoint) AND the capability test says
+        // .htaccess rewrite is unavailable (nginx, AllowOverride None,
+        // mod_rewrite missing), register the FallbackRewriter
+        // output-buffer so cache URLs emitted by LocalBackend are
+        // rewritten to oxpulse-img.php?k=<key> in the HTML output —
+        // serving works without any server-side rewrite rules. When
+        // ImgproxyBackend is active, the fallback is not registered
+        // (imgproxy URLs don't hit the cache path).
+        if ($delivery->endpoint === '') {
+            $tester = new CapabilityTester();
+            if ($tester->fallbackNeeded()) {
+                $fallback = new FallbackRewriter(
+                    homeUrl: rtrim((string) home_url(), '/'),
+                    endpointPath: '/wp-content/oxpulse-img.php',
+                );
+                self::registerFallbackBuffer($fallback);
+            }
+        }
+    }
+
+    /**
+     * Register the FallbackRewriter as an output-buffer handler.
+     *
+     * Starts the buffer at template_redirect (frontend only) and rewrites
+     * the buffer at shutdown. Kept as a separate method so the wiring is
+     * testable without a full WP environment.
+     */
+    private static function registerFallbackBuffer(FallbackRewriter $rewriter): void
+    {
+        add_action('template_redirect', static function () use ($rewriter): void {
+            ob_start(static function (string $buffer) use ($rewriter): string {
+                return $rewriter->rewrite($buffer);
+            });
+        });
     }
 
     /**
@@ -350,7 +403,12 @@ final class ServiceRegistrar
             OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
         );
 
-        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
+        // Dispatch 3: use the factory seam (consistent with the frontend
+        // delivery path). Prewarming is only meaningful for ImgproxyBackend
+        // (LocalBackend fills its cache on first miss, no daemon to warm),
+        // but the factory keeps the selection logic in one place.
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, null, $backend);
         $syncService = new PrewarmService($rewriter, new \OXPulse\Imager\Infrastructure\Http\WordPressPrewarmClient());
         $asyncService = new AsyncPrewarmService($syncService, new PrewarmJobStore());
         $asyncService->registerCronHandler();
@@ -359,5 +417,176 @@ final class ServiceRegistrar
     private static function deliveryEnabled(): bool
     {
         return (bool) get_option(OXPULSE_IMAGER_OPTION_PREFIX . 'enabled', false);
+    }
+
+    /**
+     * Register local cache invalidation hooks (Phase 6).
+     *
+     * When LocalBackend is the active delivery backend (no imgproxy
+     * endpoint configured), wire the attachment metadata-update / delete
+     * / clean-post-cache hooks to the CacheInvalidator so that editing
+     * or deleting an attachment purges its cached WebP variants.
+     *
+     * When ImgproxyBackend is active, the local cache is not used and
+     * these hooks are not wired (imgproxy manages its own cache).
+     */
+    private static function registerLocalCacheInvalidation(Plugin $plugin): void
+    {
+        add_action('plugins_loaded', static function (): void {
+            if (!self::deliveryEnabled()) {
+                return;
+            }
+
+            // Only wire invalidation when LocalBackend is active (no
+            // imgproxy endpoint). When imgproxy is configured, it
+            // manages its own cache — the local cache dir is not used.
+            $repository = new OptionSettingsRepository();
+            $delivery = $repository->loadDeliveryConfig();
+            if ($delivery->endpoint !== '') {
+                return;
+            }
+
+            $cacheDir = self::resolveLocalCacheDir();
+            if ($cacheDir === null) {
+                return;
+            }
+
+            $invalidator = new CacheInvalidator($cacheDir);
+
+            // Invalidate on attachment metadata update (regeneration,
+            // re-upload, edit).
+            add_action('wp_update_attachment_metadata', static function (array $metadata, int $postId) use ($invalidator): array {
+                $invalidator->invalidateAttachment($postId);
+                return $metadata;
+            }, 10, 2);
+
+            // Invalidate on attachment deletion.
+            add_action('delete_attachment', static function (int $postId) use ($invalidator): void {
+                $invalidator->invalidateAttachment($postId);
+            }, 10, 1);
+
+            // Invalidate on post cache clean (covers various media
+            // editing flows that call clean_post_cache).
+            add_action('clean_post_cache', static function (int $postId) use ($invalidator): void {
+                // Only act on attachments.
+                if (function_exists('get_post_type') && get_post_type($postId) === 'attachment') {
+                    $invalidator->invalidateAttachment($postId);
+                }
+            }, 10, 1);
+        });
+    }
+
+    /**
+     * Resolve the local cache directory path.
+     */
+    private static function resolveLocalCacheDir(): ?string
+    {
+        if (defined('WP_CONTENT_DIR')) {
+            return WP_CONTENT_DIR . '/cache/oxpulse';
+        }
+
+        return null;
+    }
+
+    /**
+     * Install the LocalBackend delivery endpoint + cache .htaccess.
+     *
+     * Called from the activation hook AND on settings-save (via the
+     * updated_option hook registered below). No-op when ImgproxyBackend
+     * is active (endpoint configured) — imgproxy manages its own cache.
+     * Also no-op when signing secrets are not yet saved.
+     */
+    public static function installLocalDelivery(): void
+    {
+        $installer = self::buildLocalDeliveryInstaller();
+        if ($installer === null) {
+            return;
+        }
+
+        $repository = new OptionSettingsRepository();
+        $delivery = $repository->loadDeliveryConfig();
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
+        $signing = $repository->loadSigningConfig();
+
+        $installer->install($delivery, $signing);
+    }
+
+    /**
+     * Uninstall the LocalBackend delivery endpoint + cache .htaccess.
+     *
+     * Called from the deactivation hook. Removes the generated
+     * oxpulse-img.php + cache .htaccess so they don't go stale.
+     */
+    public static function uninstallLocalDelivery(): void
+    {
+        $installer = self::buildLocalDeliveryInstaller();
+        if ($installer === null) {
+            return;
+        }
+        $installer->uninstall();
+    }
+
+    /**
+     * Build the LocalDeliveryInstaller from the WordPress environment.
+     *
+     * Returns null when the required paths (WP_CONTENT_DIR, uploads
+     * base, plugin autoloader) cannot be resolved — the installer is
+     * a no-op in that case (e.g. during unit tests without a real WP
+     * environment).
+     */
+    private static function buildLocalDeliveryInstaller(): ?LocalDeliveryInstaller
+    {
+        if (!defined('WP_CONTENT_DIR')) {
+            return null;
+        }
+
+        $uploads = function_exists('wp_get_upload_dir') ? wp_get_upload_dir() : [];
+        $uploadsBasedir = $uploads['basedir'] ?? '';
+        $uploadsBaseurl = $uploads['baseurl'] ?? '';
+        if ($uploadsBasedir === '' || $uploadsBaseurl === '') {
+            return null;
+        }
+
+        $cacheDir = WP_CONTENT_DIR . '/cache/oxpulse';
+        $cacheBaseUrl = rtrim((string) home_url(), '/') . '/wp-content/cache/oxpulse';
+        $autoloaderPath = OXPULSE_IMAGER_DIR . 'vendor/autoload.php';
+
+        return new LocalDeliveryInstaller(
+            wpContentDir: WP_CONTENT_DIR,
+            uploadsBasedir: $uploadsBasedir,
+            uploadsBaseurl: $uploadsBaseurl,
+            cacheDir: $cacheDir,
+            cacheBaseUrl: $cacheBaseUrl,
+            autoloaderPath: $autoloaderPath,
+        );
+    }
+
+    /**
+     * Register the settings-save hook that re-installs the LocalBackend
+     * delivery endpoint when the endpoint / signing key / signing salt
+     * options change. Keeps the baked endpoint file in sync with the
+     * configured secrets (the endpoint bakes the signing key as a
+     * constant at write time, so it must be regenerated when the key
+     * rotates).
+     */
+    private static function registerLocalDeliverySettingsSync(Plugin $plugin): void
+    {
+        $reinstall = static function (): void {
+            self::installLocalDelivery();
+        };
+
+        add_action('updated_option', static function (string $option) use ($reinstall): void {
+            $watched = [
+                OptionSettingsRepository::OPTION_ENDPOINT,
+                OptionSettingsRepository::OPTION_KEY,
+                OptionSettingsRepository::OPTION_SALT,
+                OptionSettingsRepository::OPTION_ENABLED,
+            ];
+            if (in_array($option, $watched, true)) {
+                $reinstall();
+            }
+        });
     }
 }

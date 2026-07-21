@@ -1,0 +1,3 @@
+tests/Unit/LocalBackendTest.php:generic-api-key:32
+tests/Unit/MissEndpointHandlerTest.php:generic-api-key:35
+tests/Unit/FallbackRewriterTest.php:generic-api-key:28
