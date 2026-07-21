@@ -39,6 +39,7 @@ use OXPulse\Imager\Integration\WordPress\Delivery\AvatarRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\BufferRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
+use OXPulse\Imager\Integration\WordPress\Compatibility\RankMathCompatibility;
 use OXPulse\Imager\Integration\WordPress\Performance\OptimizationDetectiveIntegration;
 use OXPulse\Imager\Plugin;
 
@@ -158,6 +159,15 @@ final class ServiceRegistrar
         if ($delivery->bufferRewritingEnabled) {
             $bufferRewriter = new BufferRewriter($rewriter, $delivery);
             $bufferRewriter->register();
+        }
+
+        // Ф3: RankMath og:image compatibility. Restores direct attachment
+        // URLs in OpenGraph/Twitter meta tags so RankMath's filetype
+        // validation doesn't drop them. Default true — safe to register
+        // unconditionally (the filter is a no-op when RankMath isn't active).
+        if ($delivery->rankMathCompatibility) {
+            $rankMath = new RankMathCompatibility();
+            $rankMath->register();
         }
     }
 
