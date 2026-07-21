@@ -38,6 +38,7 @@ use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentUrlRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\AvatarRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\BufferRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter;
+use OXPulse\Imager\Integration\WordPress\Delivery\ImageDownsizeRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
 use OXPulse\Imager\Integration\WordPress\Compatibility\RankMathCompatibility;
 use OXPulse\Imager\Integration\WordPress\Performance\OptimizationDetectiveIntegration;
@@ -183,6 +184,14 @@ final class ServiceRegistrar
         add_filter('wp_get_attachment_image_src', [$attachmentRewriter, 'rewrite'], 10, 4);
         add_filter('wp_get_attachment_url', [$attachmentUrlRewriter, 'rewrite'], 10, 2);
         add_filter('get_avatar', [$avatarRewriter, 'rewrite'], 10, 5);
+
+        // Ф5: image_downsize at priority 99 (late, to override earlier
+        // filters). Catches plugins/themes that call image_downsize()
+        // directly, bypassing wp_get_attachment_image_src. Recursion
+        // guard inside the handler prevents infinite loops via
+        // wp_get_attachment_url (which is also hooked above).
+        $downsizeRewriter = new ImageDownsizeRewriter($rewriter);
+        add_filter('image_downsize', [$downsizeRewriter, 'rewrite'], 99, 3);
 
         // Ф2: Buffer rewriting for theme-hardcoded <img> tags (e.g. Foxiz).
         // Registered AFTER the 5 filters above so wp_content_img_tag etc.
