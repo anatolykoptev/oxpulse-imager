@@ -16,6 +16,7 @@ declare(strict_types=1);
 namespace OXPulse\Imager\Integration\WordPress\Admin;
 
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
+use OXPulse\Imager\Application\Prewarm\AsyncPrewarmService;
 use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
@@ -58,6 +59,19 @@ final class PrewarmRestController
                 ],
             ]
         );
+
+        // GET /oxpulse/v1/prewarm/<job_id> — poll async job status.
+        register_rest_route(
+            'oxpulse/v1',
+            '/prewarm/(?P<jobId>[a-f0-9-]+)',
+            [
+                [
+                    'methods'             => WP_REST_Server::READABLE,
+                    'callback'            => [$this, 'handlePrewarmJobStatus'],
+                    'permission_callback' => [$this, 'checkPermission'],
+                ],
+            ]
+        );
     }
 
     public function checkPermission(): bool
@@ -68,7 +82,12 @@ final class PrewarmRestController
     /**
      * POST /oxpulse/v1/prewarm — warm a batch of source URLs.
      *
-     * Body: { urls: string[], widths?: number[] }
+     * Body: { urls: string[], widths?: number[], async?: boolean }
+     *
+     * When async=true, creates a background job and returns { jobId }
+     * immediately. Poll GET /prewarm/<jobId> for progress.
+     * When async=false (default), processes synchronously and returns
+     * the full result.
      *
      * @param WP_REST_Request $request
      * @return WP_REST_Response|WP_Error
@@ -82,6 +101,7 @@ final class PrewarmRestController
 
         $urls = $params['urls'] ?? [];
         $widths = $params['widths'] ?? PrewarmRequest::DEFAULT_WIDTHS;
+        $async = (bool) ($params['async'] ?? false);
 
         // Validate + clamp inputs.
         if (!is_array($urls) || count($urls) === 0) {
@@ -167,9 +187,54 @@ final class PrewarmRestController
         $httpClient = new WordPressPrewarmClient();
         $service = new PrewarmService($rewriter, $httpClient);
 
+        // Async mode: create a job, schedule cron processing, return
+        // the job ID immediately. The client polls GET /prewarm/<jobId>.
+        if ($async) {
+            $asyncService = new AsyncPrewarmService($service, new \OXPulse\Imager\Application\Prewarm\PrewarmJobStore());
+            $jobId = $asyncService->createJob($urls, $widths);
+
+            return rest_ensure_response([
+                'jobId'   => $jobId,
+                'status'  => 'pending',
+                'message' => __('Pre-warm job created. Poll GET /oxpulse/v1/prewarm/<jobId> for progress.', 'oxpulse-imager'),
+            ]);
+        }
+
+        // Sync mode (default): process now and return the full result.
         $prewarmRequest = new PrewarmRequest($urls, $widths);
         $batchResult = $service->warm($prewarmRequest);
 
         return rest_ensure_response($batchResult->toArray());
+    }
+
+    /**
+     * GET /oxpulse/v1/prewarm/<jobId> — poll async job status.
+     *
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response|WP_Error
+     */
+    public function handlePrewarmJobStatus(WP_REST_Request $request)
+    {
+        $jobId = (string) ($request->get_param('jobId') ?? '');
+        if ($jobId === '') {
+            return new WP_Error(
+                'oxpulse_prewarm_no_job_id',
+                __('No job ID provided.', 'oxpulse-imager'),
+                ['status' => 400]
+            );
+        }
+
+        $store = new \OXPulse\Imager\Application\Prewarm\PrewarmJobStore();
+        $job = $store->get($jobId);
+
+        if ($job === null) {
+            return new WP_Error(
+                'oxpulse_prewarm_job_not_found',
+                __('Job not found. It may have expired (jobs are kept for 1 hour).', 'oxpulse-imager'),
+                ['status' => 404]
+            );
+        }
+
+        return rest_ensure_response($job);
     }
 }

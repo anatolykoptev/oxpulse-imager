@@ -102,6 +102,47 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('delete_transient')) {
         function delete_transient($transient) { return true; }
     }
+    if (!function_exists('get_transient')) {
+        function get_transient($transient) {
+            return $GLOBALS['__oxpulse_transients'][$transient] ?? false;
+        }
+    }
+    if (!function_exists('set_transient')) {
+        function set_transient($transient, $value, $expiration = 0) {
+            $GLOBALS['__oxpulse_transients'][$transient] = $value;
+            return true;
+        }
+    }
+    if (!function_exists('wp_schedule_single_event')) {
+        function wp_schedule_single_event($timestamp, $hook, $args = []) {
+            $GLOBALS['__oxpulse_scheduled_events'][] = [
+                'timestamp' => $timestamp,
+                'hook'      => $hook,
+                'args'      => $args,
+            ];
+            return true;
+        }
+    }
+    if (!function_exists('wp_cache_flush_group')) {
+        function wp_cache_flush_group($group) { return true; }
+    }
+    if (!function_exists('wp_get_attachment_url')) {
+        function wp_get_attachment_url($id) {
+            $map = $GLOBALS['__oxpulse_attachment_urls'] ?? [];
+            return $map[$id] ?? false;
+        }
+    }
+    if (!function_exists('wp_get_attachment_metadata')) {
+        function wp_get_attachment_metadata($id) {
+            $map = $GLOBALS['__oxpulse_attachment_meta'] ?? [];
+            return $map[$id] ?? false;
+        }
+    }
+    if (!function_exists('get_posts')) {
+        function get_posts($args = []) {
+            return $GLOBALS['__oxpulse_posts'] ?? [];
+        }
+    }
     if (!function_exists('plugin_dir_path')) {
         function plugin_dir_path($file) { return dirname($file) . '/'; }
     }
@@ -212,6 +253,11 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     }
     if (!function_exists('esc_url')) {
         function esc_url($url) { return filter_var($url, FILTER_SANITIZE_URL) ?: ''; }
+    }
+    if (!function_exists('wp_parse_url')) {
+        function wp_parse_url($url, $component = -1) {
+            return parse_url($url, $component);
+        }
     }
     if (!function_exists('wp_json_encode')) {
         function wp_json_encode($data, $options = 0, $depth = 512) {

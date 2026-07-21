@@ -135,25 +135,16 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 
 **Effort:** Small-Medium. ~200 lines + assets.
 
-### Phase 5.7 — WP integration 2026 + async pre-warm (backlog from 5.2/5.3)
+### Phase 5.7 — WP integration 2026 + async pre-warm ✅
 
-**Why:** The original Phase 5.2/5.3 scope that was re-prioritized when the React admin unblocked the UX surface first. These items are what power users + headless WP / external automation need.
+**Shipped:**
+- **WP-CLI commands** — `wp oxpulse status`, `wp oxpulse info <url>`, `wp oxpulse warm [--all|--attachment=<id>|<urls>...] [--widths=...]`, `wp oxpulse flush`. `WarmCommand` chunks into batches of 50, enumerates attachment sizes via `wp_get_attachment_metadata`.
+- **Optimization Detective integration** — `<link rel="preconnect">` to the imgproxy endpoint (always, via `wp_head`); OD tag visitor for IMG tags with imgproxy URLs (only when Image Prioritizer is NOT active, to avoid duplicate preload links). Adds breakpoint-specific preload links for LCP images via OD's `OD_Link_Collection`.
+- **`GET /status`** — config + health + signing in one call.
+- **`GET /info?url=<source>&width=<n>`** — preview the signed imgproxy URL without dispatching a request.
+- **Async pre-warm via WordPress cron** — `POST /prewarm` with `async: true` creates a job + schedules a cron event; `GET /prewarm/<jobId>` polls progress. `AsyncPrewarmService` processes 50 URLs per cron tick, schedules the next batch, and marks the job complete when all URLs are processed. Job state in transients (1-hour expiry).
 
-**Scope:**
-- **Media library column** — `manage_media_custom_column` filter. Shows "OXPulse: rewritten" status, file size savings (via imgproxy `info:` endpoint), "Re-optimize" button.
-- **`wp_prepare_attachment_for_js`** — status in media modal (Gutenberg/REST).
-- **Optimization Detective integration** — if the Performance Lab / Optimization Detective plugin is active, register imgproxy URLs for breakpoint-specific preload links. We don't reimplement LCP detection; we feed URLs into their pipeline.
-- **WP-CLI commands:**
-  - `wp oxpulse warm --all` — pre-warm CDN cache for all images
-  - `wp oxpulse warm --attachment=<id>` — warm a single attachment
-  - `wp oxpulse status` — config + health + counts
-  - `wp oxpulse flush` — clear object cache for rewritten URLs
-  - `wp oxpulse info <url>` — show imgproxy URL that would be generated for a source URL
-- **Async pre-warm via WordPress cron** — `POST /prewarm` returns a job ID instead of blocking; `GET /prewarm/<job_id>` polls progress. Replaces the synchronous batch for large catalogs (50+ images).
-- **`GET /status`** — config + health + counts in one call.
-- **`GET /info?url=<source>`** — preview the generated imgproxy URL without dispatching a request.
-
-**Effort:** Medium-Large. ~800 lines + tests.
+**Effort:** ~1200 lines + tests. 290 PHP tests green on 8.3/8.4/8.5.
 
 ## Out of scope (different plugin category)
 
@@ -176,5 +167,5 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 | 0.4.0 | 5.3 (REST API for health/AVIF + synchronous bulk pre-warm) | Released (`71f1cbc`) |
 | 0.5.0 | 5.4 (diagnostics + admin bar) | Planned |
 | 0.6.0 | 5.5 (onboarding wizard) | Planned |
-| 0.7.0 | 5.7 (WP-CLI, Optimization Detective, async cron pre-warm, /status, /info) | Planned — backlog from re-scoped 5.2/5.3 |
+| 0.7.0 | 5.7 (WP-CLI, Optimization Detective, async cron pre-warm, /status, /info) | Released |
 | 1.0.0 | 5.6 (wordpress.org release) | Planned — first stable release |

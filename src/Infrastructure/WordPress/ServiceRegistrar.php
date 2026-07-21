@@ -19,17 +19,23 @@ namespace OXPulse\Imager\Infrastructure\WordPress;
 use OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Application\Health\HealthCheckService;
+use OXPulse\Imager\Application\Prewarm\AsyncPrewarmService;
+use OXPulse\Imager\Application\Prewarm\PrewarmJobStore;
+use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
 use OXPulse\Imager\Integration\WordPress\Admin\HealthRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\OptionsRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\PrewarmRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsPage;
+use OXPulse\Imager\Integration\WordPress\Admin\StatusRestController;
+use OXPulse\Imager\Integration\WordPress\Cli\CliServiceProvider;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentUrlRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\AvatarRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
+use OXPulse\Imager\Integration\WordPress\Performance\OptimizationDetectiveIntegration;
 use OXPulse\Imager\Plugin;
 
 final class ServiceRegistrar
@@ -39,6 +45,9 @@ final class ServiceRegistrar
         self::registerTextDomain($plugin);
         self::registerHealthGate($plugin);
         self::registerAdminSettings($plugin);
+        self::registerCli($plugin);
+        self::registerPerformanceIntegration($plugin);
+        self::registerAsyncPrewarmCron($plugin);
     }
 
     private static function registerTextDomain(Plugin $plugin): void
@@ -143,6 +152,58 @@ final class ServiceRegistrar
         // REST: POST /oxpulse/v1/prewarm — bulk cache pre-warm.
         $prewarmRest = new PrewarmRestController($repository);
         $prewarmRest->register();
+
+        // REST: GET /oxpulse/v1/status + /info — status + URL preview.
+        $statusRest = new StatusRestController($repository, $healthCheck);
+        $statusRest->register();
+    }
+
+    /**
+     * Register WP-CLI commands. Only fires when WP_CLI is available
+     * (i.e. when running `wp` from the CLI). CliServiceProvider itself
+     * also guards on `class_exists('\WP_CLI')` so this is safe to call
+     * unconditionally.
+     */
+    private static function registerCli(Plugin $plugin): void
+    {
+        CliServiceProvider::register();
+    }
+
+    /**
+     * Register Optimization Detective integration + preconnect link.
+     * The preconnect to the imgproxy endpoint is always added (via
+     * wp_head); the OD tag visitor is only registered when OD is
+     * active and Image Prioritizer is NOT (to avoid duplicate preload
+     * links).
+     */
+    private static function registerPerformanceIntegration(Plugin $plugin): void
+    {
+        $odIntegration = new OptimizationDetectiveIntegration();
+        $odIntegration->register();
+    }
+
+    /**
+     * Register the async pre-warm cron handler. The cron hook
+     * (oxpulse_prewarm_process_batch) fires when a job is scheduled
+     * and processes one batch of URLs per tick.
+     */
+    private static function registerAsyncPrewarmCron(Plugin $plugin): void
+    {
+        // Build the same service stack the REST controller uses.
+        $repository = new OptionSettingsRepository();
+        $delivery = $repository->loadDeliveryConfig();
+        $signing = $repository->loadSigningConfig();
+
+        if (!$delivery->enabled || $delivery->endpoint === '' || $signing === null) {
+            // Still register the handler — jobs will be created when
+            // config is set, and the handler checks job state at
+            // processing time.
+        }
+
+        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
+        $syncService = new PrewarmService($rewriter, new \OXPulse\Imager\Infrastructure\Http\WordPressPrewarmClient());
+        $asyncService = new AsyncPrewarmService($syncService, new PrewarmJobStore());
+        $asyncService->registerCronHandler();
     }
 
     private static function deliveryEnabled(): bool
