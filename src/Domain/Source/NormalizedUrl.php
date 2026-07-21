@@ -3,8 +3,8 @@
  * Normalized URL value object.
  *
  * Represents a parsed and canonicalized URL with safe components only.
- * Fragments, user-info credentials, and non-HTTP(S) schemes are rejected
- * during construction.
+ * Fragments are stripped (never forwarded to imgproxy); user-info
+ * credentials and non-HTTP(S) schemes are rejected during construction.
  *
  * @package OXPulse\Imager\Domain\Source
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -38,8 +38,8 @@ final readonly class NormalizedUrl
      * @param string $url Raw URL string.
      * @return self
      * @throws \InvalidArgumentException If the URL is malformed, contains
-     *         fragments, user-info credentials, non-HTTP(S) schemes, or
-     *         control characters.
+     *         user-info credentials, non-HTTP(S) schemes, or
+     *         control characters. Fragments are silently stripped.
      */
     public static function parse(string $url): self
     {
@@ -70,10 +70,11 @@ final readonly class NormalizedUrl
             throw new \InvalidArgumentException('URL must not contain credentials.');
         }
 
-        // Reject fragments.
-        if (isset($parsed['fragment'])) {
-            throw new \InvalidArgumentException('URL must not contain a fragment.');
-        }
+        // Strip fragments — they are client-side only and must never be
+        // forwarded to imgproxy (imgproxy would treat #... as part of the
+        // source path). Silently drop rather than reject: HTML src attrs
+        // can carry fragments and the mu-plugin this replaces strips them.
+        // No field is stored — fragment is intentionally discarded.
 
         $host = strtolower($parsed['host'] ?? '');
         if ($host === '') {

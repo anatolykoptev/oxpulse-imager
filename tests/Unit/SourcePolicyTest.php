@@ -138,16 +138,22 @@ class SourcePolicyTest extends TestCase
         $this->assertSame('malformed_url', $decision->reason);
     }
 
-    public function test_denies_fragment(): void
+    public function test_strips_fragment(): void
     {
+        // Ф10: fragments are client-side only and must be stripped, not
+        // rejected. The mu-plugin this replaces strips fragments via
+        // preg_replace('/[#?].*$/', '', $url) before pathinfo. imager
+        // strips them in NormalizedUrl::parse() — the fragment is silently
+        // dropped and the URL is authorized on its path alone.
         $config = $this->config(['https://example.com/']);
         $decision = $this->policy->authorize(
             'https://example.com/image.jpg#fragment',
             $config
         );
 
-        $this->assertFalse($decision->authorized);
-        $this->assertSame('malformed_url', $decision->reason);
+        $this->assertTrue($decision->authorized);
+        // Fragment must NOT appear in the canonical URL.
+        $this->assertStringNotContainsString('#fragment', (string) $decision->url);
     }
 
     public function test_denies_non_http_scheme(): void
