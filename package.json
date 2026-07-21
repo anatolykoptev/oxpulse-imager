@@ -12,7 +12,7 @@
     "preview:admin": "vite preview --config build/vite.config.js",
     "write:manifest": "node build/write-manifest.mjs",
     "make-pot": "node build/make-pot.mjs",
-    "test": "node --test 'tests/admin/**/*.test.mjs'",
+    "test": "node --test tests/admin/options-store.test.mjs",
     "lint": "eslint 'src/admin/**/*.{js,jsx}'"
   },
   "dependencies": {

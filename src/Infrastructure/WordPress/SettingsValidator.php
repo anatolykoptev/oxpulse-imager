@@ -47,7 +47,7 @@ final class SettingsValidator
         // Endpoint URL.
         $endpoint = trim((string) ($input['endpoint'] ?? ''));
         if ($endpoint !== '') {
-            $parsed = parse_url($endpoint);
+            $parsed = wp_parse_url($endpoint);
             if ($parsed === false || !isset($parsed['scheme']) || !isset($parsed['host'])) {
                 $errors['endpoint'] = __('Endpoint must be a valid URL.', 'oxpulse-imager');
             } elseif (strtolower($parsed['scheme']) !== 'https') {
@@ -96,7 +96,7 @@ final class SettingsValidator
         $rawSources = $input['allowed_sources'] ?? '';
         $sources = $this->parseAllowedSources($rawSources);
         foreach ($sources as $i => $source) {
-            $parsed = parse_url($source);
+            $parsed = wp_parse_url($source);
             if ($parsed === false || !isset($parsed['scheme'], $parsed['host'])) {
                 $errors['allowed_sources'] = __('Allowed sources must be valid HTTP(S) URLs with trailing path boundary.', 'oxpulse-imager');
             }
@@ -132,7 +132,7 @@ final class SettingsValidator
         if ($lqipBlur < self::MIN_LQIP_BLUR || $lqipBlur > self::MAX_LQIP_BLUR) {
             $errors['lqip_blur'] = sprintf(
                 /* translators: 1: minimum blur, 2: maximum blur. */
-                __('LQIP blur must be between %s and %s.', 'oxpulse-imager'),
+                __('LQIP blur must be between %1$s and %2$s.', 'oxpulse-imager'),
                 self::MIN_LQIP_BLUR,
                 self::MAX_LQIP_BLUR
             );

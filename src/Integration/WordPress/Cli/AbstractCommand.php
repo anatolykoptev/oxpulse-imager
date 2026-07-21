@@ -35,6 +35,7 @@ abstract class AbstractCommand
         if (class_exists('\WP_CLI') && method_exists('\WP_CLI', 'log')) {
             \WP_CLI::log($message);
         } else {
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
             echo $message . "\n";
         }
     }
@@ -47,6 +48,7 @@ abstract class AbstractCommand
         if (class_exists('\WP_CLI') && method_exists('\WP_CLI', 'success')) {
             \WP_CLI::success($message);
         } else {
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
             echo "Success: {$message}\n";
         }
     }
@@ -59,6 +61,7 @@ abstract class AbstractCommand
         if (class_exists('\WP_CLI') && method_exists('\WP_CLI', 'warning')) {
             \WP_CLI::warning($message);
         } else {
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
             echo "Warning: {$message}\n";
         }
     }

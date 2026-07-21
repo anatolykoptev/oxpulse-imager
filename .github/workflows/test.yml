@@ -122,9 +122,23 @@ jobs:
         uses: wordpress/plugin-check-action@v1
         with:
           build-dir: '.'
+          exclude-files: |
+            .gitignore
+            .gitattributes
+            .editorconfig
+            .release-please-manifest.json
+            release-please-config.json
+            phpunit.xml.dist
+            .phpunit.result.cache
+            ROADMAP.md
+            CHANGELOG.md
+            SECURITY.md
+            README.md
           exclude-directories: |
             node_modules
             vendor
             tests
             build
+            .github
+            .git
           ignore-warnings: false

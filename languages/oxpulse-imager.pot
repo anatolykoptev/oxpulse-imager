@@ -51,7 +51,7 @@ msgstr ""
 
 #. translators: 1: minimum blur, 2: maximum blur.
 #: src/Infrastructure/WordPress/SettingsValidator.php:135
-msgid "LQIP blur must be between %s and %s."
+msgid "LQIP blur must be between %1$s and %2$s."
 msgstr ""
 
 #. translators: 1: format name, 2: minimum, 3: maximum.
