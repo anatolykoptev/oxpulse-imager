@@ -211,7 +211,35 @@ class CliCommandsTest extends TestCase
         $output = ob_get_clean();
 
         $this->assertStringContainsString('Success: Flushed', $output);
-        $this->assertStringContainsString('imgproxy', $output);
+    }
+
+    public function test_flush_command_purges_local_cache_dir(): void
+    {
+        $cacheDir = sys_get_temp_dir() . '/oxpulse-flush-' . uniqid();
+        mkdir($cacheDir . '/abc123def456abc1', 0755, true);
+        file_put_contents($cacheDir . '/abc123def456abc1/key.webp', 'bytes');
+
+        $command = new FlushCommand(null, $cacheDir);
+
+        ob_start();
+        $command->flush([], []);
+        $output = ob_get_clean();
+
+        $this->assertStringContainsString('Success: Flushed', $output);
+        $this->assertStringContainsString('local cache', $output);
+        $this->assertFileDoesNotExist($cacheDir . '/abc123def456abc1');
+
+        // Cleanup.
+        if (is_dir($cacheDir)) {
+            $it = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($cacheDir, \FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach ($it as $file) {
+                $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+            }
+            rmdir($cacheDir);
+        }
     }
 
     public function test_cli_service_provider_no_op_without_wp_cli(): void

@@ -65,6 +65,46 @@ class LocalBackendTest extends TestCase
         $this->assertStringEndsWith('.webp', $url);
     }
 
+    public function test_url_contains_source_hash_segment(): void
+    {
+        $url = $this->backend()->generate($this->request());
+
+        // Layout: /wp-content/cache/oxpulse/<sourceHash>/<key>.webp
+        $path = parse_url($url, PHP_URL_PATH);
+        $segments = explode('/', trim($path, '/'));
+        // wp-content, cache, oxpulse, <sourceHash>, <key>.webp
+        $this->assertCount(5, $segments);
+        $sourceHash = $segments[3];
+        $this->assertSame(
+            LocalBackend::sourceHash(self::SOURCE),
+            $sourceHash,
+            'URL must contain the sourceHash path segment'
+        );
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{16}$/', $sourceHash);
+    }
+
+    public function test_different_sources_produce_different_source_hash_dirs(): void
+    {
+        $backend = $this->backend();
+        $url1 = $backend->generate($this->request(['sourceUrl' => 'https://example.com/wp-content/uploads/a.jpg']));
+        $url2 = $backend->generate($this->request(['sourceUrl' => 'https://example.com/wp-content/uploads/b.jpg']));
+
+        $hash1 = explode('/', trim(parse_url($url1, PHP_URL_PATH), '/'))[3];
+        $hash2 = explode('/', trim(parse_url($url2, PHP_URL_PATH), '/'))[3];
+        $this->assertNotSame($hash1, $hash2);
+    }
+
+    public function test_same_source_same_hash_regardless_of_transform(): void
+    {
+        $backend = $this->backend();
+        $url1 = $backend->generate($this->request(['width' => 800]));
+        $url2 = $backend->generate($this->request(['width' => 400]));
+
+        $hash1 = explode('/', trim(parse_url($url1, PHP_URL_PATH), '/'))[3];
+        $hash2 = explode('/', trim(parse_url($url2, PHP_URL_PATH), '/'))[3];
+        $this->assertSame($hash1, $hash2, 'Same source must share sourceHash dir regardless of transform');
+    }
+
     public function test_url_is_absolute_and_starts_with_home_url(): void
     {
         $url = $this->backend()->generate($this->request());

@@ -74,8 +74,29 @@ final class LocalBackend implements DeliveryBackend
     {
         $fmt = $this->resolveFormat($request->format);
         $key = $this->buildKey($request, $fmt);
+        $hash = self::sourceHash($request->sourceUrl);
 
-        return home_url(self::CACHE_PATH . $key . '.' . $fmt);
+        return home_url(self::CACHE_PATH . $hash . '/' . $key . '.' . $fmt);
+    }
+
+    /**
+     * Compute the stable source-hash path segment for a source URL.
+     *
+     * The cache is laid out as cache/oxpulse/<sourceHash>/<key>.<fmt> so
+     * that per-attachment invalidation = deleting the <sourceHash>/
+     * directory (all transform variants of one source share the dir).
+     *
+     * The hash is a truncated SHA-1 of the source URL — a path segment,
+     * NOT part of the signed payload. The key still fully determines
+     * the transform; the sourceHash only groups cache files by source
+     * for O(1) invalidation without an index.
+     *
+     * @param string $sourceUrl The source image URL.
+     * @return string 16-character hex string.
+     */
+    public static function sourceHash(string $sourceUrl): string
+    {
+        return substr(sha1($sourceUrl), 0, 16);
     }
 
     /**

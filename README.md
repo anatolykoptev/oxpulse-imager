@@ -62,6 +62,34 @@ proxy_cache_key "$scheme$proxy_host$request_uri$http_accept";
 
 Headers cannot be signed. An attacker can bypass your CDN cache by varying the `Accept` header. This is a cache-poisoning vector, not a security vulnerability in the plugin — imgproxy will still only serve allowed formats. Configure your CDN to limit the number of distinct `Accept` header variants it will cache.
 
+## Local delivery (Phase 6 — standard/shared hosting)
+
+When no imgproxy endpoint is configured, the plugin switches to
+**LocalBackend** mode: on-disk WebP delivery using PHP (Imagick→GD)
+with no daemon required. Cache files are served as static files;
+misses are handled by a self-contained `oxpulse-img.php` endpoint.
+
+### Apache (`.htaccess`)
+
+The plugin generates `.htaccess` rules that rewrite missing cache
+files to the miss-endpoint. Requires `mod_rewrite` + `AllowOverride`.
+A capability-test auto-detects whether rewrite is available and falls
+back to the output-buffer mode if not.
+
+### nginx
+
+nginx does not support `.htaccess`. Use the output-buffer fallback
+(automatic) or add this `try_files` snippet to your server block:
+
+```nginx
+location ~* /wp-content/cache/oxpulse/([0-9a-f]{16})/(.+)\.(webp|avif)$ {
+    try_files $uri /wp-content/oxpulse-img.php?k=$2;
+}
+```
+
+This serves existing cache files directly; on miss, it routes to the
+endpoint with the key extracted from the filename.
+
 ## License
 
 GPL-2.0-or-later

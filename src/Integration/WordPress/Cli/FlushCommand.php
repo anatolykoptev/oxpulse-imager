@@ -2,13 +2,14 @@
 /**
  * WP-CLI `wp oxpulse flush` command.
  *
- * Clears WordPress object cache entries related to OXPulse Imager.
- * Currently clears:
+ * Clears OXPulse Imager caches:
  * - The health check transient
- * - Any cached rewrite results (if a cache layer is configured)
+ * - The local delivery cache directory (wp-content/cache/oxpulse/) when
+ *   LocalBackend is active — this is the REAL cache purge (Phase 6).
+ * - Any cached rewrite results via wp_cache_flush_group (best-effort).
  *
  * Does NOT clear imgproxy's own cache (that's a server-side concern —
- * use `imgproxy`'s cache purge or your CDN's purge API).
+ * use imgproxy's cache purge or your CDN's purge API).
  *
  * @package OXPulse\Imager\Integration\WordPress\Cli
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -19,8 +20,18 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Cli;
 
+use OXPulse\Imager\Infrastructure\Local\CacheInvalidator;
+
 final class FlushCommand extends AbstractCommand
 {
+    private ?string $cacheDir;
+
+    public function __construct(?OptionSettingsRepository $repository = null, ?string $cacheDir = null)
+    {
+        parent::__construct($repository);
+        $this->cacheDir = $cacheDir;
+    }
+
     /**
      * Flush OXPulse Imager caches.
      *
@@ -49,7 +60,38 @@ final class FlushCommand extends AbstractCommand
             $cleared++;
         }
 
+        // Purge the local delivery cache directory (Phase 6).
+        $cacheDir = $this->cacheDir ?? $this->resolveCacheDir();
+        if ($cacheDir !== null && is_dir($cacheDir)) {
+            $invalidator = new CacheInvalidator($cacheDir);
+            $purged = $invalidator->purgeAll();
+            if ($purged > 0) {
+                $this->log(sprintf(
+                    __('Purged %d entries from the local cache (%s).', 'oxpulse-imager'),
+                    $purged,
+                    $cacheDir
+                ));
+                $cleared += $purged;
+            }
+        }
+
         $this->success(sprintf(__('Flushed %d cache entry/entries.', 'oxpulse-imager'), $cleared));
         $this->log(__('Note: imgproxy\'s own cache is not cleared — use your CDN/imgproxy purge API for that.', 'oxpulse-imager'));
+    }
+
+    /**
+     * Resolve the local cache directory path.
+     *
+     * Uses WP_CONTENT_DIR when available, falls back to null when the
+     * path cannot be determined (e.g. in the stub test environment
+     * without WP_CONTENT_DIR).
+     */
+    private function resolveCacheDir(): ?string
+    {
+        if (defined('WP_CONTENT_DIR')) {
+            return WP_CONTENT_DIR . '/cache/oxpulse';
+        }
+
+        return null;
     }
 }

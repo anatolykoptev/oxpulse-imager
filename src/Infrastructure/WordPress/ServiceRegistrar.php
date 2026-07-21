@@ -43,6 +43,7 @@ use OXPulse\Imager\Integration\WordPress\Delivery\IntermediateSizeRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
 use OXPulse\Imager\Integration\WordPress\Compatibility\RankMathCompatibility;
 use OXPulse\Imager\Integration\WordPress\Performance\OptimizationDetectiveIntegration;
+use OXPulse\Imager\Infrastructure\Local\CacheInvalidator;
 use OXPulse\Imager\Plugin;
 
 final class ServiceRegistrar
@@ -76,6 +77,7 @@ final class ServiceRegistrar
         self::registerCli($plugin);
         self::registerPerformanceIntegration($plugin);
         self::registerAsyncPrewarmCron($plugin);
+        self::registerLocalCacheInvalidation($plugin);
     }
 
     /**
@@ -359,5 +361,74 @@ final class ServiceRegistrar
     private static function deliveryEnabled(): bool
     {
         return (bool) get_option(OXPULSE_IMAGER_OPTION_PREFIX . 'enabled', false);
+    }
+
+    /**
+     * Register local cache invalidation hooks (Phase 6).
+     *
+     * When LocalBackend is the active delivery backend (no imgproxy
+     * endpoint configured), wire the attachment metadata-update / delete
+     * / clean-post-cache hooks to the CacheInvalidator so that editing
+     * or deleting an attachment purges its cached WebP variants.
+     *
+     * When ImgproxyBackend is active, the local cache is not used and
+     * these hooks are not wired (imgproxy manages its own cache).
+     */
+    private static function registerLocalCacheInvalidation(Plugin $plugin): void
+    {
+        add_action('plugins_loaded', static function (): void {
+            if (!self::deliveryEnabled()) {
+                return;
+            }
+
+            // Only wire invalidation when LocalBackend is active (no
+            // imgproxy endpoint). When imgproxy is configured, it
+            // manages its own cache — the local cache dir is not used.
+            $repository = new OptionSettingsRepository();
+            $delivery = $repository->loadDeliveryConfig();
+            if ($delivery->endpoint !== '') {
+                return;
+            }
+
+            $cacheDir = self::resolveLocalCacheDir();
+            if ($cacheDir === null) {
+                return;
+            }
+
+            $invalidator = new CacheInvalidator($cacheDir);
+
+            // Invalidate on attachment metadata update (regeneration,
+            // re-upload, edit).
+            add_action('wp_update_attachment_metadata', static function (array $metadata, int $postId) use ($invalidator): array {
+                $invalidator->invalidateAttachment($postId);
+                return $metadata;
+            }, 10, 2);
+
+            // Invalidate on attachment deletion.
+            add_action('delete_attachment', static function (int $postId) use ($invalidator): void {
+                $invalidator->invalidateAttachment($postId);
+            }, 10, 1);
+
+            // Invalidate on post cache clean (covers various media
+            // editing flows that call clean_post_cache).
+            add_action('clean_post_cache', static function (int $postId) use ($invalidator): void {
+                // Only act on attachments.
+                if (function_exists('get_post_type') && get_post_type($postId) === 'attachment') {
+                    $invalidator->invalidateAttachment($postId);
+                }
+            }, 10, 1);
+        });
+    }
+
+    /**
+     * Resolve the local cache directory path.
+     */
+    private static function resolveLocalCacheDir(): ?string
+    {
+        if (defined('WP_CONTENT_DIR')) {
+            return WP_CONTENT_DIR . '/cache/oxpulse';
+        }
+
+        return null;
     }
 }
