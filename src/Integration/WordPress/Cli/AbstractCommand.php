@@ -77,6 +77,7 @@ abstract class AbstractCommand
         if (class_exists('\WP_CLI') && method_exists('\WP_CLI', 'error')) {
             \WP_CLI::error($message);
         }
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI/exception context, not HTML.
         throw new \RuntimeException($message);
     }
 }

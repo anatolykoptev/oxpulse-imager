@@ -18,6 +18,11 @@
  * @license GPL-2.0-or-later
  */
 
+// phpcs:ignore WordPress.WP.AlternativeFunctions.curl_* -- Legitimate
+// use of curl_multi for bounded concurrency (wp_remote_* is single-
+// request; a 50-URL batch would take minutes sequentially). The HTTP
+// API does not offer a multi-request primitive.
+
 declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\Http;

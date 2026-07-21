@@ -54,7 +54,7 @@ final readonly class NormalizedUrl
             throw new \InvalidArgumentException('URL contains control characters.');
         }
 
-        $parsed = parse_url($url);
+        $parsed = wp_parse_url($url);
 
         if ($parsed === false) {
             throw new \InvalidArgumentException('URL is malformed.');
