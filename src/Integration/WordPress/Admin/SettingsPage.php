@@ -1,9 +1,15 @@
 <?php
 /**
- * Settings page registration.
+ * Admin settings page — thin shell for the React SPA.
  *
- * Registers the OXPulse Imager settings page under Settings > OXPulse Imager.
- * Uses the WordPress Settings API for safe, capability-checked configuration.
+ * Registers the settings page under Settings > OXPulse Imager and
+ * enqueues the self-contained React admin bundle. The SPA mounts
+ * into #oxpulse-admin-root and talks to /wp-json/oxpulse/v1/options
+ * via the OptionsRestController.
+ *
+ * Ported from UTM Linker (includes/Admin/AdminPage.php). No classic
+ * form fallback — a mount-failure notice script tells the operator
+ * what to do if the bundle fails to load.
  *
  * @package OXPulse\Imager\Integration\WordPress\Admin
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -14,8 +20,7 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Admin;
 
-use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
-use OXPulse\Imager\Infrastructure\WordPress\SettingsValidator;
+use OXPulse\Imager\Infrastructure\WordPress\AssetManifest;
 
 final class SettingsPage
 {
@@ -23,27 +28,10 @@ final class SettingsPage
     public const NONCE_ACTION = 'oxpulse_imager_settings';
     public const OPTION_GROUP = 'oxpulse_imager_settings_group';
 
-    private OptionSettingsRepository $repository;
-    private SettingsValidator $validator;
-    private SettingsController $controller;
-
-    public function __construct(
-        OptionSettingsRepository $repository,
-        SettingsValidator $validator,
-        SettingsController $controller
-    ) {
-        $this->repository = $repository;
-        $this->validator = $validator;
-        $this->controller = $controller;
-    }
-
     public function register(): void
     {
         add_action('admin_menu', [$this, 'addMenuPage']);
-        add_action('admin_init', [$this, 'registerSettings']);
-        add_action('admin_post_oxpulse_imager_save_settings', [$this->controller, 'handleSave']);
-        add_action('admin_post_oxpulse_imager_test_connection', [$this->controller, 'handleTestConnection']);
-        add_action('admin_post_oxpulse_imager_test_avif', [$this->controller, 'handleTestAvif']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueueAdminAssets']);
     }
 
     public function addMenuPage(): void
@@ -57,30 +45,137 @@ final class SettingsPage
         );
     }
 
-    public function registerSettings(): void
-    {
-        register_setting(
-            self::OPTION_GROUP,
-            OptionSettingsRepository::OPTION_ENABLED,
-            ['type' => 'boolean', 'default' => false]
-        );
-        register_setting(
-            self::OPTION_GROUP,
-            OptionSettingsRepository::OPTION_ENDPOINT,
-            ['type' => 'string', 'default' => '']
-        );
-    }
-
+    /**
+     * Render the settings page — just a mount root for the React SPA.
+     *
+     * An `<h1>` precedes the root div (a11y): a bare mount root leaves
+     * no heading landmark for a screen reader to orient on before the
+     * SPA mounts (or if it never does). `screen-reader-text` keeps it
+     * from visually duplicating the SPA's own in-root headings.
+     */
     public function render(): void
     {
         if (!current_user_can(OXPULSE_IMAGER_CAPABILITY)) {
             wp_die(esc_html__('You do not have permission to access this page.', 'oxpulse-imager'), 403);
         }
+        ?>
+        <h1 class="screen-reader-text"><?php echo esc_html(get_admin_page_title()); ?></h1>
+        <div id="oxpulse-admin-root"></div>
+        <?php
+    }
 
-        $delivery = $this->repository->loadDeliveryConfig();
-        $secretStatus = $this->repository->secretStatus();
-        $sources = $delivery->allowedSources;
+    /**
+     * Enqueue the React admin bundle on this page only.
+     */
+    public function enqueueAdminAssets(string $hook): void
+    {
+        if ($hook !== 'settings_page_' . self::PAGE_SLUG) {
+            return;
+        }
 
-        require dirname(__DIR__, 4) . '/views/admin/settings-page.php';
+        $pluginUrl = defined('OXPULSE_IMAGER_PLUGIN_URL')
+            ? OXPULSE_IMAGER_PLUGIN_URL
+            : plugin_dir_url(dirname(__DIR__, 4) . '/oxpulse-imager.php');
+
+        $version = defined('OXPULSE_IMAGER_VERSION') ? OXPULSE_IMAGER_VERSION : '1.0.0';
+
+        // CSS (optional — Vite may not emit it if the bundle has no CSS).
+        $cssFile = AssetManifest::resolve('admin-app.css');
+        if ($cssFile !== 'admin-app.css') {
+            wp_enqueue_style(
+                'oxpulse-admin-app',
+                $pluginUrl . 'assets/css/' . $cssFile,
+                [],
+                $version
+            );
+        }
+
+        // JS — self-contained bundle (React + react-dom bundled in).
+        wp_enqueue_script(
+            'oxpulse-admin-app',
+            $pluginUrl . 'assets/js/' . AssetManifest::resolve('admin-app.js'),
+            [],
+            $version,
+            true
+        );
+
+        wp_localize_script(
+            'oxpulse-admin-app',
+            'oxpulseAdmin',
+            [
+                'restUrl'   => esc_url_raw(rest_url('oxpulse/v1/options')),
+                'nonce'     => wp_create_nonce('wp_rest'),
+                'version'   => $version,
+                'mountFailureMessage' => __(
+                    'OXPulse Imager admin failed to load. Try a hard refresh; if it still does not load, check for caching plugins or contact your site administrator.',
+                    'oxpulse-imager'
+                ),
+            ]
+        );
+
+        wp_add_inline_script('oxpulse-admin-app', self::getMountFailureNoticeScript());
+    }
+
+    /**
+     * Mount-failure notice inline script: if #oxpulse-admin-root is
+     * still empty after a grace period, inject a .notice.notice-error
+     * telling the operator what to do.
+     */
+    private static function getMountFailureNoticeScript(): string
+    {
+        return <<<'JS'
+( function () {
+	var GRACE_MS = 3000;
+	var FALLBACK_MESSAGE = 'OXPulse Imager admin failed to load.';
+	var MESSAGE = ( window.oxpulseAdmin && window.oxpulseAdmin.mountFailureMessage ) || FALLBACK_MESSAGE;
+	var notice = null;
+
+	function showNotice( root ) {
+		if ( notice ) { return; }
+		notice = document.createElement( 'div' );
+		notice.className = 'notice notice-error';
+		notice.setAttribute( 'role', 'alert' );
+		var message = document.createElement( 'p' );
+		message.textContent = MESSAGE;
+		notice.appendChild( message );
+		root.parentNode.insertBefore( notice, root );
+	}
+
+	function hideNotice() {
+		if ( notice && notice.parentNode ) {
+			notice.parentNode.removeChild( notice );
+		}
+		notice = null;
+	}
+
+	function watch( root ) {
+		var observer = new MutationObserver( function () {
+			if ( root.childElementCount > 0 ) {
+				hideNotice();
+				observer.disconnect();
+			}
+		} );
+		observer.observe( root, { childList: true } );
+
+		window.setTimeout( function () {
+			if ( root.childElementCount === 0 ) {
+				showNotice( root );
+			}
+		}, GRACE_MS );
+	}
+
+	function init() {
+		var root = document.getElementById( 'oxpulse-admin-root' );
+		if ( ! root ) { return; }
+		watch( root );
+	}
+
+	if ( document.readyState === 'loading' ) {
+		document.addEventListener( 'DOMContentLoaded', init );
+	} else {
+		init();
+	}
+} )();
+JS;
     }
 }

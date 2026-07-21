@@ -41,6 +41,19 @@ final class SettingsController
         $this->healthCheck = $healthCheck;
     }
 
+    /**
+     * Register admin-post handlers for health check + AVIF test.
+     *
+     * Settings save is now handled by the REST controller
+     * (OptionsRestController). These two actions remain on admin-post
+     * until Phase 5.3 moves them to REST endpoints.
+     */
+    public function register(): void
+    {
+        add_action('admin_post_oxpulse_imager_test_connection', [$this, 'handleTestConnection']);
+        add_action('admin_post_oxpulse_imager_test_avif', [$this, 'handleTestAvif']);
+    }
+
     public function handleSave(): void
     {
         $this->guard();

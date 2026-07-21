@@ -51,3 +51,53 @@ jobs:
 
       - name: Lint main plugin file
         run: php -l oxpulse-imager.php
+
+  admin-build:
+    name: Admin SPA build + JS tests
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run JS tests
+        run: npm test
+
+      - name: Build admin SPA
+        run: npm run build
+
+      - name: Verify deterministic build (rebuild → identical hashes)
+        run: |
+          FIRST_HASH=$(cat assets/manifest.json | sha256sum)
+          npm run build
+          SECOND_HASH=$(cat assets/manifest.json | sha256sum)
+          if [ "$FIRST_HASH" != "$SECOND_HASH" ]; then
+            echo "::error::Build is not deterministic — two consecutive builds produced different manifest.json"
+            echo "First:  $FIRST_HASH"
+            echo "Second: $SECOND_HASH"
+            exit 1
+          fi
+          echo "✓ Deterministic build verified"
+
+      - name: Verify committed assets match build output
+        run: |
+          # The committed assets/manifest.json + hashed files MUST match
+          # what a fresh build produces — catches a developer who built
+          # locally but forgot to commit the new assets.
+          git diff --exit-code assets/manifest.json || {
+            echo "::error::assets/manifest.json is out of date — run 'npm run build' and commit the result"
+            exit 1
+          }
+          git diff --exit-code assets/js/ assets/css/ || {
+            echo "::error::assets/js or assets/css is out of date — run 'npm run build' and commit the result"
+            exit 1
+          }

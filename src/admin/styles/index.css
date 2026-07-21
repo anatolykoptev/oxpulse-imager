@@ -1,0 +1,42 @@
+/**
+ * OXPulse Imager Admin - Tailwind entry point
+ *
+ * Preflight is disabled (tailwind.config.js) so this does NOT reset
+ * any wp-admin base styles — only @tailwind components/utilities emit
+ * rules, scoped under #oxpulse-admin-root (see tailwind.config.js
+ * `important`). No bare-selector custom CSS beyond the box-sizing
+ * baseline below.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Preflight is off, so nothing sets box-sizing for us — without this,
+   a fixed-width element with both a border AND padding (TextField's
+   input, the Switch track, Button) renders larger than its declared
+   width/height utility. Scoped to our own root only. Same baseline
+   Tailwind's own preflight sets globally, reproduced here scoped. */
+#oxpulse-admin-root,
+#oxpulse-admin-root *,
+#oxpulse-admin-root *::before,
+#oxpulse-admin-root *::after {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+}
+
+/* Respect prefers-reduced-motion — covers Radix Switch thumb
+   transition, Collapsible reveal, and any other transition-driven
+   motion. JS-driven scrollIntoView is handled separately in
+   useUIStore.scrollToSection(). */
+@media (prefers-reduced-motion: reduce) {
+  #oxpulse-admin-root *,
+  #oxpulse-admin-root *::before,
+  #oxpulse-admin-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

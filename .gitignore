@@ -1,7 +1,8 @@
 /vendor/
 /node_modules/
 /dist/
-/build/
+/dist-admin/
+/build/scratch/
 /.wordpress-org/
 *.zip
 *.tar.gz

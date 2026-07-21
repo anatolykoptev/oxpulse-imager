@@ -21,6 +21,7 @@ use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Application\Health\HealthCheckService;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
+use OXPulse\Imager\Integration\WordPress\Admin\OptionsRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsController;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsPage;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
@@ -110,9 +111,14 @@ final class ServiceRegistrar
     }
 
     /**
-     * Register the admin settings page, controller, and health check
-     * service. Only wired when is_admin() is true so the frontend never
-     * loads admin dependencies.
+     * Register the admin settings page (React SPA shell) + REST
+     * controller backing it. Only wired when is_admin() is true so
+     * the frontend never loads admin dependencies.
+     *
+     * The REST controller is registered on every admin request (it
+     * hooks rest_api_init which only fires on REST requests anyway),
+     * so the SPA can talk to it regardless of which admin page is
+     * currently displayed.
      */
     private static function registerAdminSettings(Plugin $plugin): void
     {
@@ -122,12 +128,22 @@ final class ServiceRegistrar
 
         $repository = new OptionSettingsRepository();
         $validator = new SettingsValidator();
+
+        // React SPA shell — enqueues the admin bundle, mounts into
+        // #oxpulse-admin-root.
+        $page = new SettingsPage();
+        $page->register();
+
+        // REST controller backing the SPA — GET|POST /oxpulse/v1/options.
+        $restController = new OptionsRestController($repository, $validator);
+        $restController->register();
+
+        // Legacy admin-post handlers for health check + AVIF test
+        // (still used until Phase 5.3 moves them to REST endpoints).
         $healthClient = new WordPressHealthClient();
         $healthCheck = new HealthCheckService($healthClient);
         $controller = new SettingsController($repository, $validator, $healthCheck);
-        $page = new SettingsPage($repository, $validator, $controller);
-
-        $page->register();
+        $controller->register();
     }
 
     private static function deliveryEnabled(): bool
