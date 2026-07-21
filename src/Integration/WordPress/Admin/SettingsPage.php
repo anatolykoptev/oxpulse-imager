@@ -77,6 +77,13 @@ final class SettingsPage
             ? OXPULSE_IMAGER_PLUGIN_URL
             : plugin_dir_url(dirname(__DIR__, 4) . '/oxpulse-imager.php');
 
+        // Filesystem path to the plugin root (where languages/ lives).
+        // wp_set_script_translations() resolves
+        // {$pluginPath}/languages/{$domain}-{$locale}-{$domain}.json.
+        $pluginPath = defined('OXPULSE_IMAGER_DIR')
+            ? OXPULSE_IMAGER_DIR
+            : plugin_dir_path(dirname(__DIR__, 4) . '/oxpulse-imager.php');
+
         $version = defined('OXPULSE_IMAGER_VERSION') ? OXPULSE_IMAGER_VERSION : '1.0.0';
 
         // CSS (optional — Vite may not emit it if the bundle has no CSS).
@@ -104,7 +111,7 @@ final class SettingsPage
         // JS-specific translation file generated from the .po by
         // build/make-json.mjs) and inlines it as a <script> before our
         // bundle, populating @wordpress/i18n's locale data registry.
-        wp_set_script_translations('oxpulse-admin-app', 'oxpulse-imager', dirname($pluginUrl));
+        wp_set_script_translations('oxpulse-admin-app', 'oxpulse-imager', $pluginPath);
 
         wp_localize_script(
             'oxpulse-admin-app',
