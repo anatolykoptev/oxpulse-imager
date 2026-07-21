@@ -123,7 +123,7 @@ class ContentImgTagRewriterTest extends TestCase
 
         $result = $rewriter->rewrite($tag, 'the_content', 0);
 
-        $this->assertStringContainsString('rs:fit:800:600', $result);
+        $this->assertStringContainsString('rs:fill:800:600', $result);
     }
 
     public function test_omits_resize_when_no_width_height(): void

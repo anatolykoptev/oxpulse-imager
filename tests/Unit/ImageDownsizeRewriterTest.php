@@ -107,7 +107,7 @@ class ImageDownsizeRewriterTest extends TestCase
         $result = $this->downsizeRewriter->rewrite(false, 42, [800, 600]);
 
         $this->assertIsArray($result);
-        $this->assertStringContainsString('rs:fit:800:600', $result[0]);
+        $this->assertStringContainsString('rs:fill:800:600', $result[0]);
         $this->assertSame(800, $result[1]);
         $this->assertSame(600, $result[2]);
         $this->assertTrue($result[3]); // is_intermediate

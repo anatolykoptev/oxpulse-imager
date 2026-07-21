@@ -91,7 +91,7 @@ class ThumbUrlHelperTest extends TestCase
 
         $this->assertNotSame($url, $result);
         $this->assertStringContainsString('imgproxy.example.com', $result);
-        $this->assertStringContainsString('rs:fit:330:220', $result);
+        $this->assertStringContainsString('rs:fill:330:220', $result);
     }
 
     public function test_returns_original_url_when_source_not_allowed(): void

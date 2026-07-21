@@ -319,6 +319,15 @@ final class UrlRewriter
         if ($width <= 0 && $height <= 0) {
             return '';
         }
+        // Ф9: rs:fill when both dimensions are specified — exact crop to the
+        // requested box. The Foxiz theme registers fixed crop sizes
+        // (foxiz_crop_g1 330x220, foxiz_crop_1300x800, etc.) and the theme's
+        // composition is tuned for imgproxy's exact-crop behaviour. With
+        // rs:fit, images preserve aspect ratio (one axis may be shorter),
+        // producing wrong framing and gaps in fixed-size containers.
+        if ($width > 0 && $height > 0) {
+            return 'fill';
+        }
         return 'fit';
     }
 

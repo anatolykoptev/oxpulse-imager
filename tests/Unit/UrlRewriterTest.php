@@ -142,7 +142,7 @@ class UrlRewriterTest extends TestCase
         $result = $rewriter->rewrite('https://example.com/wp-content/uploads/img.jpg', 800, 600);
 
         $this->assertTrue($result->rewritten);
-        $this->assertStringContainsString('rs:fit:800:600', $result->url);
+        $this->assertStringContainsString('rs:fill:800:600', $result->url);
     }
 
     public function test_rewrites_without_dimensions_omits_resize_option(): void
@@ -350,6 +350,7 @@ class UrlRewriterTest extends TestCase
         $this->assertStringContainsString('imgproxy.example.com', $result->url);
         // LQIP uses blur and small dimensions.
         $this->assertStringContainsString('blur:2', $result->url);
+        // LQIP uses rs:fit (not rs:fill) — placeholder preserves aspect ratio.
         $this->assertStringContainsString('rs:fit:20:20', $result->url);
     }
 
