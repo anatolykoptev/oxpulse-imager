@@ -109,4 +109,36 @@ final readonly class DeliveryConfig
             }
         }
     }
+
+    /**
+     * Return a copy with a resolved endpoint.
+     *
+     * Used at the WordPress-infrastructure boundary to swap a relative
+     * endpoint (e.g. '/imgproxy') for an absolute one
+     * (e.g. 'https://example.test/imgproxy') before injection into the
+     * URL generator, so filtered image URLs are always absolute.
+     */
+    public function withEndpoint(string $endpoint): self
+    {
+        return new self(
+            enabled: $this->enabled,
+            endpoint: $endpoint,
+            allowedSources: $this->allowedSources,
+            outputFormat: $this->outputFormat,
+            defaultQuality: $this->defaultQuality,
+            devHttpOverride: $this->devHttpOverride,
+            lqipEnabled: $this->lqipEnabled,
+            lqipBlur: $this->lqipBlur,
+            dprEnabled: $this->dprEnabled,
+            dprVariants: $this->dprVariants,
+            watermark: $this->watermark,
+            formatQuality: $this->formatQuality,
+            sourceMode: $this->sourceMode,
+            localBasePath: $this->localBasePath,
+            bufferRewritingEnabled: $this->bufferRewritingEnabled,
+            rankMathCompatibility: $this->rankMathCompatibility,
+            saveDataQualityReduction: $this->saveDataQualityReduction,
+            sizeQualityTiers: $this->sizeQualityTiers,
+        );
+    }
 }

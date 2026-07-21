@@ -155,6 +155,13 @@ final class ServiceRegistrar
         $delivery = $repository->loadDeliveryConfig();
         $signing = $repository->loadSigningConfig();
 
+        // Resolve a relative endpoint (e.g. '/imgproxy') to an absolute
+        // URL against home_url() so all filtered image URLs are absolute
+        // — required by wp_get_attachment_url, JSON-LD, og:image, feeds.
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
+
         $logger = self::diagnosticLogger();
         $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, $logger);
 
@@ -337,6 +344,11 @@ final class ServiceRegistrar
             // config is set, and the handler checks job state at
             // processing time.
         }
+
+        // Resolve relative endpoint to absolute (same as frontend delivery).
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
 
         $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
         $syncService = new PrewarmService($rewriter, new \OXPulse\Imager\Infrastructure\Http\WordPressPrewarmClient());

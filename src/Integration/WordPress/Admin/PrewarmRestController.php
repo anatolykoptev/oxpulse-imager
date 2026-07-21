@@ -183,6 +183,11 @@ final class PrewarmRestController
         }
 
         $policy = new SourcePolicy();
+        // Resolve relative endpoint to absolute so prewarm HEAD requests
+        // hit the real URL (same fix as frontend delivery adapters).
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
         $rewriter = new UrlRewriter($policy, $delivery, $signing);
         $httpClient = new WordPressPrewarmClient();
         $service = new PrewarmService($rewriter, $httpClient);
