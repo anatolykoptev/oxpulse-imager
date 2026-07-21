@@ -121,3 +121,33 @@ if (!oxpulse_imager_runtime_supported()) {
 require_once OXPULSE_IMAGER_DIR . 'src/Plugin.php';
 
 \OXPulse\Imager\Plugin::load(OXPULSE_IMAGER_FILE);
+
+/**
+ * Public helper: generate a signed imgproxy URL for an image.
+ *
+ * Drop-in replacement for the mu-plugin's Imgproxy_AVIF::thumb_url()
+ * static method. Sibling mu-plugins (e.g. piter-api on piter.now) call
+ * this for card thumbnails:
+ *
+ *     $url = oxpulse_thumb_url($imageUrl, 330, 220);
+ *
+ * Fail-safe: returns the original URL when delivery is disabled, the
+ * plugin is not yet initialized (called before plugins_loaded), no
+ * signing config, source not allowed, or any other denial reason. This
+ * matches the mu-plugin's behavior when IMGPROXY_KEY was not defined.
+ *
+ * @param string $url Source image URL.
+ * @param int $width Target width in pixels (0 = auto).
+ * @param int $height Target height in pixels (0 = auto).
+ * @return string Signed imgproxy URL, or original URL on any failure.
+ */
+if (!function_exists('oxpulse_thumb_url')) {
+    function oxpulse_thumb_url(string $url, int $width, int $height): string {
+        $rewriter = \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::getRewriter();
+        if ($rewriter === null) {
+            return $url;
+        }
+        $result = $rewriter->rewrite($url, $width, $height, 'thumb_url');
+        return $result->url;
+    }
+}
