@@ -50,7 +50,7 @@ jobs:
           WP_TESTS_DIR: ''
 
       - name: Run Plugin Check
-        uses: wordpress/plugin-check-action@v1
+        uses: wordpress/plugin-check-action@v1.1.7
         with:
           build-dir: '.'
           exclude-files: |
