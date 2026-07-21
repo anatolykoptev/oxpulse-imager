@@ -1,12 +1,10 @@
 === OXPulse Imager ===
 Contributors: anatolykoptev
-Tags: images, imgproxy, delivery, avif, webp, performance, cdn, optimization, lazy-load, lqip
+Tags: images, imgproxy, performance, avif, webp
 Requires at least: 6.2
 Tested up to: 6.8
 Requires PHP: 8.3
-<!-- x-release-please-start-version -->
 Stable tag: 0.1.0
-<!-- x-release-please-end -->
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 

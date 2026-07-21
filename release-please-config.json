@@ -12,8 +12,7 @@
           "path": "composer.json",
           "jsonpath": "$.version"
         },
-        "oxpulse-imager.php",
-        "readme.txt"
+        "oxpulse-imager.php"
       ],
       "changelog-sections": [
         { "type": "feat",     "section": "Added" },

@@ -77,6 +77,9 @@ jobs:
           #   concurrency (wp_remote_* is single-request; a 50-URL batch
           #   would take minutes sequentially). HTTP API has no multi primitive.
           # - ExceptionNotEscaped : exception messages are not HTML output.
+          # - parse_url_parse_url : Domain/Application layer (UrlRewriter,
+          #   HealthCheckService) intentionally uses PHP primitives, not WP
+          #   wrappers — this layer must be WordPress-agnostic for testability.
           ignore-codes: |
             WordPress.WP.AlternativeFunctions.curl_curl_init
             WordPress.WP.AlternativeFunctions.curl_curl_setopt
@@ -90,6 +93,7 @@ jobs:
             WordPress.WP.AlternativeFunctions.curl_curl_multi_remove_handle
             WordPress.WP.AlternativeFunctions.curl_curl_multi_close
             WordPress.Security.EscapeOutput.ExceptionNotEscaped
+            WordPress.WP.AlternativeFunctions.parse_url_parse_url
           ignore-warnings: false
 
       - name: Extract version from tag
