@@ -1,52 +1,72 @@
 === OXPulse Imager ===
 Contributors: anatolykoptev
-Tags: images, imgproxy, delivery, avif, webp, performance
+Tags: images, imgproxy, delivery, avif, webp, performance, cdn, optimization, lazy-load, lqip
 Requires at least: 6.2
 Tested up to: 6.8
 Requires PHP: 8.3
-Stable tag: 0.1.0
+Stable tag: 1.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Optional bring-your-own imgproxy image delivery for WordPress. Generates signed, deterministic imgproxy URLs for approved local origins while preserving the original URL whenever configuration, source policy, signing, or delivery cannot safely proceed.
+Bring-your-own imgproxy image delivery for WordPress. Generates signed, deterministic imgproxy URLs for approved local origins. AVIF/WebP on-demand, LQIP placeholders, DPR-aware srcset, watermarking, WP-CLI, Optimization Detective integration, async pre-warming. Disabled by default; no SaaS, no telemetry, no FFI.
 
 == Description ==
 
-OXPulse Imager is a privacy-first WordPress plugin that connects your site to a bring-your-own imgproxy v4 endpoint. When enabled by an administrator, it rewrites approved local image URLs to signed imgproxy URLs that deliver AVIF, WebP, and other modern formats on demand.
+OXPulse Imager connects your WordPress site to a self-hosted [imgproxy](https://imgproxy.net/) v4 endpoint. When enabled by an administrator, it rewrites approved local image URLs to signed imgproxy URLs that deliver AVIF, WebP, and other modern formats on demand — without generating any intermediate files on your server.
 
-Disabled by default. No SaaS, no telemetry, no FFI, no license calls. The plugin never mutates uploads, attachment metadata, post content, or generated files. When configuration, source policy, signing, or delivery cannot safely proceed, the original WordPress URL is preserved.
+**Disabled by default. No SaaS, no telemetry, no FFI, no license calls.** The plugin never mutates uploads, attachment metadata, post content, or generated files. When configuration, source policy, signing, or delivery cannot safely proceed, the original WordPress URL is preserved.
 
-= MVP scope =
+= Key features =
 
-* Optional imgproxy delivery mode, disabled by default.
-* Strict source-policy allowlist validation.
-* HMAC-SHA256 signed imgproxy URLs.
-* WordPress-native hooks: attachment attributes, responsive srcset, and scoped content image rewriting via WP_HTML_Tag_Processor.
-* Single settings page with manual Test Connection action.
-* Original URL fallback on any delivery failure.
+* **Bring-your-own imgproxy** — no SaaS dependency, no per-image pricing. Your imgproxy, your CDN, your rules.
+* **AVIF/WebP on-demand** — `auto` output format uses Accept header negotiation. No intermediate files, no bulk regeneration.
+* **LQIP placeholders** — low-quality image placeholders via imgproxy's `blur` + `quality` options.
+* **DPR-aware srcset** — generates device-pixel-ratio variants for retina/4K displays.
+* **Watermarking** — imgproxy-native watermark overlay with configurable position, opacity, scale.
+* **Quality-per-format** — separate quality settings for AVIF, WebP, JPEG, PNG.
+* **Optimization Detective integration** — preconnect to your imgproxy endpoint + breakpoint-specific preload links for LCP images (when the Optimization Detective plugin is active).
+* **WP-CLI commands** — `wp oxpulse status`, `wp oxpulse info`, `wp oxpulse warm`, `wp oxpulse flush`.
+* **Async pre-warming** — bulk cache pre-warm via WordPress cron with job polling.
+* **REST API** — `/oxpulse/v1/status`, `/info`, `/health`, `/avif-check`, `/prewarm`, `/diagnostics`.
+* **Diagnostics** — per-request logging (off/basic/verbose) + admin bar item showing live rewrite counts.
+* **First-run wizard** — six-step onboarding from zero to a working imgproxy integration.
+* **Fail-safe preservation** — original URL preserved on any delivery failure, source policy violation, or signing error.
 
-= Explicit non-goals for v1 =
+= WordPress hooks covered =
+
+* `wp_content_img_tag` — `<img>` tags in post content (src + srcset)
+* `wp_calculate_image_srcset` — responsive srcset arrays
+* `wp_get_attachment_image_src` — `[url, w, h, is_intermediate]` arrays
+* `wp_get_attachment_url` — raw attachment URLs (image extensions only)
+* `get_avatar` — avatar `<img>` tags (Gravatar + custom)
+
+= Explicit non-goals =
 
 * Local image optimization and sidecar generation.
-* SEO plugin-specific adapters (Yoast, Rank Math).
-* Background bulk processing.
 * Disabling WordPress intermediate image generation.
 * SaaS, hosted imgproxy, or any external service dependency.
+* Mutating uploads, attachment metadata, post content, or generated files.
 
 == Installation ==
 
 1. Upload the `oxpulse-imager` folder to `/wp-content/plugins/`.
 2. Activate the plugin through the 'Plugins' menu in WordPress.
-3. Navigate to Settings > OXPulse Imager.
-4. Configure your imgproxy endpoint, signing key, salt, and allowed source URL prefixes.
-5. Use the Test Connection action to validate your configuration.
-6. Enable delivery.
+3. The first-run wizard will guide you through configuring your imgproxy endpoint, signing secrets, and allowed source origins.
+4. Alternatively, skip the wizard and configure manually via Settings > OXPulse Imager.
+5. Enable delivery when ready.
+
+= Requirements =
+
+* WordPress 6.2+
+* PHP 8.3+
+* A self-hosted imgproxy v4+ instance (with `IMGPROXY_KEY` and `IMGPROXY_SALT` set for signed URLs)
+* HTTPS for the imgproxy endpoint (production)
 
 == Frequently Asked Questions ==
 
 = Does this plugin send my images to a third-party service? =
 
-No. The plugin connects only to the imgproxy endpoint you configure. No telemetry, no license checks, no external requests except the explicit administrator-triggered health check.
+No. The plugin connects only to the imgproxy endpoint you configure. No telemetry, no license checks, no external requests except the explicit administrator-triggered health check and the image requests to your own imgproxy instance.
 
 = Does this plugin modify my media library or uploads? =
 
@@ -58,9 +78,42 @@ The plugin preserves the original WordPress image URL. Images remain visible. Th
 
 = Is imgproxy required? =
 
-No. The plugin is disabled by default and changes no frontend URLs until an administrator explicitly enables it. Without imgproxy configured, the plugin is inert.
+Yes — this plugin is a bring-your-own-imgproxy integration. You need a self-hosted imgproxy v4+ instance. See the [imgproxy documentation](https://imgproxy.net/) for setup instructions.
+
+= Can I use this with a hosted imgproxy service? =
+
+Yes, as long as the service provides a standard imgproxy endpoint with key/salt signing. Configure the endpoint URL and your signing secrets in the plugin settings.
+
+= Does this work with the Optimization Detective plugin? =
+
+Yes. When Optimization Detective is active, OXPulse adds a preconnect link to your imgproxy endpoint and registers a tag visitor for IMG tags with imgproxy URLs. If Image Prioritizer is also active, OXPulse defers to it for IMG preload links to avoid duplicates.
+
+= Does this work with WP-CLI? =
+
+Yes. The plugin provides four WP-CLI commands: `wp oxpulse status`, `wp oxpulse info <url>`, `wp oxpulse warm [--all|--attachment=<id>|<urls>...]`, and `wp oxpulse flush`.
+
+== Screenshots ==
+
+1. First-run onboarding wizard — six steps from zero to a working imgproxy integration.
+2. Settings page — Connection, Format, Enhancements, Diagnostics, Tools, Pre-warm sections.
+3. Diagnostics — recent log entries with context, status, URL, width, and reason.
+4. Admin bar item — live rewrite counts on frontend pages.
+5. Pre-warm — bulk cache pre-warm with sync/async modes.
 
 == Changelog ==
+
+= 1.0.0 =
+
+* First stable release.
+* **Onboarding wizard** — six-step first-run wizard (endpoint, secrets, test connection, allowed sources, test AVIF, enable delivery).
+* **Diagnostics + admin bar** — per-request logging (off/basic/verbose) + admin bar item showing live rewrite counts + diagnostics REST endpoint.
+* **WP-CLI commands** — `wp oxpulse status`, `wp oxpulse info`, `wp oxpulse warm`, `wp oxpulse flush`.
+* **Optimization Detective integration** — preconnect to imgproxy endpoint + breakpoint-specific preload links for LCP images.
+* **Async pre-warming** — bulk cache pre-warm via WordPress cron with job polling.
+* **REST API** — `/status`, `/info`, `/health`, `/avif-check`, `/prewarm` (sync + async), `/diagnostics`.
+* **imgproxy-native enhancements** — LQIP placeholders, DPR-aware srcset, watermarking, quality-per-format.
+* **Modern React admin SPA** — settings page rebuilt as a Vite + React + Zustand SPA.
+* 317 tests green on PHP 8.3/8.4/8.5.
 
 = 0.1.0 =
 
@@ -70,3 +123,9 @@ No. The plugin is disabled by default and changes no frontend URLs until an admi
 * HMAC-SHA256 signed imgproxy URLs.
 * Single settings page with Test Connection action.
 * Original URL fallback on any delivery failure.
+
+== Upgrade Notice ==
+
+= 1.0.0 =
+
+First stable release. If upgrading from 0.1.0, your existing settings are preserved. The first-run wizard only appears on fresh installs. New features (LQIP, DPR srcset, watermark, WP-CLI, async pre-warm, Optimization Detective integration) are opt-in via the settings page.

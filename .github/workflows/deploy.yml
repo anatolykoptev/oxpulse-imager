@@ -1,0 +1,85 @@
+name: Deploy to wordpress.org
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to wordpress.org SVN
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, curl
+          tools: composer:v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install PHP dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress --no-dev --optimize-autoloader
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Build admin SPA
+        run: npm run build
+
+      - name: Run tests (gate the deploy)
+        run: |
+          composer test:unit
+          npm test
+        env:
+          WP_TESTS_DIR: ''
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Verify version matches plugin header
+        run: |
+          PLUGIN_VERSION=$(grep -oP 'Version:\s+\K[\d.]+' oxpulse-imager.php)
+          if [ "$PLUGIN_VERSION" != "${{ steps.version.outputs.VERSION }}" ]; then
+            echo "::error::Tag version (${{ steps.version.outputs.VERSION }}) does not match plugin header ($PLUGIN_VERSION)"
+            exit 1
+          fi
+          echo "✓ Version match: $PLUGIN_VERSION"
+
+      - name: Verify readme.txt stable tag matches
+        run: |
+          STABLE_TAG=$(grep -oP 'Stable tag:\s+\K[\d.]+' readme.txt)
+          if [ "$STABLE_TAG" != "${{ steps.version.outputs.VERSION }}" ]; then
+            echo "::error::readme.txt stable tag ($STABLE_TAG) does not match tag version (${{ steps.version.outputs.VERSION }})"
+            exit 1
+          fi
+          echo "✓ Stable tag match: $STABLE_TAG"
+
+      - name: Deploy to SVN
+        uses: 10up/action-wordpress-plugin-deploy@stable
+        with:
+          generate-zip: true
+        env:
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SLUG: oxpulse-imager
+          VERSION: ${{ steps.version.outputs.VERSION }}
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: oxpulse-imager-${{ steps.version.outputs.VERSION }}
+          path: ${{ github.workspace }}/oxpulse-imager.zip

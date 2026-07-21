@@ -27,7 +27,7 @@ class PluginTest extends TestCase
 
     public function test_constants_are_defined(): void
     {
-        $this->assertSame('0.1.0', OXPULSE_IMAGER_VERSION);
+        $this->assertSame('1.0.0', OXPULSE_IMAGER_VERSION);
         $this->assertSame('oxpulse_imager_', OXPULSE_IMAGER_OPTION_PREFIX);
         $this->assertSame('manage_oxpulse_imager', OXPULSE_IMAGER_CAPABILITY);
     }

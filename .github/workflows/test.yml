@@ -101,3 +101,11 @@ jobs:
             echo "::error::assets/js or assets/css is out of date — run 'npm run build' and commit the result"
             exit 1
           }
+
+      - name: Verify .pot file is up to date
+        run: |
+          npm run make-pot
+          git diff --exit-code languages/oxpulse-imager.pot || {
+            echo "::error::languages/oxpulse-imager.pot is out of date — run 'npm run make-pot' and commit the result"
+            exit 1
+          }

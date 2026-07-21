@@ -11,6 +11,7 @@
     "dev:admin": "vite --config build/vite.config.js",
     "preview:admin": "vite preview --config build/vite.config.js",
     "write:manifest": "node build/write-manifest.mjs",
+    "make-pot": "node build/make-pot.mjs",
     "test": "node --test 'tests/admin/**/*.test.mjs'",
     "lint": "eslint 'src/admin/**/*.{js,jsx}'"
   },
@@ -36,6 +37,7 @@
     "postcss": "^8.5.16",
     "tailwindcss": "^3.4.19",
     "terser": "^5.19.2",
-    "vite": "^4.4.5"
+    "vite": "^4.4.5",
+    "wp-pot": "^2.0.0"
   }
 }

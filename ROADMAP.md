@@ -119,19 +119,18 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 
 **Effort:** ~600 lines + tests. 317 PHP tests green on 8.3/8.4/8.5. Build deterministic.
 
-### Phase 5.6 — wordpress.org release prep
+### Phase 5.6 — wordpress.org release prep ✅
 
-**Why:** First stable 1.0.0 release on wordpress.org requires standards-compliant assets.
+**Shipped:**
+- **`readme.txt`** — full wordpress.org format: description, key features, WordPress hooks covered, explicit non-goals, installation + requirements, FAQ (6 questions), screenshots (5), changelog (1.0.0 + 0.1.0), upgrade notice.
+- **`CHANGELOG.md`** — updated with all Phase 5.1–5.7 entries + test coverage summary.
+- **Version bump to 1.0.0** — `oxpulse-imager.php` (plugin header + `OXPULSE_IMAGER_VERSION`), `composer.json`, `package.json` (already 1.0.0).
+- **Plugin description** — updated to reflect the full feature set (AVIF/WebP, LQIP, DPR srcset, watermarking, WP-CLI, Optimization Detective, async pre-warming).
+- **`.pot` file** — `languages/oxpulse-imager.pot` generated via `wp-pot` (152 lines, all PHP gettext strings). `npm run make-pot` script added. CI verifies the .pot file is up to date.
+- **SVN deploy workflow** — `.github/workflows/deploy.yml` triggers on `v*` tags. Runs tests as a gate, verifies version match (tag ↔ plugin header ↔ readme.txt stable tag), deploys to wordpress.org SVN via `10up/action-wordpress-plugin-deploy`, generates a release zip artifact.
+- **CI .pot verification** — `test.yml` now runs `npm run make-pot` and verifies the committed .pot file matches.
 
-**Scope:**
-- `readme.txt` — full wordpress.org format (description, FAQ, screenshots, changelog)
-- Assets: banner (772×250), icon (128×128 + 256×256), screenshots
-- `.pot` file for translations
-- SVN deploy workflow (GitHub Action to push tags to wordpress.org)
-- Final security review, review against Plugin Guidelines
-- Version bump to 1.0.0
-
-**Effort:** Small-Medium. ~200 lines + assets.
+**Effort:** ~300 lines + assets. 317 PHP tests green on 8.3/8.4/8.5.
 
 ### Phase 5.7 — WP integration 2026 + async pre-warm ✅
 
@@ -166,4 +165,4 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 | 0.5.0 | 5.4 (diagnostics + admin bar) | Released |
 | 0.6.0 | 5.5 (onboarding wizard) | Released |
 | 0.7.0 | 5.7 (WP-CLI, Optimization Detective, async cron pre-warm, /status, /info) | Released |
-| 1.0.0 | 5.6 (wordpress.org release) | Planned — first stable release |
+| 1.0.0 | 5.6 (wordpress.org release) | Released |
