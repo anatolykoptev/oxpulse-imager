@@ -38,6 +38,9 @@ final readonly class DeliveryConfig
      *        or 'local' (imgproxy reads from filesystem via local:// transport).
      * @param string $localBasePath Filesystem root for 'local' source mode (e.g. ABSPATH).
      *        Must be an absolute, existing, readable directory. Empty when sourceMode='http'.
+     * @param bool $bufferRewritingEnabled Whether to register ob_start buffer rewriting
+     *        for theme-hardcoded <img> tags. Default false — opt-in for themes (e.g. Foxiz)
+     *        that bypass wp_content_img_tag.
      */
     public function __construct(
         public bool $enabled,
@@ -53,7 +56,8 @@ final readonly class DeliveryConfig
         public ?Watermark $watermark = null,
         public array $formatQuality = [],
         public string $sourceMode = 'http',
-        public string $localBasePath = ''
+        public string $localBasePath = '',
+        public bool $bufferRewritingEnabled = false
     ) {
         if (!in_array($sourceMode, ['http', 'local'], true)) {
             throw new \InvalidArgumentException('sourceMode must be "http" or "local".');

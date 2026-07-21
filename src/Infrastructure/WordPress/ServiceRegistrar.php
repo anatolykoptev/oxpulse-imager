@@ -36,6 +36,7 @@ use OXPulse\Imager\Integration\WordPress\Cli\CliServiceProvider;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentUrlRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\AvatarRewriter;
+use OXPulse\Imager\Integration\WordPress\Delivery\BufferRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
 use OXPulse\Imager\Integration\WordPress\Performance\OptimizationDetectiveIntegration;
@@ -148,6 +149,16 @@ final class ServiceRegistrar
         add_filter('wp_get_attachment_image_src', [$attachmentRewriter, 'rewrite'], 10, 4);
         add_filter('wp_get_attachment_url', [$attachmentUrlRewriter, 'rewrite'], 10, 2);
         add_filter('get_avatar', [$avatarRewriter, 'rewrite'], 10, 5);
+
+        // Ф2: Buffer rewriting for theme-hardcoded <img> tags (e.g. Foxiz).
+        // Registered AFTER the 5 filters above so wp_content_img_tag etc.
+        // run first; the buffer regex only matches /wp-content/ URLs that
+        // the filters missed (imgproxy URLs don't contain /wp-content/, so
+        // already-rewritten tags are not double-rewritten).
+        if ($delivery->bufferRewritingEnabled) {
+            $bufferRewriter = new BufferRewriter($rewriter, $delivery);
+            $bufferRewriter->register();
+        }
     }
 
     /**
