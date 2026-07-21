@@ -73,11 +73,26 @@ function oxpulse_imager_runtime_supported(): bool {
 }
 
 /**
+ * Grant the `manage_oxpulse_imager` capability to the administrator role.
+ *
+ * Idempotent — safe to call on every activation and on every load via
+ * the self-heal check in Plugin::load(). Uses get_role/add_cap so it
+ * works on multisite (per-site admins) and single site alike.
+ */
+function oxpulse_imager_grant_capability(): void {
+    $role = get_role('administrator');
+    if ($role instanceof WP_Role && !$role->has_cap(OXPULSE_IMAGER_CAPABILITY)) {
+        $role->add_cap(OXPULSE_IMAGER_CAPABILITY);
+    }
+}
+
+/**
  * Activation hook.
  *
- * Registers disabled default options. Never mutates media, attachments,
- * post content, or external systems. The plugin must remain a no-op on
- * the frontend until an administrator explicitly enables delivery.
+ * Registers disabled default options and grants the plugin capability to
+ * administrators. Never mutates media, attachments, post content, or
+ * external systems. The plugin must remain a no-op on the frontend until
+ * an administrator explicitly enables delivery.
  */
 function oxpulse_imager_activate(): void {
     $defaults = [
@@ -99,6 +114,8 @@ function oxpulse_imager_activate(): void {
             add_option($key, $value, '', false);
         }
     }
+
+    oxpulse_imager_grant_capability();
 }
 
 /**
@@ -119,6 +136,13 @@ if (!oxpulse_imager_runtime_supported()) {
 }
 
 require_once OXPULSE_IMAGER_DIR . 'src/Plugin.php';
+
+// Self-heal: grant the capability on every load if missing. This handles
+// installs that activated an earlier version of the plugin (before the
+// activation hook granted the capability) without requiring a
+// deactivate/reactivate cycle. Idempotent — add_cap is a no-op when the
+// capability already exists.
+oxpulse_imager_grant_capability();
 
 \OXPulse\Imager\Plugin::load(OXPULSE_IMAGER_FILE);
 

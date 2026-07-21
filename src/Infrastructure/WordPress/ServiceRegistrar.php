@@ -259,6 +259,21 @@ final class ServiceRegistrar
         $page = new SettingsPage();
         $page->register();
 
+        // "Settings" action link on the Plugins list page — jumps
+        // directly to Settings > OXPulse Imager. Standard WP pattern;
+        // only added for this plugin's row, not all plugins.
+        $pluginFile = $plugin->file();
+        add_filter('plugin_action_links_' . plugin_basename($pluginFile), static function (array $links): array {
+            $settingsUrl = admin_url('options-general.php?page=' . SettingsPage::PAGE_SLUG);
+            $settingsLink = sprintf(
+                '<a href="%s">%s</a>',
+                esc_url($settingsUrl),
+                esc_html__('Settings', 'oxpulse-imager')
+            );
+            array_unshift($links, $settingsLink);
+            return $links;
+        });
+
         // REST: GET|POST /oxpulse/v1/options — settings read/write.
         $optionsRest = new OptionsRestController($repository, $validator);
         $optionsRest->register();

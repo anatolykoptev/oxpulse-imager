@@ -188,6 +188,21 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('register_deactivation_hook')) {
         function register_deactivation_hook($file, $callback) {}
     }
+    // Capability mocks for oxpulse_imager_grant_capability().
+    if (!class_exists('WP_Role')) {
+        class WP_Role {
+            public $capabilities = [];
+            public function __construct(array $caps = []) { $this->capabilities = $caps; }
+            public function has_cap($cap) { return isset($this->capabilities[$cap]) && $this->capabilities[$cap]; }
+            public function add_cap($cap, $grant = true) { $this->capabilities[$cap] = (bool) $grant; }
+        }
+    }
+    if (!function_exists('get_role')) {
+        function get_role($role) {
+            $roles = $GLOBALS['__oxpulse_roles'] ?? [];
+            return $roles[$role] ?? null;
+        }
+    }
     if (!function_exists('load_plugin_textdomain')) {
         function load_plugin_textdomain($domain, $deprecated = false, $plugin_rel_path = false) { return true; }
     }
