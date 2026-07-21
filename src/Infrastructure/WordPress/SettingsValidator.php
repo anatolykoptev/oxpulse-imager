@@ -15,12 +15,20 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\WordPress;
 
+use OXPulse\Imager\Domain\Transform\Watermark;
+
 final class SettingsValidator
 {
     public const MIN_KEY_BYTES = 16;
     public const MIN_SALT_BYTES = 16;
     public const ALLOWED_FORMATS = ['auto', 'avif', 'webp', 'jpeg'];
     public const ALLOWED_DIAGNOSTIC_LEVELS = ['off', 'basic', 'verbose'];
+    public const ALLOWED_WATERMARK_POSITIONS = Watermark::ALLOWED_POSITIONS;
+    public const MIN_LQIP_BLUR = 0.1;
+    public const MAX_LQIP_BLUR = 100;
+    public const MIN_DPR = 1;
+    public const MAX_DPR = 8;
+    public const ALLOWED_FORMAT_QUALITY_KEYS = ['avif', 'webp', 'jpeg', 'png'];
 
     /**
      * Validate and sanitize all settings from a form submission.
@@ -113,6 +121,31 @@ final class SettingsValidator
         $diagLevel = (string) ($input['diagnostic_level'] ?? 'off');
         $values['diagnostic_level'] = in_array($diagLevel, self::ALLOWED_DIAGNOSTIC_LEVELS, true) ? $diagLevel : 'off';
 
+        // --- Phase 5.1: imgproxy-native enhancements ---
+
+        // LQIP placeholders.
+        $values['lqip_enabled'] = !empty($input['lqip_enabled']);
+        $lqipBlur = (float) ($input['lqip_blur'] ?? 1);
+        if ($lqipBlur < self::MIN_LQIP_BLUR || $lqipBlur > self::MAX_LQIP_BLUR) {
+            $errors['lqip_blur'] = sprintf(
+                /* translators: 1: minimum blur, 2: maximum blur. */
+                __('LQIP blur must be between %s and %s.', 'oxpulse-imager'),
+                self::MIN_LQIP_BLUR,
+                self::MAX_LQIP_BLUR
+            );
+        }
+        $values['lqip_blur'] = (float) max(self::MIN_LQIP_BLUR, min(self::MAX_LQIP_BLUR, $lqipBlur));
+
+        // DPR variants.
+        $values['dpr_enabled'] = !empty($input['dpr_enabled']);
+        $values['dpr_variants'] = $this->parseDprVariants($input['dpr_variants'] ?? '');
+
+        // Per-format quality.
+        $values['format_quality'] = $this->parseFormatQuality($input['format_quality'] ?? [], $errors);
+
+        // Watermark.
+        $values['watermark'] = $this->parseWatermark($input['watermark'] ?? [], $errors);
+
         return ['values' => $values, 'errors' => $errors];
     }
 
@@ -146,5 +179,134 @@ final class SettingsValidator
     private function isValidHex(string $value): bool
     {
         return $value !== '' && strlen($value) % 2 === 0 && ctype_xdigit($value);
+    }
+
+    /**
+     * Parse DPR variants from a comma-separated string (e.g. "1,2,3").
+     *
+     * Each value must be an integer between MIN_DPR and MAX_DPR. Values
+     * are deduplicated and sorted ascending. Empty input → empty array
+     * (DPR variants disabled).
+     *
+     * @param string $raw
+     * @return array<int>
+     */
+    private function parseDprVariants(string $raw): array
+    {
+        if (trim($raw) === '') {
+            return [];
+        }
+
+        $parts = explode(',', $raw);
+        $variants = [];
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if ($part === '') {
+                continue;
+            }
+            $val = (int) $part;
+            if ($val >= self::MIN_DPR && $val <= self::MAX_DPR) {
+                $variants[$val] = $val;
+            }
+        }
+
+        $variants = array_values($variants);
+        sort($variants);
+        return $variants;
+    }
+
+    /**
+     * Parse per-format quality overrides from form input.
+     *
+     * Expected input shape: ['avif' => '70', 'webp' => '80', ...].
+     * Values are cast to int and clamped to 1-100. Only keys in
+     * ALLOWED_FORMAT_QUALITY_KEYS are accepted; others are silently
+     * dropped. Empty values are dropped (means "use default quality").
+     *
+     * @param array $input
+     * @param array<string,string> $errors Errors array (passed by reference).
+     * @return array<string,int>
+     */
+    private function parseFormatQuality(array $input, array &$errors): array
+    {
+        $result = [];
+        foreach (self::ALLOWED_FORMAT_QUALITY_KEYS as $fmt) {
+            if (!isset($input[$fmt])) {
+                continue;
+            }
+            $raw = trim((string) $input[$fmt]);
+            if ($raw === '') {
+                continue;
+            }
+            $val = (int) $raw;
+            if ($val < 1 || $val > 100) {
+                $errors['format_quality_' . $fmt] = sprintf(
+                    /* translators: 1: format name, 2: minimum, 3: maximum. */
+                    __('Quality for %1$s must be between %2$d and %3$d.', 'oxpulse-imager'),
+                    $fmt,
+                    1,
+                    100
+                );
+                continue;
+            }
+            $result[$fmt] = $val;
+        }
+        return $result;
+    }
+
+    /**
+     * Parse watermark configuration from form input.
+     *
+     * Expected input shape: [
+     *   'enabled' => '1',
+     *   'opacity' => '0.5',
+     *   'position' => 'ce',
+     *   'x_offset' => '0',
+     *   'y_offset' => '0',
+     *   'scale' => '0.1',
+     * ]
+     *
+     * Returns null when watermark is disabled or any value is invalid.
+     * Errors are added to the $errors array (passed by reference).
+     *
+     * @param array $input
+     * @param array<string,string> $errors Errors array (passed by reference).
+     * @return array|null
+     */
+    private function parseWatermark(array $input, array &$errors): ?array
+    {
+        if (empty($input['enabled'])) {
+            return null;
+        }
+
+        $opacity = (float) ($input['opacity'] ?? 1);
+        if ($opacity < 0 || $opacity > 1) {
+            $errors['watermark_opacity'] = __('Watermark opacity must be between 0 and 1.', 'oxpulse-imager');
+            return null;
+        }
+
+        $position = (string) ($input['position'] ?? Watermark::POS_CENTER);
+        if (!in_array($position, self::ALLOWED_WATERMARK_POSITIONS, true)) {
+            $errors['watermark_position'] = __('Invalid watermark position.', 'oxpulse-imager');
+            return null;
+        }
+
+        $xOffset = (int) ($input['x_offset'] ?? 0);
+        $yOffset = (int) ($input['y_offset'] ?? 0);
+        $scale = (float) ($input['scale'] ?? 0);
+
+        if ($scale < 0 || $scale > 1) {
+            $errors['watermark_scale'] = __('Watermark scale must be between 0 and 1.', 'oxpulse-imager');
+            return null;
+        }
+
+        return [
+            'enabled' => true,
+            'opacity' => $opacity,
+            'position' => $position,
+            'x_offset' => $xOffset,
+            'y_offset' => $yOffset,
+            'scale' => $scale,
+        ];
     }
 }

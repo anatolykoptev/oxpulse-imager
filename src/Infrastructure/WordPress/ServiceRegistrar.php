@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\WordPress;
 
+use OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Application\Health\HealthCheckService;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
@@ -92,7 +93,10 @@ final class ServiceRegistrar
 
         $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
 
-        $contentRewriter = new ContentImgTagRewriter($rewriter);
+        // Phase 5.1: LQIP placeholder builder (only when enabled).
+        $lqipBuilder = $delivery->lqipEnabled ? new LqipPlaceholderBuilder($rewriter) : null;
+
+        $contentRewriter = new ContentImgTagRewriter($rewriter, $delivery, $lqipBuilder);
         $srcsetRewriter = new SrcsetRewriter($rewriter);
         $attachmentRewriter = new AttachmentImageSrcRewriter($rewriter);
         $attachmentUrlRewriter = new AttachmentUrlRewriter($rewriter);

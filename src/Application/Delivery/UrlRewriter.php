@@ -84,7 +84,11 @@ final class UrlRewriter
                 resize: $this->resolveResizeType($width, $height),
                 format: $this->delivery->outputFormat,
                 quality: $this->delivery->defaultQuality > 0 ? $this->delivery->defaultQuality : 0,
-                context: $context
+                context: $context,
+                dpr: 0,
+                blur: 0,
+                watermark: $this->delivery->watermark,
+                formatQuality: $this->delivery->formatQuality,
             );
 
             $filename = $this->buildContentDispositionFilename($sourceUrl);
@@ -93,6 +97,118 @@ final class UrlRewriter
         } catch (\Throwable $e) {
             // Fail safe: any unexpected error preserves the original URL.
             return RewriteResult::preserved($sourceUrl, 'generation_error');
+        }
+    }
+
+    /**
+     * Build a LQIP (Low-Quality Image Placeholder) URL for a source image.
+     *
+     * Uses imgproxy's blur option to generate a tiny, blurred preview
+     * that can be inlined as a data URI or loaded before the full image.
+     * Returns null when LQIP is disabled or the URL cannot be rewritten.
+     *
+     * @param string $sourceUrl Original image URL.
+     * @return RewriteResult
+     */
+    public function rewriteLqip(string $sourceUrl): RewriteResult
+    {
+        if (!$this->delivery->lqipEnabled) {
+            return RewriteResult::preserved($sourceUrl, 'lqip_disabled');
+        }
+
+        if (!$this->delivery->enabled) {
+            return RewriteResult::preserved($sourceUrl, 'delivery_disabled');
+        }
+
+        if ($this->delivery->endpoint === '') {
+            return RewriteResult::preserved($sourceUrl, 'no_endpoint');
+        }
+
+        if ($this->signing === null) {
+            return RewriteResult::preserved($sourceUrl, 'no_signing_config');
+        }
+
+        $decision = $this->policy->authorize($sourceUrl, $this->delivery);
+        if (!$decision->authorized) {
+            return RewriteResult::preserved($sourceUrl, $decision->reason);
+        }
+
+        try {
+            // LQIP: small width + blur. No resize dimensions = use blur only,
+            // imgproxy will serve a small blurred version. We add a modest
+            // width cap (20px) so the placeholder is genuinely tiny.
+            $request = new TransformRequest(
+                sourceUrl: (string) $decision->url,
+                width: 20,
+                height: 20,
+                resize: 'fit',
+                format: $this->delivery->outputFormat,
+                quality: 30,
+                context: 'lqip',
+                dpr: 0,
+                blur: $this->delivery->lqipBlur > 0 ? $this->delivery->lqipBlur : 1,
+                watermark: null, // Never watermark the placeholder
+                formatQuality: [],
+            );
+
+            return RewriteResult::rewritten($this->generator()->generate($request));
+        } catch (\Throwable $e) {
+            return RewriteResult::preserved($sourceUrl, 'lqip_generation_error');
+        }
+    }
+
+    /**
+     * Build a DPR-aware variant URL for a source image.
+     *
+     * Used by SrcsetRewriter to emit 1x/2x/3x variants. The width is
+     * multiplied by the DPR factor so imgproxy serves a sharper image
+     * for HiDPI displays.
+     *
+     * @param string $sourceUrl Original image URL.
+     * @param int $width Base width (CSS pixels).
+     * @param float $dpr Device pixel ratio (1, 2, 3).
+     * @param string $context Rewrite context.
+     * @return RewriteResult
+     */
+    public function rewriteDpr(string $sourceUrl, int $width, float $dpr, string $context = 'srcset'): RewriteResult
+    {
+        if (!$this->delivery->enabled) {
+            return RewriteResult::preserved($sourceUrl, 'delivery_disabled');
+        }
+
+        if ($this->delivery->endpoint === '') {
+            return RewriteResult::preserved($sourceUrl, 'no_endpoint');
+        }
+
+        if ($this->signing === null) {
+            return RewriteResult::preserved($sourceUrl, 'no_signing_config');
+        }
+
+        $decision = $this->policy->authorize($sourceUrl, $this->delivery);
+        if (!$decision->authorized) {
+            return RewriteResult::preserved($sourceUrl, $decision->reason);
+        }
+
+        try {
+            $request = new TransformRequest(
+                sourceUrl: (string) $decision->url,
+                width: $width,
+                height: 0,
+                resize: 'fit',
+                format: $this->delivery->outputFormat,
+                quality: $this->delivery->defaultQuality > 0 ? $this->delivery->defaultQuality : 0,
+                context: $context,
+                dpr: $dpr,
+                blur: 0,
+                watermark: $this->delivery->watermark,
+                formatQuality: $this->delivery->formatQuality,
+            );
+
+            $filename = $this->buildContentDispositionFilename($sourceUrl);
+
+            return RewriteResult::rewritten($this->generator()->generate($request, $filename));
+        } catch (\Throwable $e) {
+            return RewriteResult::preserved($sourceUrl, 'dpr_generation_error');
         }
     }
 

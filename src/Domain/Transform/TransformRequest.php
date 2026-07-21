@@ -3,8 +3,9 @@
  * Immutable transform request.
  *
  * Represents a request to transform an image: source URL, target
- * dimensions, resize policy, output format, and quality. Does not
- * contain signing secrets.
+ * dimensions, resize policy, output format, quality, and imgproxy-
+ * native enhancement options (DPR, blur, watermark, per-format
+ * quality). Does not contain signing secrets.
  *
  * @package OXPulse\Imager\Domain\Transform
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -23,8 +24,12 @@ final readonly class TransformRequest
      * @param int $height Target height (0 = auto).
      * @param string $resize Resize type: 'fit', 'fill', 'auto', or '' (no resize).
      * @param string $format Output format: 'auto', 'avif', 'webp', 'jpeg', 'png'.
-     * @param int $quality Quality (1-100, 0 = use default).
+     * @param int $quality Quality (1-100, 0 = use default / per-format).
      * @param string $context Where the transform originated (e.g. 'content', 'srcset', 'attachment').
+     * @param float $dpr Device pixel ratio multiplier (0 = disabled, 1 = no scaling, 2/3 = retina).
+     * @param float $blur Blur sigma for LQIP placeholders (0 = disabled, 1-100 typical).
+     * @param Watermark|null $watermark Watermark configuration, or null to skip.
+     * @param array<string,int> $formatQuality Per-format quality overrides, e.g. ['avif' => 70, 'webp' => 80]. Empty = use global quality.
      */
     public function __construct(
         public string $sourceUrl,
@@ -33,7 +38,11 @@ final readonly class TransformRequest
         public string $resize = 'fit',
         public string $format = 'auto',
         public int $quality = 0,
-        public string $context = 'attachment'
+        public string $context = 'attachment',
+        public float $dpr = 0,
+        public float $blur = 0,
+        public ?Watermark $watermark = null,
+        public array $formatQuality = []
     ) {
         if ($width < 0 || $width > 10000) {
             throw new \InvalidArgumentException('Width must be between 0 and 10000.');
@@ -43,6 +52,20 @@ final readonly class TransformRequest
         }
         if ($quality < 0 || $quality > 100) {
             throw new \InvalidArgumentException('Quality must be between 0 and 100.');
+        }
+        if ($dpr < 0 || $dpr > 8) {
+            throw new \InvalidArgumentException('DPR must be between 0 and 8.');
+        }
+        if ($blur < 0 || $blur > 100) {
+            throw new \InvalidArgumentException('Blur must be between 0 and 100.');
+        }
+        foreach ($formatQuality as $fmt => $q) {
+            if (!is_string($fmt) || !in_array($fmt, ['avif', 'webp', 'jpeg', 'png'], true)) {
+                throw new \InvalidArgumentException('Format quality key must be one of: avif, webp, jpeg, png.');
+            }
+            if (!is_int($q) || $q < 1 || $q > 100) {
+                throw new \InvalidArgumentException('Format quality value must be an integer between 1 and 100.');
+            }
         }
     }
 }

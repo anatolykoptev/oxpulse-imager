@@ -45,6 +45,21 @@ $devHttpOverride = $delivery->devHttpOverride ?? false;
 $diagnosticLevel = (string) get_option('oxpulse_imager_diagnostic_level', 'off');
 $removeOnUninstall = (bool) get_option('oxpulse_imager_remove_on_uninstall', false);
 
+// Phase 5.1: imgproxy-native enhancement options.
+$lqipEnabled = $delivery->lqipEnabled ?? false;
+$lqipBlur = $delivery->lqipBlur ?? 1;
+$dprEnabled = $delivery->dprEnabled ?? false;
+$dprVariants = $delivery->dprVariants ?? [];
+$dprVariantsText = implode(',', $dprVariants);
+$formatQuality = $delivery->formatQuality ?? [];
+$watermark = $delivery->watermark;
+$watermarkEnabled = $watermark !== null;
+$watermarkOpacity = $watermark?->opacity ?? 1;
+$watermarkPosition = $watermark?->position ?? 'ce';
+$watermarkXOffset = $watermark?->xOffset ?? 0;
+$watermarkYOffset = $watermark?->yOffset ?? 0;
+$watermarkScale = $watermark?->scale ?? 0;
+
 $settingsUpdated = isset($_GET['settings_updated']) ? (string) $_GET['settings_updated'] : '';
 $healthResult = isset($_GET['health_result']) ? (string) $_GET['health_result'] : '';
 $healthMessage = isset($_GET['health_message']) ? (string) $_GET['health_message'] : '';
@@ -180,6 +195,108 @@ $saveAction = admin_url('admin-post.php');
                 <td>
                     <input type="number" id="oxpulse-quality" name="oxpulse_imager[default_quality]" min="1" max="100" value="<?php echo esc_attr((string) $defaultQuality); ?>" class="small-text" />
                     <span class="description"><?php esc_html_e('1–100. Used when a transform request does not specify quality.', 'oxpulse-imager'); ?></span>
+                </td>
+            </tr>
+
+            <tr>
+                <th scope="row"><label for="oxpulse-q-avif"><?php esc_html_e('AVIF quality', 'oxpulse-imager'); ?></label></th>
+                <td>
+                    <input type="number" id="oxpulse-q-avif" name="oxpulse_imager[format_quality][avif]" min="1" max="100" value="<?php echo esc_attr((string) ($formatQuality['avif'] ?? '')); ?>" class="small-text" placeholder="<?php esc_attr_e('use default', 'oxpulse-imager'); ?>" />
+                    <span class="description"><?php esc_html_e('1–100. Overrides default quality for AVIF output. Leave empty to use default. AVIF typically looks good at 50-70.', 'oxpulse-imager'); ?></span>
+                </td>
+            </tr>
+
+            <tr>
+                <th scope="row"><label for="oxpulse-q-webp"><?php esc_html_e('WebP quality', 'oxpulse-imager'); ?></label></th>
+                <td>
+                    <input type="number" id="oxpulse-q-webp" name="oxpulse_imager[format_quality][webp]" min="1" max="100" value="<?php echo esc_attr((string) ($formatQuality['webp'] ?? '')); ?>" class="small-text" placeholder="<?php esc_attr_e('use default', 'oxpulse-imager'); ?>" />
+                    <span class="description"><?php esc_html_e('1–100. Overrides default quality for WebP output. Leave empty to use default. WebP typically looks good at 70-85.', 'oxpulse-imager'); ?></span>
+                </td>
+            </tr>
+
+            <tr>
+                <th scope="row"><?php esc_html_e('LQIP placeholders', 'oxpulse-imager'); ?></th>
+                <td>
+                    <fieldset>
+                        <label for="oxpulse-lqip-enabled">
+                            <input type="checkbox" id="oxpulse-lqip-enabled" name="oxpulse_imager[lqip_enabled]" value="1" <?php checked($lqipEnabled); ?> />
+                            <?php esc_html_e('Emit low-quality image placeholders (data-placeholder attribute)', 'oxpulse-imager'); ?>
+                        </label>
+                        <p>
+                            <label for="oxpulse-lqip-blur"><?php esc_html_e('Blur sigma:', 'oxpulse-imager'); ?></label>
+                            <input type="number" id="oxpulse-lqip-blur" name="oxpulse_imager[lqip_blur]" min="0.1" max="100" step="0.1" value="<?php echo esc_attr((string) $lqipBlur); ?>" class="small-text" />
+                        </p>
+                        <p class="description"><?php esc_html_e('Generates a tiny blurred preview (20px, blur:1) via imgproxy and adds it as data-placeholder on <img> tags. Reduces Cumulative Layout Shift (CLS). Falls back to an inline SVG when imgproxy is unreachable.', 'oxpulse-imager'); ?></p>
+                    </fieldset>
+                </td>
+            </tr>
+
+            <tr>
+                <th scope="row"><?php esc_html_e('DPR-aware srcset', 'oxpulse-imager'); ?></th>
+                <td>
+                    <fieldset>
+                        <label for="oxpulse-dpr-enabled">
+                            <input type="checkbox" id="oxpulse-dpr-enabled" name="oxpulse_imager[dpr_enabled]" value="1" <?php checked($dprEnabled); ?> />
+                            <?php esc_html_e('Generate 1x/2x/3x srcset variants for images without srcset', 'oxpulse-imager'); ?>
+                        </label>
+                        <p>
+                            <label for="oxpulse-dpr-variants"><?php esc_html_e('DPR multipliers:', 'oxpulse-imager'); ?></label>
+                            <input type="text" id="oxpulse-dpr-variants" name="oxpulse_imager[dpr_variants]" value="<?php echo esc_attr($dprVariantsText); ?>" class="regular-text" placeholder="1,2,3" />
+                        </p>
+                        <p class="description"><?php esc_html_e('Comma-separated DPR multipliers (e.g. 1,2,3). For <img> tags with width but no srcset, generates x-descriptor variants via imgproxy dpr: option. Images that already have w-descriptor srcset are left alone (w-descriptors handle DPR natively).', 'oxpulse-imager'); ?></p>
+                    </fieldset>
+                </td>
+            </tr>
+
+            <tr>
+                <th scope="row"><?php esc_html_e('Watermark', 'oxpulse-imager'); ?></th>
+                <td>
+                    <fieldset>
+                        <label for="oxpulse-wm-enabled">
+                            <input type="checkbox" id="oxpulse-wm-enabled" name="oxpulse_imager[watermark][enabled]" value="1" <?php checked($watermarkEnabled); ?> />
+                            <?php esc_html_e('Apply watermark via imgproxy wm: option', 'oxpulse-imager'); ?>
+                        </label>
+                        <p class="description"><?php esc_html_e('The watermark image is configured server-side via IMGPROXY_WATERMARK_PATH / IMGPROXY_WATERMARK_URL. This setting controls placement only.', 'oxpulse-imager'); ?></p>
+                        <p>
+                            <label for="oxpulse-wm-opacity"><?php esc_html_e('Opacity:', 'oxpulse-imager'); ?></label>
+                            <input type="number" id="oxpulse-wm-opacity" name="oxpulse_imager[watermark][opacity]" min="0" max="1" step="0.05" value="<?php echo esc_attr((string) $watermarkOpacity); ?>" class="small-text" />
+                            <span class="description"><?php esc_html_e('0 = transparent, 1 = opaque.', 'oxpulse-imager'); ?></span>
+                        </p>
+                        <p>
+                            <label for="oxpulse-wm-position"><?php esc_html_e('Position:', 'oxpulse-imager'); ?></label>
+                            <select id="oxpulse-wm-position" name="oxpulse_imager[watermark][position]">
+                                <?php
+                                $wmPositions = [
+                                    'ce' => __('Center', 'oxpulse-imager'),
+                                    'no' => __('North', 'oxpulse-imager'),
+                                    'ea' => __('East', 'oxpulse-imager'),
+                                    'so' => __('South', 'oxpulse-imager'),
+                                    'we' => __('West', 'oxpulse-imager'),
+                                    'noea' => __('North-East', 'oxpulse-imager'),
+                                    'nowe' => __('North-West', 'oxpulse-imager'),
+                                    'soea' => __('South-East', 'oxpulse-imager'),
+                                    'sowe' => __('South-West', 'oxpulse-imager'),
+                                    're' => __('Replicate (tile)', 'oxpulse-imager'),
+                                    'sm' => __('Smart', 'oxpulse-imager'),
+                                ];
+                                foreach ($wmPositions as $code => $label):
+                                ?>
+                                    <option value="<?php echo esc_attr($code); ?>" <?php selected($code, $watermarkPosition); ?>><?php echo esc_html($label); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </p>
+                        <p>
+                            <label for="oxpulse-wm-x"><?php esc_html_e('X offset (px):', 'oxpulse-imager'); ?></label>
+                            <input type="number" id="oxpulse-wm-x" name="oxpulse_imager[watermark][x_offset]" value="<?php echo esc_attr((string) $watermarkXOffset); ?>" class="small-text" />
+                            <label for="oxpulse-wm-y"><?php esc_html_e('Y offset (px):', 'oxpulse-imager'); ?></label>
+                            <input type="number" id="oxpulse-wm-y" name="oxpulse_imager[watermark][y_offset]" value="<?php echo esc_attr((string) $watermarkYOffset); ?>" class="small-text" />
+                        </p>
+                        <p>
+                            <label for="oxpulse-wm-scale"><?php esc_html_e('Scale:', 'oxpulse-imager'); ?></label>
+                            <input type="number" id="oxpulse-wm-scale" name="oxpulse_imager[watermark][scale]" min="0" max="1" step="0.05" value="<?php echo esc_attr((string) $watermarkScale); ?>" class="small-text" />
+                            <span class="description"><?php esc_html_e('0 = auto-size, 0.1 = 10% of source image. Relative to the source image dimensions.', 'oxpulse-imager'); ?></span>
+                        </p>
+                    </fieldset>
                 </td>
             </tr>
 

@@ -58,7 +58,7 @@ class DeliveryWiringTest extends TestCase
         $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
 
         // Content img tag rewriting.
-        $contentRewriter = new ContentImgTagRewriter($rewriter);
+        $contentRewriter = new ContentImgTagRewriter($rewriter, $delivery);
         $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="400" height="300" alt="Test" />';
         $rewrittenTag = $contentRewriter->rewrite($tag, 'the_content', 0);
 
@@ -96,7 +96,7 @@ class DeliveryWiringTest extends TestCase
         $signing = $repository->loadSigningConfig();
         $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
 
-        $contentRewriter = new ContentImgTagRewriter($rewriter);
+        $contentRewriter = new ContentImgTagRewriter($rewriter, $delivery);
         $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" alt="Test" />';
         $result = $contentRewriter->rewrite($tag, 'the_content', 0);
 
@@ -119,7 +119,7 @@ class DeliveryWiringTest extends TestCase
 
         $this->assertNull($signing);
 
-        $contentRewriter = new ContentImgTagRewriter($rewriter);
+        $contentRewriter = new ContentImgTagRewriter($rewriter, $delivery);
         $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" alt="Test" />';
         $result = $contentRewriter->rewrite($tag, 'the_content', 0);
 
@@ -140,7 +140,7 @@ class DeliveryWiringTest extends TestCase
         $signing = $repository->loadSigningConfig();
         $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
 
-        $contentRewriter = new ContentImgTagRewriter($rewriter);
+        $contentRewriter = new ContentImgTagRewriter($rewriter, $delivery);
         $tag = '<img src="https://cdn.cloudflare.com/photo.jpg" alt="External" />';
         $result = $contentRewriter->rewrite($tag, 'the_content', 0);
 

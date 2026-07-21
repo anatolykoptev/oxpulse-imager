@@ -17,6 +17,7 @@ namespace OXPulse\Imager\Infrastructure\WordPress;
 
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
+use OXPulse\Imager\Domain\Transform\Watermark;
 
 final class OptionSettingsRepository
 {
@@ -32,6 +33,14 @@ final class OptionSettingsRepository
     public const OPTION_DIAGNOSTIC_LEVEL = 'oxpulse_imager_diagnostic_level';
     public const OPTION_SCHEMA_VERSION = 'oxpulse_imager_schema_version';
 
+    // Phase 5.1: imgproxy-native enhancement options.
+    public const OPTION_LQIP_ENABLED = 'oxpulse_imager_lqip_enabled';
+    public const OPTION_LQIP_BLUR = 'oxpulse_imager_lqip_blur';
+    public const OPTION_DPR_ENABLED = 'oxpulse_imager_dpr_enabled';
+    public const OPTION_DPR_VARIANTS = 'oxpulse_imager_dpr_variants';
+    public const OPTION_FORMAT_QUALITY = 'oxpulse_imager_format_quality';
+    public const OPTION_WATERMARK = 'oxpulse_imager_watermark';
+
     public function loadDeliveryConfig(): DeliveryConfig
     {
         return new DeliveryConfig(
@@ -40,7 +49,13 @@ final class OptionSettingsRepository
             allowedSources: $this->loadAllowedSources(),
             outputFormat: (string) get_option(self::OPTION_OUTPUT_FORMAT, 'auto'),
             defaultQuality: (int) get_option(self::OPTION_DEFAULT_QUALITY, 80),
-            devHttpOverride: (bool) get_option(self::OPTION_DEV_HTTP, false)
+            devHttpOverride: (bool) get_option(self::OPTION_DEV_HTTP, false),
+            lqipEnabled: (bool) get_option(self::OPTION_LQIP_ENABLED, false),
+            lqipBlur: (float) get_option(self::OPTION_LQIP_BLUR, 1),
+            dprEnabled: (bool) get_option(self::OPTION_DPR_ENABLED, false),
+            dprVariants: $this->loadDprVariants(),
+            watermark: $this->loadWatermark(),
+            formatQuality: $this->loadFormatQuality(),
         );
     }
 
@@ -91,6 +106,26 @@ final class OptionSettingsRepository
         }
         if (array_key_exists('diagnostic_level', $values)) {
             update_option(self::OPTION_DIAGNOSTIC_LEVEL, (string) $values['diagnostic_level']);
+        }
+
+        // Phase 5.1: imgproxy-native enhancement options.
+        if (array_key_exists('lqip_enabled', $values)) {
+            update_option(self::OPTION_LQIP_ENABLED, (bool) $values['lqip_enabled']);
+        }
+        if (array_key_exists('lqip_blur', $values)) {
+            update_option(self::OPTION_LQIP_BLUR, (float) $values['lqip_blur']);
+        }
+        if (array_key_exists('dpr_enabled', $values)) {
+            update_option(self::OPTION_DPR_ENABLED, (bool) $values['dpr_enabled']);
+        }
+        if (array_key_exists('dpr_variants', $values)) {
+            update_option(self::OPTION_DPR_VARIANTS, $values['dpr_variants']);
+        }
+        if (array_key_exists('format_quality', $values)) {
+            update_option(self::OPTION_FORMAT_QUALITY, $values['format_quality']);
+        }
+        if (array_key_exists('watermark', $values)) {
+            update_option(self::OPTION_WATERMARK, $values['watermark']);
         }
     }
 
@@ -151,5 +186,74 @@ final class OptionSettingsRepository
             return [];
         }
         return array_values(array_filter($sources, fn($s) => is_string($s) && $s !== ''));
+    }
+
+    /**
+     * Load DPR variants. Stored as an array of integers, e.g. [1, 2, 3].
+     * Returns empty array when the option is missing or malformed.
+     *
+     * @return array<int>
+     */
+    private function loadDprVariants(): array
+    {
+        $variants = get_option(self::OPTION_DPR_VARIANTS, []);
+        if (!is_array($variants)) {
+            return [];
+        }
+        $result = [];
+        foreach ($variants as $v) {
+            if (is_int($v) && $v >= 1 && $v <= 8) {
+                $result[] = $v;
+            }
+        }
+        sort($result);
+        return array_values(array_unique($result));
+    }
+
+    /**
+     * Load per-format quality overrides. Stored as an associative array,
+     * e.g. ['avif' => 70, 'webp' => 80]. Returns empty array when the
+     * option is missing or malformed.
+     *
+     * @return array<string,int>
+     */
+    private function loadFormatQuality(): array
+    {
+        $stored = get_option(self::OPTION_FORMAT_QUALITY, []);
+        if (!is_array($stored)) {
+            return [];
+        }
+        $result = [];
+        $allowed = ['avif', 'webp', 'jpeg', 'png'];
+        foreach ($stored as $fmt => $q) {
+            if (in_array($fmt, $allowed, true) && is_int($q) && $q >= 1 && $q <= 100) {
+                $result[$fmt] = $q;
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Load watermark configuration. Stored as an associative array or null.
+     * Returns null when the option is missing, disabled, or malformed.
+     */
+    private function loadWatermark(): ?Watermark
+    {
+        $stored = get_option(self::OPTION_WATERMARK, null);
+        if (!is_array($stored) || empty($stored['enabled'])) {
+            return null;
+        }
+
+        try {
+            return new Watermark(
+                opacity: (float) ($stored['opacity'] ?? 1),
+                position: (string) ($stored['position'] ?? Watermark::POS_CENTER),
+                xOffset: (int) ($stored['x_offset'] ?? 0),
+                yOffset: (int) ($stored['y_offset'] ?? 0),
+                scale: (float) ($stored['scale'] ?? 0),
+            );
+        } catch (\InvalidArgumentException $e) {
+            return null;
+        }
     }
 }

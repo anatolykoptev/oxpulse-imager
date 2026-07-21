@@ -317,4 +317,113 @@ class UrlRewriterTest extends TestCase
         $this->assertStringContainsString('photo2.jpg', $r2->url);
         $this->assertStringContainsString('photo3.jpg', $r3->url);
     }
+
+    // --- Phase 5.1: rewriteLqip tests ---
+
+    public function test_rewriteLqip_preserves_when_lqip_disabled(): void
+    {
+        $rewriter = $this->createRewriter(); // lqipEnabled defaults to false
+        $result = $rewriter->rewriteLqip('https://example.com/wp-content/uploads/photo.jpg');
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('lqip_disabled', $result->reason);
+    }
+
+    public function test_rewriteLqip_generates_blurred_url_when_enabled(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: self::ENDPOINT,
+            allowedSources: [self::ALLOWED],
+            lqipEnabled: true,
+            lqipBlur: 2,
+        );
+        $rewriter = new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX)
+        );
+
+        $result = $rewriter->rewriteLqip('https://example.com/wp-content/uploads/photo.jpg');
+
+        $this->assertTrue($result->rewritten);
+        $this->assertStringContainsString('imgproxy.example.com', $result->url);
+        // LQIP uses blur and small dimensions.
+        $this->assertStringContainsString('blur:2', $result->url);
+        $this->assertStringContainsString('rs:fit:20:20', $result->url);
+    }
+
+    public function test_rewriteLqip_preserves_non_allowed_url(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: self::ENDPOINT,
+            allowedSources: [self::ALLOWED],
+            lqipEnabled: true,
+        );
+        $rewriter = new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX)
+        );
+
+        $result = $rewriter->rewriteLqip('https://evil.com/steal.jpg');
+
+        $this->assertFalse($result->rewritten);
+    }
+
+    // --- Phase 5.1: rewriteDpr tests ---
+
+    public function test_rewriteDpr_generates_dpr_url(): void
+    {
+        $rewriter = $this->createRewriter();
+
+        $result = $rewriter->rewriteDpr(
+            'https://example.com/wp-content/uploads/photo.jpg',
+            400,
+            2.0
+        );
+
+        $this->assertTrue($result->rewritten);
+        $this->assertStringContainsString('imgproxy.example.com', $result->url);
+        $this->assertStringContainsString('rs:fit:400:0', $result->url);
+        $this->assertStringContainsString('dpr:2', $result->url);
+    }
+
+    public function test_rewriteDpr_preserves_when_delivery_disabled(): void
+    {
+        $rewriter = $this->createRewriter(enabled: false);
+
+        $result = $rewriter->rewriteDpr(
+            'https://example.com/wp-content/uploads/photo.jpg',
+            400,
+            2.0
+        );
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('delivery_disabled', $result->reason);
+    }
+
+    public function test_rewriteDpr_preserves_non_allowed_url(): void
+    {
+        $rewriter = $this->createRewriter();
+
+        $result = $rewriter->rewriteDpr('https://evil.com/steal.jpg', 400, 2.0);
+
+        $this->assertFalse($result->rewritten);
+    }
+
+    public function test_rewriteDpr_with_dpr_one_works(): void
+    {
+        $rewriter = $this->createRewriter();
+
+        $result = $rewriter->rewriteDpr(
+            'https://example.com/wp-content/uploads/photo.jpg',
+            400,
+            1.0
+        );
+
+        $this->assertTrue($result->rewritten);
+        $this->assertStringContainsString('dpr:1', $result->url);
+    }
 }
