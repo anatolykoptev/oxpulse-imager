@@ -13,823 +13,824 @@ msgstr ""
 "X-Poedit-SourceCharset: UTF-8\n"
 "Last-Translator: Anatoly Koptev <koptev@koptev.org>\n"
 "Language-Team: Anatoly Koptev <koptev@koptev.org>\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
 #: src/Infrastructure/WordPress/ServiceRegistrar.php:271
 msgid "Settings"
-msgstr ""
+msgstr "Настройки"
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:69
 msgid "Endpoint must use HTTPS in production. Enable dev HTTP override only for local development."
-msgstr ""
+msgstr "Endpoint должен использовать HTTPS в production. HTTP разрешён только для локальной разработки через dev-override."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:66
 msgid "Endpoint must be HTTP or HTTPS."
-msgstr ""
+msgstr "Endpoint должен быть HTTP или HTTPS."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:62
 msgid "Endpoint must be a valid URL or a relative path (e.g. /imgproxy)."
-msgstr ""
+msgstr "Endpoint должен быть валидным URL или относительным путём (напр. /imgproxy)."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:57
 msgid "Relative endpoint must start with / and contain only path characters."
-msgstr ""
+msgstr "Относительный endpoint должен начинаться с / и содержать только символы пути."
 
 #. translators: %d: minimum key length in bytes.
 #: src/Infrastructure/WordPress/SettingsValidator.php:84
 msgid "Key must be at least %d bytes after hex decoding."
-msgstr ""
+msgstr "Ключ должен быть не короче %d байт после hex-декодирования."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:80
 msgid "Key must be a non-empty even-length hexadecimal string."
-msgstr ""
+msgstr "Ключ должен быть непустой hex-строкой чётной длины."
 
 #. translators: %d: minimum salt length in bytes.
 #: src/Infrastructure/WordPress/SettingsValidator.php:99
 msgid "Salt must be at least %d bytes after hex decoding."
-msgstr ""
+msgstr "Соль должна быть не короче %d байт после hex-декодирования."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:95
 msgid "Salt must be a non-empty even-length hexadecimal string."
-msgstr ""
+msgstr "Соль должна быть непустой hex-строкой чётной длины."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:112
 msgid "Allowed sources must be valid HTTP(S) URLs with trailing path boundary."
-msgstr ""
+msgstr "Allowed sources должны быть валидными HTTP(S) URL с границей пути в конце."
 
 #. translators: 1: minimum blur, 2: maximum blur.
 #: src/Infrastructure/WordPress/SettingsValidator.php:146
 msgid "LQIP blur must be between %1$s and %2$s."
-msgstr ""
+msgstr "Размытие LQIP должно быть между %1$s и %2$s."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:177
 msgid "Local base path is not readable by the web server."
-msgstr ""
+msgstr "Local base path не доступен для чтения веб-сервером."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:175
 msgid "Local base path does not exist or is not a directory."
-msgstr ""
+msgstr "Local base path не существует или не является директорией."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:173
 msgid "Local base path must be an absolute filesystem path (starting with /)."
-msgstr ""
+msgstr "Local base path должен быть абсолютным путём файловой системы (начинаться с /)."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:171
 msgid "Local base path is required when source mode is \"local\"."
-msgstr ""
+msgstr "Local base path обязателен, когда source mode = \"local\"."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:191
 msgid "Save-Data quality reduction must be between 0 and 50."
-msgstr ""
+msgstr "Снижение качества для Save-Data должно быть от 0 до 50."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:203
 msgid "Size quality tier widths must be positive integers."
-msgstr ""
+msgstr "Ширины tier-ов качества должны быть положительными целыми."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:222
 msgid "Size quality tier values must be between 1 and 100."
-msgstr ""
+msgstr "Значения tier-ов качества должны быть от 1 до 100."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:211
 msgid "Size quality tier per-format values must be between 1 and 100."
-msgstr ""
+msgstr "Значения tier-ов качества по форматам должны быть от 1 до 100."
 
 #. translators: 1: format name, 2: minimum, 3: maximum.
 #: src/Infrastructure/WordPress/SettingsValidator.php:328
 msgid "Quality for %1$s must be between %2$d and %3$d."
-msgstr ""
+msgstr "Качество для %1$s должно быть между %2$d и %3$d."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:367
 msgid "Watermark opacity must be between 0 and 1."
-msgstr ""
+msgstr "Непрозрачность watermark должна быть от 0 до 1."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:373
 msgid "Invalid watermark position."
-msgstr ""
+msgstr "Невалидная позиция watermark."
 
 #: src/Infrastructure/WordPress/SettingsValidator.php:382
 msgid "Watermark scale must be between 0 and 1."
-msgstr ""
+msgstr "Масштаб watermark должен быть от 0 до 1."
 
 #: src/Integration/WordPress/Admin/AdminBarDiagnostics.php:69
 msgid "OXPulse Imager diagnostics — click to view details"
-msgstr ""
+msgstr "Диагностика OXPulse Imager — нажмите для подробностей"
 
 #: src/Integration/WordPress/Admin/HealthRestController.php:90, src/Integration/WordPress/Admin/HealthRestController.php:125
 msgid "Endpoint URL is empty."
-msgstr ""
+msgstr "URL endpoint пуст."
 
 #: src/Integration/WordPress/Admin/HealthRestController.php:140
 msgid "No sample image URL available. Configure allowed sources first."
-msgstr ""
+msgstr "Нет URL тестового изображения. Сначала настройте allowed sources."
 
 #: src/Integration/WordPress/Admin/OptionsRestController.php:151
 msgid "Validation failed."
-msgstr ""
+msgstr "Валидация не пройдена."
 
 #: src/Integration/WordPress/Admin/PrewarmRestController.php:110
 msgid "No URLs provided."
-msgstr ""
+msgstr "URL не переданы."
 
 #. translators: %d: max URLs per batch
 #: src/Integration/WordPress/Admin/PrewarmRestController.php:120
 msgid "Too many URLs. Maximum %d per batch."
-msgstr ""
+msgstr "Слишком много URL. Максимум %d на батч."
 
 #: src/Integration/WordPress/Admin/PrewarmRestController.php:136
 msgid "No valid URLs provided."
-msgstr ""
+msgstr "Нет валидных URL."
 
 #: src/Integration/WordPress/Admin/PrewarmRestController.php:164
 msgid "Delivery is disabled. Enable it in Connection settings first."
-msgstr ""
+msgstr "Delivery отключён. Сначала включите его в настройках Connection."
 
 #: src/Integration/WordPress/Admin/PrewarmRestController.php:172
 msgid "No imgproxy endpoint configured."
-msgstr ""
+msgstr "imgproxy endpoint не настроен."
 
 #: src/Integration/WordPress/Admin/PrewarmRestController.php:180
 msgid "No signing secrets configured."
-msgstr ""
+msgstr "Signing secrets не настроены."
 
 #: src/Integration/WordPress/Admin/PrewarmRestController.php:199
 msgid "Pre-warm job created. Poll GET /oxpulse/v1/prewarm/<jobId> for progress."
-msgstr ""
+msgstr "Задача pre-warm создана. Опрашивайте GET /oxpulse/v1/prewarm/<jobId> для прогресса."
 
 #: src/Integration/WordPress/Admin/PrewarmRestController.php:222
 msgid "No job ID provided."
-msgstr ""
+msgstr "Не передан ID задачи."
 
 #: src/Integration/WordPress/Admin/PrewarmRestController.php:233
 msgid "Job not found. It may have expired (jobs are kept for 1 hour)."
-msgstr ""
+msgstr "Задача не найдена. Возможно, она истекла (задачи хранятся 1 час)."
 
 #: src/Integration/WordPress/Admin/SettingsPage.php:40, src/Integration/WordPress/Admin/SettingsPage.php:41
 msgid "OXPulse Imager"
-msgstr ""
+msgstr "OXPulse Imager"
 
 #: src/Integration/WordPress/Admin/SettingsPage.php:59
 msgid "You do not have permission to access this page."
-msgstr ""
+msgstr "У вас нет прав для доступа к этой странице."
 
 #: src/Integration/WordPress/Admin/SettingsPage.php:110
 msgid "OXPulse Imager admin failed to load. Try a hard refresh; if it still does not load, check for caching plugins or contact your site administrator."
-msgstr ""
+msgstr "Админка OXPulse Imager не загрузилась. Попробуйте жёсткое обновление (Ctrl+Shift+R); если не поможет — проверьте плагины кэширования или свяжитесь с администратором сайта."
 
 #: src/Integration/WordPress/Admin/StatusRestController.php:136
 msgid "No source URL provided."
-msgstr ""
+msgstr "Не передан source URL."
 
 #. translators: %s: PHP version requirement.
 #: oxpulse-imager.php:51
 msgid "OXPulse Imager requires PHP 8.3 or higher. You are running %s."
-msgstr ""
+msgstr "OXPulse Imager требует PHP 8.3 или выше. У вас установлен %s."
 
 #. translators: %s: WordPress version requirement.
 #: oxpulse-imager.php:64
 msgid "OXPulse Imager requires WordPress 6.2 or higher. You are running %s."
-msgstr ""
+msgstr "OXPulse Imager требует WordPress 6.2 или выше. У вас установлен %s."
 
 #: src/admin/App.jsx:26 src/admin/App.jsx:99
 msgid "Connection"
-msgstr ""
+msgstr "Подключение"
 
 #: src/admin/App.jsx:27 src/admin/App.jsx:107
 msgid "Format"
-msgstr ""
+msgstr "Формат"
 
 #: src/admin/App.jsx:28 src/admin/App.jsx:115
 msgid "Enhancements"
-msgstr ""
+msgstr "Улучшения"
 
 #: src/admin/App.jsx:29 src/admin/App.jsx:123
 msgid "Diagnostics"
-msgstr ""
+msgstr "Диагностика"
 
 #: src/admin/App.jsx:30 src/admin/App.jsx:131
 msgid "Tools"
-msgstr ""
+msgstr "Инструменты"
 
 #: src/admin/App.jsx:31 src/admin/App.jsx:139
 msgid "Pre-warm"
-msgstr ""
+msgstr "Прогрев кэша"
 
 #: src/admin/App.jsx:51
 msgid "Loading settings…"
-msgstr ""
+msgstr "Загрузка настроек…"
 
 #: src/admin/App.jsx:72
 msgid "Try again"
-msgstr ""
+msgstr "Попробовать снова"
 
 #: src/admin/App.jsx:100
 msgid "imgproxy endpoint, signing secrets, and allowed source origins."
-msgstr ""
+msgstr "endpoint imgproxy, signing secrets и allowed source origins."
 
 #: src/admin/App.jsx:108
 msgid "Output format and quality settings."
-msgstr ""
+msgstr "Настройки формата вывода и качества."
 
 #: src/admin/App.jsx:116
 msgid "imgproxy-native features: LQIP placeholders, DPR-aware srcset, watermark."
-msgstr ""
+msgstr "Нативные возможности imgproxy: LQIP-плейсхолдеры, DPR-aware srcset, watermark."
 
 #: src/admin/App.jsx:124
 msgid "Logging, development overrides, cleanup."
-msgstr ""
+msgstr "Логирование, dev-override, очистка."
 
 #: src/admin/App.jsx:132
 msgid "Health check and AVIF format verification."
-msgstr ""
+msgstr "Health check и проверка формата AVIF."
 
 #: src/admin/App.jsx:140
 msgid "Bulk pre-warm imgproxy cache for a batch of source image URLs."
-msgstr ""
+msgstr "Массовый прогрев кэша imgproxy для батча URL изображений."
 
 #: src/admin/sections/ToolsSection.jsx:68
 msgid "Health check"
-msgstr ""
+msgstr "Health check"
 
 #: src/admin/sections/ToolsSection.jsx:69
 msgid "Verify that the configured imgproxy endpoint is reachable and reports healthy status."
-msgstr ""
+msgstr "Проверяет, что настроенный endpoint imgproxy достижим и отвечает healthy-статусом."
 
 #: src/admin/sections/ToolsSection.jsx:72 src/admin/sections/ToolsSection.jsx:91
 msgid "Checking…"
-msgstr ""
+msgstr "Проверка…"
 
 #: src/admin/sections/ToolsSection.jsx:72 src/admin/components/OnboardingWizard.jsx:322 src/admin/components/OnboardingWizard.jsx:330
 msgid "Test connection"
-msgstr ""
+msgstr "Проверить подключение"
 
 #: src/admin/sections/ToolsSection.jsx:78
 msgid "AVIF format check"
-msgstr ""
+msgstr "Проверка формата AVIF"
 
 #: src/admin/sections/ToolsSection.jsx:79
 msgid "Verify that imgproxy is configured for AVIF format negotiation (IMGPROXY_AUTO_AVIF=true). Sends a request with Accept: image/avif and checks the response Content-Type."
-msgstr ""
+msgstr "Проверяет, что imgproxy настроен на AVIF-негоциацию (IMGPROXY_AUTO_AVIF=true). Отправляет запрос с Accept: image/avif и проверяет Content-Type ответа."
 
 #: src/admin/sections/ToolsSection.jsx:84
 msgid "Sample image URL"
-msgstr ""
+msgstr "URL тестового изображения"
 
 #: src/admin/sections/ToolsSection.jsx:86
 msgid "A publicly accessible image URL from your allowed sources. If empty, the first allowed source + /oxpulse-avif-test.jpg is used."
-msgstr ""
+msgstr "Публично доступный URL изображения из ваших allowed sources. Если пусто — используется первый allowed source + /oxpulse-avif-test.jpg."
 
 #: src/admin/sections/ToolsSection.jsx:91 src/admin/components/OnboardingWizard.jsx:374
 msgid "Test AVIF support"
-msgstr ""
+msgstr "Проверить поддержку AVIF"
 
 #: src/admin/sections/PrewarmSection.jsx:32
 msgid "Enter at least one URL."
-msgstr ""
+msgstr "Введите хотя бы один URL."
 
 #: src/admin/sections/PrewarmSection.jsx:37
 msgid "Maximum 50 URLs per batch."
-msgstr ""
+msgstr "Максимум 50 URL на батч."
 
 #: src/admin/sections/PrewarmSection.jsx:54
 msgid "Pre-warm failed."
-msgstr ""
+msgstr "Прогрев не удался."
 
 #: src/admin/sections/PrewarmSection.jsx:73
 msgid "Bulk pre-warm"
-msgstr ""
+msgstr "Массовый прогрев"
 
 #: src/admin/sections/PrewarmSection.jsx:74
 msgid "Trigger imgproxy to process + cache a batch of source image URLs NOW, so the first visitor does not pay the processing latency. HEAD requests are dispatched with concurrency=5. Max 50 URLs per batch."
-msgstr ""
+msgstr "Запускает imgproxy для обработки + кэширования батча URL изображений прямо сейчас, чтобы первый посетитель не платил за latency обработки. HEAD-запросы отправляются с concurrency=5. Максимум 50 URL на батч."
 
 #: src/admin/sections/PrewarmSection.jsx:79
 msgid "Source image URLs"
-msgstr ""
+msgstr "URL исходных изображений"
 
 #: src/admin/sections/PrewarmSection.jsx:81
 msgid "One URL per line. Only URLs matching your allowed sources will be warmed."
-msgstr ""
+msgstr "По одному URL на строку. Прогреваются только URL, совпадающие с allowed sources."
 
 #: src/admin/sections/PrewarmSection.jsx:89
 msgid "Target widths (optional)"
-msgstr ""
+msgstr "Целевые ширины (опционально)"
 
 #: src/admin/sections/PrewarmSection.jsx:91
 msgid "Comma-separated widths in px. Empty = no resize (the default variant). Max 5 widths."
-msgstr ""
+msgstr "Ширины через запятую в px. Пусто = без resize (вариант по умолчанию). Максимум 5 ширин."
 
 #: src/admin/sections/PrewarmSection.jsx:99
 msgid "Warming…"
-msgstr ""
+msgstr "Прогрев…"
 
 #: src/admin/sections/PrewarmSection.jsx:99
 msgid "Warm cache"
-msgstr ""
+msgstr "Прогреть кэш"
 
 #: src/admin/sections/PrewarmSection.jsx:112
 msgid "Total:"
-msgstr ""
+msgstr "Всего:"
 
 #: src/admin/sections/PrewarmSection.jsx:115
 msgid "Warmed:"
-msgstr ""
+msgstr "Прогрето:"
 
 #: src/admin/sections/PrewarmSection.jsx:118
 msgid "Skipped:"
-msgstr ""
+msgstr "Пропущено:"
 
 #: src/admin/sections/PrewarmSection.jsx:121
 msgid "Failed:"
-msgstr ""
+msgstr "Неудачно:"
 
 #: src/admin/sections/PrewarmSection.jsx:128
 msgid "Per-URL results"
-msgstr ""
+msgstr "Результаты по URL"
 
 #: src/admin/sections/FormatSection.jsx:43
 msgid "Output format"
-msgstr ""
+msgstr "Формат вывода"
 
 #: src/admin/sections/FormatSection.jsx:46
 msgid "Default output format"
-msgstr ""
+msgstr "Формат вывода по умолчанию"
 
 #: src/admin/sections/FormatSection.jsx:50
 msgid "auto = Accept header negotiation (AVIF/WebP/original based on browser support, requires IMGPROXY_AUTO_AVIF on the server). Explicit format overrides negotiation."
-msgstr ""
+msgstr "auto = негоциация через Accept (AVIF/WebP/оригинал по поддержке браузера, требует IMGPROXY_AUTO_AVIF на сервере). Явный формат переопределяет негоциацию."
 
 #: src/admin/sections/FormatSection.jsx:56
 msgid "Default quality"
-msgstr ""
+msgstr "Качество по умолчанию"
 
 #: src/admin/sections/FormatSection.jsx:57
 msgid "1–100. Used when a transform request does not specify quality."
-msgstr ""
+msgstr "1–100. Используется, когда transform-запрос не указывает качество."
 
 #: src/admin/sections/FormatSection.jsx:67
 msgid "AVIF quality"
-msgstr ""
+msgstr "Качество AVIF"
 
 #: src/admin/sections/FormatSection.jsx:68 src/admin/sections/FormatSection.jsx:78
 msgid "use default"
-msgstr ""
+msgstr "по умолчанию"
 
 #: src/admin/sections/FormatSection.jsx:69
 msgid "1–100. Overrides default for AVIF. AVIF looks good at 50-70."
-msgstr ""
+msgstr "1–100. Переопределяет default для AVIF. AVIF хорошо выглядит при 50-70."
 
 #: src/admin/sections/FormatSection.jsx:77
 msgid "WebP quality"
-msgstr ""
+msgstr "Качество WebP"
 
 #: src/admin/sections/FormatSection.jsx:79
 msgid "1–100. Overrides default for WebP. WebP looks good at 70-85."
-msgstr ""
+msgstr "1–100. Переопределяет default для WebP. WebP хорошо выглядит при 70-85."
 
 #: src/admin/sections/EnhancementsSection.jsx:16
 msgid "Center"
-msgstr ""
+msgstr "Центр"
 
 #: src/admin/sections/EnhancementsSection.jsx:17
 msgid "North"
-msgstr ""
+msgstr "Север"
 
 #: src/admin/sections/EnhancementsSection.jsx:18
 msgid "East"
-msgstr ""
+msgstr "Восток"
 
 #: src/admin/sections/EnhancementsSection.jsx:19
 msgid "South"
-msgstr ""
+msgstr "Юг"
 
 #: src/admin/sections/EnhancementsSection.jsx:20
 msgid "West"
-msgstr ""
+msgstr "Запад"
 
 #: src/admin/sections/EnhancementsSection.jsx:21
 msgid "North-East"
-msgstr ""
+msgstr "Северо-восток"
 
 #: src/admin/sections/EnhancementsSection.jsx:22
 msgid "North-West"
-msgstr ""
+msgstr "Северо-запад"
 
 #: src/admin/sections/EnhancementsSection.jsx:23
 msgid "South-East"
-msgstr ""
+msgstr "Юго-восток"
 
 #: src/admin/sections/EnhancementsSection.jsx:24
 msgid "South-West"
-msgstr ""
+msgstr "Юго-запад"
 
 #: src/admin/sections/EnhancementsSection.jsx:25
 msgid "Replicate (tile)"
-msgstr ""
+msgstr "Реплика (тайл)"
 
 #: src/admin/sections/EnhancementsSection.jsx:26
 msgid "Smart"
-msgstr ""
+msgstr "Smart"
 
 #: src/admin/sections/EnhancementsSection.jsx:81
 msgid "LQIP placeholders"
-msgstr ""
+msgstr "LQIP-плейсхолдеры"
 
 #: src/admin/sections/EnhancementsSection.jsx:82
 msgid "Low-quality image placeholders — tiny blurred previews via imgproxy that reduce Cumulative Layout Shift (CLS). Falls back to inline SVG when imgproxy is unreachable."
-msgstr ""
+msgstr "Low-quality image placeholders — крошечные размытые превью через imgproxy, снижающие Cumulative Layout Shift (CLS). Falls back на inline SVG, если imgproxy недоступен."
 
 #: src/admin/sections/EnhancementsSection.jsx:86
 msgid "Emit data-placeholder on img tags"
-msgstr ""
+msgstr "Эмитить data-placeholder на img-тегах"
 
 #: src/admin/sections/EnhancementsSection.jsx:94
 msgid "Blur sigma"
-msgstr ""
+msgstr "Сигма размытия"
 
 #: src/admin/sections/EnhancementsSection.jsx:95
 msgid "0.1–100. Higher = more blur. 1 is a good default."
-msgstr ""
+msgstr "0.1–100. Больше = сильнее размытие. 1 — хороший default."
 
 #: src/admin/sections/EnhancementsSection.jsx:104
 msgid "DPR-aware srcset"
-msgstr ""
+msgstr "DPR-aware srcset"
 
 #: src/admin/sections/EnhancementsSection.jsx:105
 msgid "For img tags with width but no srcset, generates 1x/2x/3x x-descriptor variants via imgproxy dpr: option. Images that already have w-descriptor srcset are left alone."
-msgstr ""
+msgstr "Для img-тегов с width, но без srcset, генерирует 1x/2x/3x x-descriptor варианты через опцию imgproxy dpr:. Изображения с w-descriptor srcset не трогаются."
 
 #: src/admin/sections/EnhancementsSection.jsx:109
 msgid "Generate DPR variants for images without srcset"
-msgstr ""
+msgstr "Генерировать DPR-варианты для изображений без srcset"
 
 #: src/admin/sections/EnhancementsSection.jsx:116
 msgid "DPR multipliers"
-msgstr ""
+msgstr "DPR-множители"
 
 #: src/admin/sections/EnhancementsSection.jsx:117
 msgid "Comma-separated, 1–8. e.g. 1,2,3 for standard/retina/hyper-retina."
-msgstr ""
+msgstr "Через запятую, 1–8. напр. 1,2,3 для standard/retina/hyper-retina."
 
 #: src/admin/sections/EnhancementsSection.jsx:126
 msgid "Watermark"
-msgstr ""
+msgstr "Watermark"
 
 #: src/admin/sections/EnhancementsSection.jsx:127
 msgid "Applies imgproxy native watermark (wm: option). The watermark image is configured server-side via IMGPROXY_WATERMARK_PATH/URL — this setting controls placement only."
-msgstr ""
+msgstr "Применяет нативный watermark imgproxy (опция wm:). Изображение watermark настраивается на сервере через IMGPROXY_WATERMARK_PATH/URL — эта настройка управляет только размещением."
 
 #: src/admin/sections/EnhancementsSection.jsx:131
 msgid "Apply watermark"
-msgstr ""
+msgstr "Применить watermark"
 
 #: src/admin/sections/EnhancementsSection.jsx:140
 msgid "Opacity"
-msgstr ""
+msgstr "Непрозрачность"
 
 #: src/admin/sections/EnhancementsSection.jsx:141
 msgid "0 = transparent, 1 = opaque."
-msgstr ""
+msgstr "0 = прозрачно, 1 = непрозрачно."
 
 #: src/admin/sections/EnhancementsSection.jsx:148
 msgid "Position"
-msgstr ""
+msgstr "Позиция"
 
 #: src/admin/sections/EnhancementsSection.jsx:157
 msgid "X offset (px)"
-msgstr ""
+msgstr "X-смещение (px)"
 
 #: src/admin/sections/EnhancementsSection.jsx:165
 msgid "Y offset (px)"
-msgstr ""
+msgstr "Y-смещение (px)"
 
 #: src/admin/sections/EnhancementsSection.jsx:174
 msgid "Scale"
-msgstr ""
+msgstr "Масштаб"
 
 #: src/admin/sections/EnhancementsSection.jsx:175
 msgid "0 = auto-size, 0.1 = 10% of source image. Relative to source dimensions."
-msgstr ""
+msgstr "0 = auto-size, 0.1 = 10% исходного изображения. Относительно размеров источника."
 
 #: src/admin/sections/DiagnosticsSection.jsx:41
 msgid "Failed to load diagnostics."
-msgstr ""
+msgstr "Не удалось загрузить диагностику."
 
 #: src/admin/sections/DiagnosticsSection.jsx:65
 msgid "Failed to clear log."
-msgstr ""
+msgstr "Не удалось очистить лог."
 
 #: src/admin/sections/DiagnosticsSection.jsx:72
 msgid "Off (silent)"
-msgstr ""
+msgstr "Off (тихо)"
 
 #: src/admin/sections/DiagnosticsSection.jsx:73
 msgid "Basic (per-request counts)"
-msgstr ""
+msgstr "Basic (счётчики на запрос)"
 
 #: src/admin/sections/DiagnosticsSection.jsx:74
 msgid "Verbose (per-URL with reason)"
-msgstr ""
+msgstr "Verbose (по URL с причиной)"
 
 #: src/admin/sections/DiagnosticsSection.jsx:80
 msgid "Diagnostic level"
-msgstr ""
+msgstr "Уровень диагностики"
 
 #: src/admin/sections/DiagnosticsSection.jsx:81
 msgid "Controls what gets written to the PHP error log on each page load. Off = no logging. Basic = one summary line per request (counts by context). Verbose = per-URL entries with reason + redacted source URL."
-msgstr ""
+msgstr "Контролирует, что пишется в PHP error log при каждой загрузке страницы. Off = нет логирования. Basic = одна summary-строка на запрос (счётчики по context). Verbose = по-URL записи с причиной + редуцированным source URL."
 
 #: src/admin/sections/DiagnosticsSection.jsx:85
 msgid "Level"
-msgstr ""
+msgstr "Уровень"
 
 #: src/admin/sections/DiagnosticsSection.jsx:91
 msgid "Changes take effect on the next page load. The admin bar item (frontend) shows live counts for the current page."
-msgstr ""
+msgstr "Изменения вступят в силу при следующей загрузке страницы. Элемент admin bar (frontend) показывает live-счётчики для текущей страницы."
 
 #: src/admin/sections/DiagnosticsSection.jsx:96
 msgid "Recent log entries"
-msgstr ""
+msgstr "Недавние записи лога"
 
 #: src/admin/sections/DiagnosticsSection.jsx:97
 msgid "Recent diagnostic entries from the last few requests. Entries are kept for 1 hour. Source URLs are redacted (host + truncated path only)."
-msgstr ""
+msgstr "Недавние диагностические записи за последние несколько запросов. Записи хранятся 1 час. Source URL редуцированы (только host + укороченный path)."
 
 #: src/admin/sections/DiagnosticsSection.jsx:101
 msgid "Loading…"
-msgstr ""
+msgstr "Загрузка…"
 
 #: src/admin/sections/DiagnosticsSection.jsx:101
 msgid "Refresh"
-msgstr ""
+msgstr "Обновить"
 
 #: src/admin/sections/DiagnosticsSection.jsx:104
 msgid "Clearing…"
-msgstr ""
+msgstr "Очистка…"
 
 #: src/admin/sections/DiagnosticsSection.jsx:104
 msgid "Clear log"
-msgstr ""
+msgstr "Очистить лог"
 
 #: src/admin/sections/DiagnosticsSection.jsx:116
 msgid "Diagnostics are off. Set a level above and save to start logging."
-msgstr ""
+msgstr "Диагностика выключена. Установите уровень выше и сохраните, чтобы начать логирование."
 
 #: src/admin/sections/DiagnosticsSection.jsx:117
 msgid "No entries yet. Visit a frontend page with images to generate log entries."
-msgstr ""
+msgstr "Записей пока нет. Откройте frontend-страницу с изображениями, чтобы сгенерировать записи."
 
 #: src/admin/sections/ConnectionSection.jsx:23
 msgid "Secrets configured. Values are hidden for security."
-msgstr ""
+msgstr "Secrets настроены. Значения скрыты для безопасности."
 
 #: src/admin/sections/ConnectionSection.jsx:24
 msgid "Partial secrets detected. Please set both key and salt."
-msgstr ""
+msgstr "Обнаружены частичные secrets. Установите и key, и salt."
 
 #: src/admin/sections/ConnectionSection.jsx:25
 msgid "No secrets configured. Generate a key and salt to enable signed URL delivery."
-msgstr ""
+msgstr "Secrets не настроены. Сгенерируйте key и salt, чтобы включить подписанную доставку URL."
 
 #: src/admin/sections/ConnectionSection.jsx:46
 msgid "Delivery"
-msgstr ""
+msgstr "Доставка"
 
 #: src/admin/sections/ConnectionSection.jsx:49 src/admin/components/OnboardingWizard.jsx:400 src/admin/components/OnboardingWizard.jsx:448
 msgid "Enable delivery"
-msgstr ""
+msgstr "Включить доставку"
 
 #: src/admin/sections/ConnectionSection.jsx:50
 msgid "Rewrite approved image URLs to signed imgproxy URLs. When disabled, the plugin is a complete no-op on the frontend."
-msgstr ""
+msgstr "Переписывает одобренные URL изображений в подписанные imgproxy URL. Когда отключено — плагин полностью no-op на frontend."
 
 #: src/admin/sections/ConnectionSection.jsx:56 src/admin/components/OnboardingWizard.jsx:269
 msgid "imgproxy endpoint"
-msgstr ""
+msgstr "endpoint imgproxy"
 
 #: src/admin/sections/ConnectionSection.jsx:60 src/admin/components/OnboardingWizard.jsx:275
 msgid "Endpoint URL"
-msgstr ""
+msgstr "URL endpoint"
 
 #: src/admin/sections/ConnectionSection.jsx:62
 msgid "Base URL of your self-hosted imgproxy instance. HTTPS required in production."
-msgstr ""
+msgstr "Base URL вашего self-hosted imgproxy. HTTPS обязателен в production."
 
 #: src/admin/sections/ConnectionSection.jsx:69 src/admin/components/OnboardingWizard.jsx:288
 msgid "Signing secrets"
-msgstr ""
+msgstr "Signing secrets"
 
 #: src/admin/sections/ConnectionSection.jsx:70
 msgid "Hex-encoded imgproxy key + salt. Minimum 16 bytes after decoding. Never displayed after save — leave empty to keep existing."
-msgstr ""
+msgstr "Hex-кодированные imgproxy key + salt. Минимум 16 байт после декодирования. Никогда не отображаются после сохранения — оставьте пустым, чтобы сохранить существующие."
 
 #: src/admin/sections/ConnectionSection.jsx:81 src/admin/components/OnboardingWizard.jsx:299
 msgid "Signing key (hex)"
-msgstr ""
+msgstr "Signing key (hex)"
 
 #: src/admin/sections/ConnectionSection.jsx:82 src/admin/sections/ConnectionSection.jsx:91
 msgid "Leave empty to keep existing"
-msgstr ""
+msgstr "Оставьте пустым, чтобы сохранить существующее"
 
 #: src/admin/sections/ConnectionSection.jsx:90 src/admin/components/OnboardingWizard.jsx:308
 msgid "Signing salt (hex)"
-msgstr ""
+msgstr "Signing salt (hex)"
 
 #: src/admin/sections/ConnectionSection.jsx:99 src/admin/components/OnboardingWizard.jsx:350
 msgid "Allowed source origins"
-msgstr ""
+msgstr "Allowed source origins"
 
 #: src/admin/sections/ConnectionSection.jsx:100
 msgid "One URL prefix per line. Only images whose URL starts with one of these prefixes will be rewritten. A trailing slash enforces a path boundary."
-msgstr ""
+msgstr "По одному URL-префиксу на строку. Переписываются только изображения, чей URL начинается с одного из этих префиксов. Trailing slash обозначает границу пути."
 
 #: src/admin/components/OnboardingWizard.jsx:55
 msgid "Step"
-msgstr ""
+msgstr "Шаг"
 
 #: src/admin/components/OnboardingWizard.jsx:104 src/admin/components/layout/TopNav.jsx:35
 msgid "Failed to save settings."
-msgstr ""
+msgstr "Не удалось сохранить настройки."
 
 #: src/admin/components/OnboardingWizard.jsx:111
 msgid "Please enter a valid HTTPS endpoint URL."
-msgstr ""
+msgstr "Введите валидный HTTPS URL endpoint."
 
 #: src/admin/components/OnboardingWizard.jsx:120
 msgid "Please enter both key and salt, or generate them."
-msgstr ""
+msgstr "Введите и key, и salt, или сгенерируйте их."
 
 #: src/admin/components/OnboardingWizard.jsx:124
 msgid "Key and salt must be at least 16 bytes (32 hex characters)."
-msgstr ""
+msgstr "Key и salt должны быть не короче 16 байт (32 hex-символа)."
 
 #: src/admin/components/OnboardingWizard.jsx:135
 msgid "Failed to save secrets."
-msgstr ""
+msgstr "Не удалось сохранить secrets."
 
 #: src/admin/components/OnboardingWizard.jsx:142
 msgid "Generated 32-byte key + salt. You can copy these before continuing — they will not be shown again after save."
-msgstr ""
+msgstr "Сгенерированы 32-байтные key + salt. Скопируйте их перед продолжением — они не будут показаны снова после сохранения."
 
 #: src/admin/components/OnboardingWizard.jsx:155
 msgid "Health check failed. Verify the endpoint URL and that imgproxy is running."
-msgstr ""
+msgstr "Health check не прошёл. Проверьте URL endpoint и что imgproxy запущен."
 
 #: src/admin/components/OnboardingWizard.jsx:158
 msgid "Health check request failed."
-msgstr ""
+msgstr "Запрос health check не удался."
 
 #: src/admin/components/OnboardingWizard.jsx:167
 msgid "Please add at least one allowed source origin."
-msgstr ""
+msgstr "Добавьте хотя бы один allowed source origin."
 
 #: src/admin/components/OnboardingWizard.jsx:182
 msgid "Added uploads URL to allowed sources."
-msgstr ""
+msgstr "URL uploads добавлен в allowed sources."
 
 #: src/admin/components/OnboardingWizard.jsx:184
 msgid "Uploads URL is already in allowed sources."
-msgstr ""
+msgstr "URL uploads уже в allowed sources."
 
 #: src/admin/components/OnboardingWizard.jsx:187
 msgid "Could not auto-detect uploads URL. Please enter it manually."
-msgstr ""
+msgstr "Не удалось авто-определить URL uploads. Введите его вручную."
 
 #: src/admin/components/OnboardingWizard.jsx:201
 msgid "AVIF is not supported by your imgproxy build. The plugin will fall back to WebP. You can continue."
-msgstr ""
+msgstr "AVIF не поддерживается вашей сборкой imgproxy. Плагин будет fallback-ать на WebP. Можно продолжить."
 
 #: src/admin/components/OnboardingWizard.jsx:204
 msgid "AVIF check request failed."
-msgstr ""
+msgstr "Запрос проверки AVIF не удался."
 
 #: src/admin/components/OnboardingWizard.jsx:218
 msgid "Failed to enable delivery."
-msgstr ""
+msgstr "Не удалось включить доставку."
 
 #: src/admin/components/OnboardingWizard.jsx:252
 msgid "Welcome to OXPulse Imager"
-msgstr ""
+msgstr "Добро пожаловать в OXPulse Imager"
 
 #: src/admin/components/OnboardingWizard.jsx:260
 msgid "Skip for now"
-msgstr ""
+msgstr "Пропустить"
 
 #: src/admin/components/OnboardingWizard.jsx:270
 msgid "Enter the base URL of your self-hosted imgproxy instance. HTTPS is required in production."
-msgstr ""
+msgstr "Введите base URL вашего self-hosted imgproxy. HTTPS обязателен в production."
 
 #: src/admin/components/OnboardingWizard.jsx:277
 msgid "No trailing slash. Example: https://imgproxy.yourdomain.com"
-msgstr ""
+msgstr "Без trailing slash. Пример: https://imgproxy.yourdomain.com"
 
 #: src/admin/components/OnboardingWizard.jsx:289
 msgid "imgproxy requires a key + salt to sign transformed image URLs. Generate random 32-byte secrets, or paste your own hex-encoded values."
-msgstr ""
+msgstr "imgproxy требует key + salt для подписи трансформированных URL изображений. Сгенерируйте случайные 32-байтные secrets или вставьте свои hex-кодированные значения."
 
 #: src/admin/components/OnboardingWizard.jsx:293
 msgid "Generate random key + salt"
-msgstr ""
+msgstr "Сгенерировать случайные key + salt"
 
 #: src/admin/components/OnboardingWizard.jsx:300 src/admin/components/OnboardingWizard.jsx:309
 msgid "64 hex characters (32 bytes)"
-msgstr ""
+msgstr "64 hex-символа (32 байта)"
 
 #: src/admin/components/OnboardingWizard.jsx:323
 msgid "Verify that imgproxy is reachable and responding at the endpoint you configured."
-msgstr ""
+msgstr "Проверяет, что imgproxy достижим и отвечает по настроенному endpoint."
 
 #: src/admin/components/OnboardingWizard.jsx:326 src/admin/components/OnboardingWizard.jsx:404
 msgid "Endpoint:"
-msgstr ""
+msgstr "Endpoint:"
 
 #: src/admin/components/OnboardingWizard.jsx:330 src/admin/components/OnboardingWizard.jsx:379
 msgid "Testing…"
-msgstr ""
+msgstr "Тестирование…"
 
 #: src/admin/components/OnboardingWizard.jsx:338
 msgid "Connected — imgproxy is responding."
-msgstr ""
+msgstr "Подключено — imgproxy отвечает."
 
 #: src/admin/components/OnboardingWizard.jsx:351
 msgid "Only images whose URL starts with one of these prefixes will be rewritten. Add your wp-content/uploads/ URL."
-msgstr ""
+msgstr "Переписываются только изображения, чей URL начинается с одного из этих префиксов. Добавьте URL вашего wp-content/uploads/."
 
 #: src/admin/components/OnboardingWizard.jsx:355
 msgid "Auto-detect uploads URL"
-msgstr ""
+msgstr "Авто-определить URL uploads"
 
 #: src/admin/components/OnboardingWizard.jsx:375
 msgid "Check whether your imgproxy build supports AVIF output. If not, the plugin falls back to WebP automatically."
-msgstr ""
+msgstr "Проверяет, поддерживает ли ваша сборка imgproxy вывод AVIF. Если нет — плагин автоматически fallback-ает на WebP."
 
 #: src/admin/components/OnboardingWizard.jsx:379
 msgid "Test AVIF"
-msgstr ""
+msgstr "Тест AVIF"
 
 #: src/admin/components/OnboardingWizard.jsx:387
 msgid "AVIF supported — your imgproxy can serve AVIF."
-msgstr ""
+msgstr "AVIF поддерживается — ваш imgproxy может отдавать AVIF."
 
 #: src/admin/components/OnboardingWizard.jsx:388
 msgid "AVIF not supported — will fall back to WebP."
-msgstr ""
+msgstr "AVIF не поддерживается — fallback на WebP."
 
 #: src/admin/components/OnboardingWizard.jsx:401
 msgid "Everything is configured. Enable delivery to start rewriting image URLs to signed imgproxy URLs on the frontend."
-msgstr ""
+msgstr "Всё настроено. Включите доставку, чтобы начать переписывать URL изображений в подписанные imgproxy URL на frontend."
 
 #: src/admin/components/OnboardingWizard.jsx:405
 msgid "Allowed sources:"
-msgstr ""
+msgstr "Allowed sources:"
 
 #: src/admin/components/OnboardingWizard.jsx:406
 msgid "AVIF:"
-msgstr ""
+msgstr "AVIF:"
 
 #: src/admin/components/OnboardingWizard.jsx:406
 msgid "Supported"
-msgstr ""
+msgstr "Поддерживается"
 
 #: src/admin/components/OnboardingWizard.jsx:406
 msgid "Not supported (WebP fallback)"
-msgstr ""
+msgstr "Не поддерживается (WebP fallback)"
 
 #: src/admin/components/OnboardingWizard.jsx:407
 msgid "Delivery:"
-msgstr ""
+msgstr "Доставка:"
 
 #: src/admin/components/OnboardingWizard.jsx:407
 msgid "Will be enabled on finish"
-msgstr ""
+msgstr "Будет включена при завершении"
 
 #: src/admin/components/OnboardingWizard.jsx:418
 msgid "Back"
-msgstr ""
+msgstr "Назад"
 
 #: src/admin/components/OnboardingWizard.jsx:423 src/admin/components/OnboardingWizard.jsx:428 src/admin/components/OnboardingWizard.jsx:438 src/admin/components/layout/TopNav.jsx:76
 msgid "Saving…"
-msgstr ""
+msgstr "Сохранение…"
 
 #: src/admin/components/OnboardingWizard.jsx:423 src/admin/components/OnboardingWizard.jsx:428 src/admin/components/OnboardingWizard.jsx:433 src/admin/components/OnboardingWizard.jsx:438 src/admin/components/OnboardingWizard.jsx:443
 msgid "Next"
-msgstr ""
+msgstr "Далее"
 
 #: src/admin/components/OnboardingWizard.jsx:448
 msgid "Enabling…"
-msgstr ""
+msgstr "Включение…"
 
 #: src/admin/components/layout/TopNav.jsx:30
 msgid "Settings saved."
-msgstr ""
+msgstr "Настройки сохранены."
 
 #: src/admin/components/layout/TopNav.jsx:42
 msgid "Settings sections"
-msgstr ""
+msgstr "Разделы настроек"
 
 #: src/admin/components/layout/TopNav.jsx:67
 msgid "Unsaved changes"
-msgstr ""
+msgstr "Несохранённые изменения"
 
 #: src/admin/components/layout/TopNav.jsx:76
 msgid "Save"
-msgstr ""
+msgstr "Сохранить"
+

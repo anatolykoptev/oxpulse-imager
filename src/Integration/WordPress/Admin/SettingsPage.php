@@ -90,7 +90,7 @@ final class SettingsPage
             );
         }
 
-        // JS — self-contained bundle (React + react-dom bundled in).
+        // JS — self-contained bundle (React + react-dom + @wordpress/i18n bundled in).
         wp_enqueue_script(
             'oxpulse-admin-app',
             $pluginUrl . 'assets/js/' . AssetManifest::resolve('admin-app.js'),
@@ -98,6 +98,13 @@ final class SettingsPage
             $version,
             true
         );
+
+        // Load translations for the admin SPA. WordPress looks up
+        // languages/oxpulse-imager-<locale>-oxpulse-imager.json (the
+        // JS-specific translation file generated from the .po by
+        // build/make-json.mjs) and inlines it as a <script> before our
+        // bundle, populating @wordpress/i18n's locale data registry.
+        wp_set_script_translations('oxpulse-admin-app', 'oxpulse-imager', dirname($pluginUrl));
 
         wp_localize_script(
             'oxpulse-admin-app',

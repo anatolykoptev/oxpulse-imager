@@ -1,15 +1,28 @@
 /**
- * OXPulse Imager Admin - i18n shim
+ * OXPulse Imager Admin — i18n entry point.
  *
- * Self-contained bundle (see build/vite.config.js — React and all
- * runtime deps are bundled, nothing is loaded from WordPress globals
- * like `wp.i18n`). This shim keeps the same call shape (`__(text,
- * domain)`) so a real translation layer can be dropped in later
- * without touching every component, but for now simply returns the
- * source string.
+ * Re-exports the standard @wordpress/i18n gettext functions. The
+ * bundle is self-contained (React + react-dom + @wordpress/i18n all
+ * bundled by Vite), so no `wp.i18n` global is required at runtime.
  *
- * @param {string} text   Source (English) string.
- * @param {string} [domain] Text domain — unused, kept for call-site compatibility.
- * @return {string} The source string, unmodified.
+ * Translation data is loaded by WordPress via wp_set_script_translations()
+ * in SettingsPage::enqueueAdminAssets() — WP inlines a
+ * `<script>` before our bundle that populates the @wordpress/i18n
+ * locale data registry for the 'oxpulse-imager' domain.
+ *
+ * Call sites use the same shape as before:
+ *   __('Connection', 'oxpulse-imager')
+ *   _x('Verifying…', 'health check', 'oxpulse-imager')
+ *
+ * @see https://developer.wordpress.org/apis/handling-translations/
  */
-export const __ = (text, domain) => text; // eslint-disable-line no-unused-vars
+
+export {
+  __,
+  _x,
+  _n,
+  _nx,
+  sprintf,
+  setLocaleData,
+  isRTL,
+} from '@wordpress/i18n';
