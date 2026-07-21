@@ -13,15 +13,16 @@
  * processing happens before the response is sent, regardless of
  * method).
  *
+ * NOTE: Plugin Check flags curl_* as "use wp_remote_get() instead" —
+ * that's a false positive here. wp_remote_* is single-request; the
+ * HTTP API has no multi/concurrency primitive. The curl_* ignore-codes
+ * are declared in .github/workflows/{test,deploy}.yml (Plugin Check
+ * action's ignore-codes input). See wp-org-deploy SKILL.md.
+ *
  * @package OXPulse\Imager\Infrastructure\Http
  * @copyright Copyright (c) 2026 Anatoly Koptev
  * @license GPL-2.0-or-later
  */
-
-// phpcs:ignore WordPress.WP.AlternativeFunctions.curl_* -- Legitimate
-// use of curl_multi for bounded concurrency (wp_remote_* is single-
-// request; a 50-URL batch would take minutes sequentially). The HTTP
-// API does not offer a multi-request primitive.
 
 declare(strict_types=1);
 
