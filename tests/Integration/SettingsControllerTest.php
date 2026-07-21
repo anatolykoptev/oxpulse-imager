@@ -192,6 +192,124 @@ class SettingsControllerTest extends TestCase
         $this->assertStringContainsString('health_result=failed', $url);
         $this->assertStringContainsString('not+available', $url);
     }
+
+    // --- AVIF check tests ---
+
+    public function test_do_test_avif_success_returns_ok(): void
+    {
+        $this->healthClient->nextResponse = [
+            'status' => 200,
+            'error' => null,
+            'headers' => ['content-type' => 'image/avif'],
+        ];
+
+        $url = $this->controller->doTestAvif(
+            'https://imgproxy.example.com',
+            'https://example.com/photo.jpg'
+        );
+
+        $this->assertStringContainsString('avif_result=ok', $url);
+    }
+
+    public function test_do_test_avif_webp_response_returns_failed(): void
+    {
+        $this->healthClient->nextResponse = [
+            'status' => 200,
+            'error' => null,
+            'headers' => ['content-type' => 'image/webp'],
+        ];
+
+        $url = $this->controller->doTestAvif(
+            'https://imgproxy.example.com',
+            'https://example.com/photo.jpg'
+        );
+
+        $this->assertStringContainsString('avif_result=failed', $url);
+        $this->assertStringContainsString('IMGPROXY_AUTO_AVIF', $url);
+    }
+
+    public function test_do_test_avif_empty_endpoint_returns_failed(): void
+    {
+        $url = $this->controller->doTestAvif('', 'https://example.com/photo.jpg');
+
+        $this->assertStringContainsString('avif_result=failed', $url);
+        $this->assertStringContainsString('empty', $url);
+    }
+
+    public function test_do_test_avif_uses_stored_endpoint_when_empty(): void
+    {
+        $this->repository->saveDeliverySettings([
+            'enabled' => true,
+            'endpoint' => 'https://imgproxy.stored.com',
+            'allowed_sources' => ['https://example.com/'],
+        ]);
+
+        $this->healthClient->nextResponse = [
+            'status' => 200,
+            'error' => null,
+            'headers' => ['content-type' => 'image/avif'],
+        ];
+
+        $url = $this->controller->doTestAvif('', 'https://example.com/photo.jpg');
+
+        $this->assertStringContainsString('avif_result=ok', $url);
+        $this->assertStringContainsString('imgproxy.stored.com', (string) $this->healthClient->lastUrl);
+    }
+
+    public function test_do_test_avif_falls_back_to_allowed_source_for_sample_image(): void
+    {
+        $this->repository->saveDeliverySettings([
+            'enabled' => true,
+            'endpoint' => 'https://imgproxy.example.com',
+            'allowed_sources' => ['https://example.com/wp-content/uploads/'],
+        ]);
+
+        $this->healthClient->nextResponse = [
+            'status' => 200,
+            'error' => null,
+            'headers' => ['content-type' => 'image/avif'],
+        ];
+
+        $url = $this->controller->doTestAvif('https://imgproxy.example.com', '');
+
+        $this->assertStringContainsString('avif_result=ok', $url);
+        // The sample image should be derived from the first allowed source.
+        $this->assertStringContainsString('oxpulse-avif-test.jpg', (string) $this->healthClient->lastUrl);
+    }
+
+    public function test_do_test_avif_no_sample_image_and_no_sources_returns_failed(): void
+    {
+        $url = $this->controller->doTestAvif('https://imgproxy.example.com', '');
+
+        $this->assertStringContainsString('avif_result=failed', $url);
+        $this->assertStringContainsString('sample+image', $url);
+    }
+
+    public function test_do_test_avif_null_health_check_returns_failed(): void
+    {
+        $controller = new SettingsController($this->repository, $this->validator, null);
+
+        $url = $controller->doTestAvif('https://imgproxy.example.com', 'https://example.com/photo.jpg');
+
+        $this->assertStringContainsString('avif_result=failed', $url);
+        $this->assertStringContainsString('not+available', $url);
+    }
+
+    public function test_do_test_avif_transport_error_returns_unreachable(): void
+    {
+        $this->healthClient->nextResponse = [
+            'status' => 0,
+            'error' => 'Connection refused',
+            'headers' => [],
+        ];
+
+        $url = $this->controller->doTestAvif(
+            'https://imgproxy.example.com',
+            'https://example.com/photo.jpg'
+        );
+
+        $this->assertStringContainsString('avif_result=unreachable', $url);
+    }
 }
 
 /**

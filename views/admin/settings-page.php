@@ -42,10 +42,14 @@ $allowedSourcesText = implode("\n", $delivery->allowedSources ?? []);
 $outputFormat = $delivery->outputFormat ?? 'auto';
 $defaultQuality = $delivery->defaultQuality ?? 80;
 $devHttpOverride = $delivery->devHttpOverride ?? false;
+$diagnosticLevel = (string) get_option('oxpulse_imager_diagnostic_level', 'off');
+$removeOnUninstall = (bool) get_option('oxpulse_imager_remove_on_uninstall', false);
 
 $settingsUpdated = isset($_GET['settings_updated']) ? (string) $_GET['settings_updated'] : '';
 $healthResult = isset($_GET['health_result']) ? (string) $_GET['health_result'] : '';
 $healthMessage = isset($_GET['health_message']) ? (string) $_GET['health_message'] : '';
+$avifResult = isset($_GET['avif_result']) ? (string) $_GET['avif_result'] : '';
+$avifMessage = isset($_GET['avif_message']) ? (string) $_GET['avif_message'] : '';
 $settingsErrorsRaw = isset($_GET['settings_errors']) ? (string) $_GET['settings_errors'] : '';
 $settingsErrors = [];
 if ($settingsErrorsRaw !== '') {
@@ -95,6 +99,16 @@ $saveAction = admin_url('admin-post.php');
                 <?php if ($healthResult !== 'ok' && $healthResult !== 'failed' && $healthResult !== 'unreachable'): ?>
                     <?php printf('(HTTP %s)', esc_html($healthResult)); ?>
                 <?php endif; ?>
+            </p>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($avifResult !== ''): ?>
+        <?php $avifClass = $avifResult === 'ok' ? 'notice-success' : 'notice-error'; ?>
+        <div class="notice <?php echo esc_attr($avifClass); ?> is-dismissible">
+            <p>
+                <strong><?php esc_html_e('AVIF check:', 'oxpulse-imager'); ?></strong>
+                <?php echo esc_html($avifMessage); ?>
             </p>
         </div>
     <?php endif; ?>
@@ -170,6 +184,31 @@ $saveAction = admin_url('admin-post.php');
             </tr>
 
             <tr>
+                <th scope="row"><label for="oxpulse-diagnostic"><?php esc_html_e('Diagnostic logging', 'oxpulse-imager'); ?></label></th>
+                <td>
+                    <select id="oxpulse-diagnostic" name="oxpulse_imager[diagnostic_level]">
+                        <?php foreach (OXPulse\Imager\Infrastructure\WordPress\SettingsValidator::ALLOWED_DIAGNOSTIC_LEVELS as $level): ?>
+                            <option value="<?php echo esc_attr($level); ?>" <?php selected($level, $diagnosticLevel); ?>><?php echo esc_html($level); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <p class="description"><?php esc_html_e('off = silent. basic = log rewrite/preserve counts per request. verbose = log each URL with reason. Logs go to PHP error log via error_log().', 'oxpulse-imager'); ?></p>
+                </td>
+            </tr>
+
+            <tr>
+                <th scope="row"><?php esc_html_e('Cleanup', 'oxpulse-imager'); ?></th>
+                <td>
+                    <fieldset>
+                        <label for="oxpulse-uninstall">
+                            <input type="checkbox" id="oxpulse-uninstall" name="oxpulse_imager[remove_on_uninstall]" value="1" <?php checked($removeOnUninstall); ?> />
+                            <?php esc_html_e('Remove all plugin data (settings + secrets) on uninstall', 'oxpulse-imager'); ?>
+                        </label>
+                        <p class="description"><?php esc_html_e('When enabled, deleting the plugin via Plugins > Installed Plugins will delete all OXPulse Imager options from the database. Off by default — keeps settings across re-installs.', 'oxpulse-imager'); ?></p>
+                    </fieldset>
+                </td>
+            </tr>
+
+            <tr>
                 <th scope="row"><?php esc_html_e('Development overrides', 'oxpulse-imager'); ?></th>
                 <td>
                     <fieldset>
@@ -198,6 +237,31 @@ $saveAction = admin_url('admin-post.php');
             __('Test connection', 'oxpulse-imager'),
             'secondary',
             'oxpulse-test-connection',
+            false
+        );
+        ?>
+    </form>
+
+    <h2><?php esc_html_e('AVIF format check', 'oxpulse-imager'); ?></h2>
+    <p><?php esc_html_e('Verify that imgproxy is configured for AVIF format negotiation (IMGPROXY_AUTO_AVIF=true). Sends a request with Accept: image/avif and checks the response Content-Type.', 'oxpulse-imager'); ?></p>
+    <form method="post" action="<?php echo esc_url($saveAction); ?>">
+        <input type="hidden" name="action" value="oxpulse_imager_test_avif" />
+        <input type="hidden" name="oxpulse_imager_nonce" value="<?php echo esc_attr($nonce); ?>" />
+        <input type="hidden" name="oxpulse_imager[endpoint]" value="<?php echo esc_attr($endpoint); ?>" />
+        <table class="form-table" role="presentation">
+            <tr>
+                <th scope="row"><label for="oxpulse-sample-image"><?php esc_html_e('Sample image URL', 'oxpulse-imager'); ?></label></th>
+                <td>
+                    <input type="url" id="oxpulse-sample-image" name="oxpulse_imager[sample_image]" class="regular-text" value="" placeholder="<?php esc_attr_e('https://example.com/wp-content/uploads/test.jpg', 'oxpulse-imager'); ?>" />
+                    <p class="description"><?php esc_html_e('A publicly accessible image URL from your allowed sources. If empty, the first allowed source + /oxpulse-avif-test.jpg is used.', 'oxpulse-imager'); ?></p>
+                </td>
+            </tr>
+        </table>
+        <?php
+        submit_button(
+            __('Test AVIF support', 'oxpulse-imager'),
+            'secondary',
+            'oxpulse-test-avif',
             false
         );
         ?>

@@ -23,6 +23,8 @@ use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsController;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsPage;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
+use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentUrlRewriter;
+use OXPulse\Imager\Integration\WordPress\Delivery\AvatarRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
 use OXPulse\Imager\Plugin;
@@ -71,9 +73,16 @@ final class ServiceRegistrar
     }
 
     /**
-     * Register the three frontend delivery adapters. Each adapter
+     * Register the frontend delivery adapters. Each adapter
      * delegates to the shared UrlRewriter which enforces source policy,
      * signing availability, and fail-safe preservation.
+     *
+     * Five filters covered:
+     * - wp_content_img_tag: <img> tags in post content (src + srcset)
+     * - wp_calculate_image_srcset: responsive srcset arrays
+     * - wp_get_attachment_image_src: [url, w, h, is_intermediate] arrays
+     * - wp_get_attachment_url: raw attachment URLs (image extensions only)
+     * - get_avatar: avatar <img> tags (Gravatar + custom)
      */
     private static function registerDeliveryAdapters(): void
     {
@@ -86,10 +95,14 @@ final class ServiceRegistrar
         $contentRewriter = new ContentImgTagRewriter($rewriter);
         $srcsetRewriter = new SrcsetRewriter($rewriter);
         $attachmentRewriter = new AttachmentImageSrcRewriter($rewriter);
+        $attachmentUrlRewriter = new AttachmentUrlRewriter($rewriter);
+        $avatarRewriter = new AvatarRewriter($rewriter);
 
         add_filter('wp_content_img_tag', [$contentRewriter, 'rewrite'], 10, 3);
         add_filter('wp_calculate_image_srcset', [$srcsetRewriter, 'rewrite'], 10, 5);
         add_filter('wp_get_attachment_image_src', [$attachmentRewriter, 'rewrite'], 10, 4);
+        add_filter('wp_get_attachment_url', [$attachmentUrlRewriter, 'rewrite'], 10, 2);
+        add_filter('get_avatar', [$avatarRewriter, 'rewrite'], 10, 5);
     }
 
     /**

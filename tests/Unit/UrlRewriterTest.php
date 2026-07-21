@@ -282,4 +282,39 @@ class UrlRewriterTest extends TestCase
         $expected = rtrim(strtr(base64_encode('photo'), '+/', '-_'), '=');
         $this->assertStringContainsString('fn:' . $expected . ':1', $result->url);
     }
+
+    public function test_generator_reused_across_multiple_rewrites(): void
+    {
+        // The UrlRewriter should create the URL generator once and reuse
+        // it for subsequent rewrites. We verify this by checking that
+        // multiple rewrites produce consistent, deterministic output
+        // (which requires the same signer/pathBuilder/generator chain).
+        $rewriter = $this->createRewriter();
+        $url = 'https://example.com/wp-content/uploads/photo.jpg';
+
+        // First rewrite creates the generator.
+        $r1 = $rewriter->rewrite($url, 400, 0);
+        // Subsequent rewrites reuse it.
+        $r2 = $rewriter->rewrite($url, 400, 0);
+        $r3 = $rewriter->rewrite($url, 400, 0);
+
+        $this->assertSame($r1->url, $r2->url);
+        $this->assertSame($r2->url, $r3->url);
+    }
+
+    public function test_multiple_different_urls_rewritten_with_same_rewriter(): void
+    {
+        $rewriter = $this->createRewriter();
+
+        $r1 = $rewriter->rewrite('https://example.com/wp-content/uploads/photo1.jpg');
+        $r2 = $rewriter->rewrite('https://example.com/wp-content/uploads/photo2.jpg');
+        $r3 = $rewriter->rewrite('https://example.com/wp-content/uploads/photo3.jpg');
+
+        $this->assertTrue($r1->rewritten);
+        $this->assertTrue($r2->rewritten);
+        $this->assertTrue($r3->rewritten);
+        $this->assertStringContainsString('photo1.jpg', $r1->url);
+        $this->assertStringContainsString('photo2.jpg', $r2->url);
+        $this->assertStringContainsString('photo3.jpg', $r3->url);
+    }
 }

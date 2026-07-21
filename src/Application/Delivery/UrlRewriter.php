@@ -36,6 +36,8 @@ final class UrlRewriter
     private DeliveryConfig $delivery;
     private ?SigningConfig $signing;
 
+    private ?ImgproxyUrlGenerator $generator = null;
+
     public function __construct(
         SourcePolicy $policy,
         DeliveryConfig $delivery,
@@ -85,17 +87,28 @@ final class UrlRewriter
                 context: $context
             );
 
-            $signer = new HmacSigner($this->signing);
-            $pathBuilder = new ImgproxyPathBuilder();
-            $generator = new ImgproxyUrlGenerator($pathBuilder, $signer, $this->delivery->endpoint);
-
             $filename = $this->buildContentDispositionFilename($sourceUrl);
 
-            return RewriteResult::rewritten($generator->generate($request, $filename));
+            return RewriteResult::rewritten($this->generator()->generate($request, $filename));
         } catch (\Throwable $e) {
             // Fail safe: any unexpected error preserves the original URL.
             return RewriteResult::preserved($sourceUrl, 'generation_error');
         }
+    }
+
+    /**
+     * Get or create the URL generator. The generator is created once
+     * and reused for all subsequent rewrites, avoiding repeated object
+     * instantiation on pages with many images.
+     */
+    private function generator(): ImgproxyUrlGenerator
+    {
+        if ($this->generator === null) {
+            $signer = new HmacSigner($this->signing);
+            $pathBuilder = new ImgproxyPathBuilder();
+            $this->generator = new ImgproxyUrlGenerator($pathBuilder, $signer, $this->delivery->endpoint);
+        }
+        return $this->generator;
     }
 
     /**
@@ -121,12 +134,9 @@ final class UrlRewriter
 
         $format = $this->delivery->outputFormat;
         if ($format === '' || $format === 'auto') {
-            // In auto mode, pass the original filename. imgproxy will
-            // adjust the extension based on the negotiated format.
             return $basename;
         }
 
-        // Replace the extension with the explicit output format.
         $dotPos = strrpos($basename, '.');
         if ($dotPos === false) {
             return $basename . '.' . $format;

@@ -58,6 +58,16 @@ final class SettingsController
         exit;
     }
 
+    public function handleTestAvif(): void
+    {
+        $this->guard();
+        $endpoint = (string) ($_POST['oxpulse_imager']['endpoint'] ?? '');
+        $sampleImage = (string) ($_POST['oxpulse_imager']['sample_image'] ?? '');
+        $url = $this->doTestAvif($endpoint, $sampleImage);
+        wp_safe_redirect($url);
+        exit;
+    }
+
     /**
      * Internal: validate and persist settings. Returns the admin URL
      * to redirect to (with status query params). Does not redirect or
@@ -129,6 +139,63 @@ final class SettingsController
         return $this->redirectUrl([
             'health_result' => $result->status,
             'health_message' => $result->message,
+        ]);
+    }
+
+    /**
+     * Internal: run an AVIF format negotiation check against the given
+     * endpoint using a sample image URL. Returns the admin URL to
+     * redirect to. Does not redirect or exit.
+     *
+     * @param string $endpoint Endpoint URL from the form, may be empty.
+     * @param string $sampleImage Sample image URL to test with, may be empty.
+     * @return string Redirect URL.
+     */
+    public function doTestAvif(string $endpoint, string $sampleImage): string
+    {
+        $endpoint = trim($endpoint);
+
+        if ($endpoint === '') {
+            $endpoint = (string) get_option(OptionSettingsRepository::OPTION_ENDPOINT, '');
+        }
+
+        if ($endpoint === '') {
+            return $this->redirectUrl([
+                'avif_result' => 'failed',
+                'avif_message' => 'Endpoint URL is empty.',
+            ]);
+        }
+
+        $sampleImage = trim($sampleImage);
+
+        if ($sampleImage === '') {
+            // Fall back to the first allowed source URL + a placeholder
+            // image name. This gives a reasonable default for the check.
+            $allowedSources = (array) get_option(OptionSettingsRepository::OPTION_ALLOWED_SOURCES, []);
+            if (!empty($allowedSources)) {
+                $sampleImage = rtrim((string) $allowedSources[0], '/') . '/oxpulse-avif-test.jpg';
+            }
+        }
+
+        if ($sampleImage === '') {
+            return $this->redirectUrl([
+                'avif_result' => 'failed',
+                'avif_message' => 'No sample image URL available. Configure allowed sources first.',
+            ]);
+        }
+
+        if ($this->healthCheck === null) {
+            return $this->redirectUrl([
+                'avif_result' => 'failed',
+                'avif_message' => 'Health check service not available.',
+            ]);
+        }
+
+        $result = $this->healthCheck->checkAvifSupport($endpoint, $sampleImage);
+
+        return $this->redirectUrl([
+            'avif_result' => $result->status,
+            'avif_message' => $result->message,
         ]);
     }
 

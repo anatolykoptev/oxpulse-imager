@@ -43,6 +43,7 @@ final class SettingsPage
         add_action('admin_init', [$this, 'registerSettings']);
         add_action('admin_post_oxpulse_imager_save_settings', [$this->controller, 'handleSave']);
         add_action('admin_post_oxpulse_imager_test_connection', [$this->controller, 'handleTestConnection']);
+        add_action('admin_post_oxpulse_imager_test_avif', [$this->controller, 'handleTestAvif']);
     }
 
     public function addMenuPage(): void
