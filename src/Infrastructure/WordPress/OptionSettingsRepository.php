@@ -179,16 +179,33 @@ final class OptionSettingsRepository
             update_option(self::OPTION_SAVE_DATA_QUALITY_REDUCTION, max(0, min(50, $reduction)));
         }
 
-        // Size-based quality tiers (Ф8).
+        // Size-based quality tiers (Ф8/Ф11). Two forms per tier:
+        // int (simple, q:) or array<string,int> (per-format, fq:).
         if (array_key_exists('size_quality_tiers', $values)) {
             $tiers = $values['size_quality_tiers'];
             $clean = [];
             if (is_array($tiers)) {
                 foreach ($tiers as $maxWidth => $quality) {
                     $mw = (int) $maxWidth;
-                    $q = (int) $quality;
-                    if ($mw > 0 && $q >= 1 && $q <= 100) {
-                        $clean[$mw] = $q;
+                    if ($mw <= 0) {
+                        continue;
+                    }
+                    if (is_array($quality)) {
+                        $cleanFmt = [];
+                        foreach ($quality as $fmt => $q) {
+                            $qi = (int) $q;
+                            if (is_string($fmt) && $fmt !== '' && $qi >= 1 && $qi <= 100) {
+                                $cleanFmt[$fmt] = $qi;
+                            }
+                        }
+                        if (!empty($cleanFmt)) {
+                            $clean[$mw] = $cleanFmt;
+                        }
+                    } else {
+                        $q = (int) $quality;
+                        if ($q >= 1 && $q <= 100) {
+                            $clean[$mw] = $q;
+                        }
                     }
                 }
             }
@@ -302,11 +319,14 @@ final class OptionSettingsRepository
     }
 
     /**
-     * Ф8: Load size-based quality tiers. Stored as an associative array
-     * [maxWidth => quality], e.g. [400 => 75, 800 => 70, 1200 => 65].
+     * Ф8/Ф11: Load size-based quality tiers. Stored as an associative
+     * array [maxWidth => quality], where quality is either int (simple
+     * form, emits q:) or array<string,int> (per-format form, emits fq:).
+     * Example:
+     *   [400 => 75, 800 => ['avif' => 65, 'webp' => 70, 'jpeg' => 78]]
      * Returns empty array when the option is missing or malformed.
      *
-     * @return array<int,int>
+     * @return array<int, int|array<string,int>>
      */
     private function loadSizeQualityTiers(): array
     {
@@ -316,8 +336,21 @@ final class OptionSettingsRepository
         }
         $result = [];
         foreach ($stored as $maxWidth => $quality) {
-            if (is_int($maxWidth) && $maxWidth > 0 && is_int($quality) && $quality >= 1 && $quality <= 100) {
+            if (!is_int($maxWidth) || $maxWidth <= 0) {
+                continue;
+            }
+            if (is_int($quality) && $quality >= 1 && $quality <= 100) {
                 $result[$maxWidth] = $quality;
+            } elseif (is_array($quality) && !empty($quality)) {
+                $cleanFmt = [];
+                foreach ($quality as $fmt => $q) {
+                    if (is_string($fmt) && $fmt !== '' && is_int($q) && $q >= 1 && $q <= 100) {
+                        $cleanFmt[$fmt] = $q;
+                    }
+                }
+                if (!empty($cleanFmt)) {
+                    $result[$maxWidth] = $cleanFmt;
+                }
             }
         }
         ksort($result, SORT_NUMERIC);

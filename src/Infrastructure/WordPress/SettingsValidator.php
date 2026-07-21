@@ -192,22 +192,38 @@ final class SettingsValidator
         }
         $values['save_data_quality_reduction'] = max(0, min(50, $saveDataReduction));
 
-        // Size-based quality tiers (Ф8) — map of maxWidth => quality.
+        // Size-based quality tiers (Ф8/Ф11) — map of maxWidth => quality.
+        // Quality can be int (simple, q:) or array<string,int> (per-format, fq:).
         $sizeTiers = $input['size_quality_tiers'] ?? [];
         $cleanTiers = [];
         if (is_array($sizeTiers)) {
             foreach ($sizeTiers as $maxWidth => $quality) {
                 $mw = (int) $maxWidth;
-                $q = (int) $quality;
                 if ($mw <= 0) {
                     $errors['size_quality_tiers'] = __('Size quality tier widths must be positive integers.', 'oxpulse-imager');
                     continue;
                 }
-                if ($q < 1 || $q > 100) {
-                    $errors['size_quality_tiers'] = __('Size quality tier values must be between 1 and 100.', 'oxpulse-imager');
-                    continue;
+                if (is_array($quality)) {
+                    $cleanFmt = [];
+                    foreach ($quality as $fmt => $q) {
+                        $qi = (int) $q;
+                        if ($qi < 1 || $qi > 100) {
+                            $errors['size_quality_tiers'] = __('Size quality tier per-format values must be between 1 and 100.', 'oxpulse-imager');
+                            continue;
+                        }
+                        $cleanFmt[(string) $fmt] = $qi;
+                    }
+                    if (!empty($cleanFmt)) {
+                        $cleanTiers[$mw] = $cleanFmt;
+                    }
+                } else {
+                    $q = (int) $quality;
+                    if ($q < 1 || $q > 100) {
+                        $errors['size_quality_tiers'] = __('Size quality tier values must be between 1 and 100.', 'oxpulse-imager');
+                        continue;
+                    }
+                    $cleanTiers[$mw] = $q;
                 }
-                $cleanTiers[$mw] = $q;
             }
         }
         ksort($cleanTiers, SORT_NUMERIC);
