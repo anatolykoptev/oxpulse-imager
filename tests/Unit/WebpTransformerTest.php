@@ -56,7 +56,7 @@ class WebpTransformerTest extends TestCase
      * Create a real JPEG fixture (200x200, color gradient) using GD,
      * so the transform engine has a compressible source to work with.
      */
-    private function createJpegFixture(string $name, int $size = 200): ?string
+    private function createJpegFixture(string $name, int $size = 200, int $quality = 90): ?string
     {
         if (!function_exists('imagejpeg')) {
             return null;
@@ -68,7 +68,7 @@ class WebpTransformerTest extends TestCase
                 imagesetpixel($img, $x, $y, imagecolorallocate($img, $x % 256, $y % 256, ($x + $y) % 256));
             }
         }
-        imagejpeg($img, $path, 90);
+        imagejpeg($img, $path, $quality);
         imagedestroy($img);
         return $path;
     }
@@ -270,7 +270,48 @@ class WebpTransformerTest extends TestCase
         $this->assertSame('WEBP', substr($webp, 8, 4), 'Output must contain WEBP signature at offset 8.');
     }
 
-    public function test_real_png_to_webp_smaller_and_valid(): void
+    /**
+     * Real-encode happy path: a quality-100 JPEG source is reliably beaten
+     * by WebP@80. A q100 JPEG stores full DCT-block detail (large byte
+     * stream), while WebP lossy @80 wins on the same content — so the
+     * size-guard passes and we get valid WebP bytes. (The former PNG-9
+     * smooth-gradient fixture compressed to near-nothing and defeated the
+     * size-guard — that case is now covered explicitly by
+     * test_size_guard_returns_null_when_webp_not_smaller below.)
+     */
+    public function test_real_jpeg_q100_to_webp_smaller_and_valid(): void
+    {
+        if (!extension_loaded('imagick') && !function_exists('imagewebp')) {
+            $this->markTestSkipped('Neither Imagick nor GD-WebP available — skipping real-encode test.');
+        }
+
+        $sourcePath = $this->createJpegFixture('photo-q100.jpg', 200, 100);
+        $this->assertNotNull($sourcePath, 'Could not create JPEG fixture (GD not available).');
+
+        $transformer = new WebpTransformer();
+        $originalSize = filesize($sourcePath);
+
+        $webp = $transformer->transform($sourcePath, 200, 200, 'fit', 80);
+
+        $this->assertNotNull($webp, 'Transform must produce WebP bytes for a valid JPEG.');
+        $this->assertLessThan(
+            $originalSize,
+            strlen($webp),
+            'WebP@80 output must be smaller than a quality-100 JPEG source (size-guard invariant).'
+        );
+        // WebP magic bytes: RIFF....WEBP
+        $this->assertSame('RIFF', substr($webp, 0, 4), 'Output must start with RIFF (WebP magic).');
+        $this->assertSame('WEBP', substr($webp, 8, 4), 'Output must contain WEBP signature at offset 8.');
+    }
+
+    /**
+     * Explicit size-guard test (real encode): the smooth linear-gradient PNG
+     * (R=x%256, G=y%256, B=(x+y)%256) at PNG-9 compresses to near-nothing,
+     * so WebP@80 is NOT smaller and transform() must return null (serve
+     * original). This was the former accidental CI failure — now an
+     * intended assertion of the size-guard's correctness.
+     */
+    public function test_size_guard_returns_null_when_webp_not_smaller(): void
     {
         if (!extension_loaded('imagick') && !function_exists('imagewebp')) {
             $this->markTestSkipped('Neither Imagick nor GD-WebP available — skipping real-encode test.');
@@ -279,7 +320,7 @@ class WebpTransformerTest extends TestCase
             $this->markTestSkipped('GD not available to create PNG fixture.');
         }
 
-        $path = $this->fixtureDir . '/photo.png';
+        $path = $this->fixtureDir . '/gradient.png';
         $img = imagecreatetruecolor(200, 200);
         for ($x = 0; $x < 200; $x++) {
             for ($y = 0; $y < 200; $y++) {
@@ -290,14 +331,13 @@ class WebpTransformerTest extends TestCase
         imagedestroy($img);
 
         $transformer = new WebpTransformer();
-        $originalSize = filesize($path);
 
         $webp = $transformer->transform($path, 200, 200, 'fit', 80);
 
-        $this->assertNotNull($webp);
-        $this->assertLessThan($originalSize, strlen($webp));
-        $this->assertSame('RIFF', substr($webp, 0, 4));
-        $this->assertSame('WEBP', substr($webp, 8, 4));
+        $this->assertNull(
+            $webp,
+            'Size-guard must return null when WebP@80 is not smaller than the PNG-9 gradient source.'
+        );
     }
 
     public function test_real_resize_does_not_upscale_past_original(): void
