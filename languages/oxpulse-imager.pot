@@ -74,20 +74,24 @@ msgstr ""
 msgid "Local base path is required when source mode is \"local\"."
 msgstr ""
 
+#: src/Infrastructure/WordPress/SettingsValidator.php:191
+msgid "Save-Data quality reduction must be between 0 and 50."
+msgstr ""
+
 #. translators: 1: format name, 2: minimum, 3: maximum.
-#: src/Infrastructure/WordPress/SettingsValidator.php:284
+#: src/Infrastructure/WordPress/SettingsValidator.php:291
 msgid "Quality for %1$s must be between %2$d and %3$d."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:323
+#: src/Infrastructure/WordPress/SettingsValidator.php:330
 msgid "Watermark opacity must be between 0 and 1."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:329
+#: src/Infrastructure/WordPress/SettingsValidator.php:336
 msgid "Invalid watermark position."
 msgstr ""
 
-#: src/Infrastructure/WordPress/SettingsValidator.php:338
+#: src/Infrastructure/WordPress/SettingsValidator.php:345
 msgid "Watermark scale must be between 0 and 1."
 msgstr ""
 

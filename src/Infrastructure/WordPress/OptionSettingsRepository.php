@@ -53,6 +53,9 @@ final class OptionSettingsRepository
     // RankMath compatibility (Ф3): restore direct URLs in og:image meta tags.
     public const OPTION_RANKMATH_COMPATIBILITY = 'oxpulse_imager_rankmath_compatibility';
 
+    // Save-Data header support (Ф7): reduce quality when browser sends Save-Data: on.
+    public const OPTION_SAVE_DATA_QUALITY_REDUCTION = 'oxpulse_imager_save_data_quality_reduction';
+
     public function loadDeliveryConfig(): DeliveryConfig
     {
         return new DeliveryConfig(
@@ -72,6 +75,7 @@ final class OptionSettingsRepository
             localBasePath: (string) get_option(self::OPTION_LOCAL_BASE_PATH, ''),
             bufferRewritingEnabled: (bool) get_option(self::OPTION_BUFFER_REWRITING_ENABLED, false),
             rankMathCompatibility: (bool) get_option(self::OPTION_RANKMATH_COMPATIBILITY, true),
+            saveDataQualityReduction: (int) get_option(self::OPTION_SAVE_DATA_QUALITY_REDUCTION, 15),
         );
     }
 
@@ -163,6 +167,12 @@ final class OptionSettingsRepository
         // RankMath compatibility (Ф3).
         if (array_key_exists('rankmath_compatibility', $values)) {
             update_option(self::OPTION_RANKMATH_COMPATIBILITY, (bool) $values['rankmath_compatibility']);
+        }
+
+        // Save-Data quality reduction (Ф7).
+        if (array_key_exists('save_data_quality_reduction', $values)) {
+            $reduction = (int) $values['save_data_quality_reduction'];
+            update_option(self::OPTION_SAVE_DATA_QUALITY_REDUCTION, max(0, min(50, $reduction)));
         }
     }
 
