@@ -39,6 +39,7 @@ use OXPulse\Imager\Integration\WordPress\Delivery\AvatarRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\BufferRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ImageDownsizeRewriter;
+use OXPulse\Imager\Integration\WordPress\Delivery\IntermediateSizeRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
 use OXPulse\Imager\Integration\WordPress\Compatibility\RankMathCompatibility;
 use OXPulse\Imager\Integration\WordPress\Performance\OptimizationDetectiveIntegration;
@@ -178,12 +179,24 @@ final class ServiceRegistrar
         $attachmentRewriter = new AttachmentImageSrcRewriter($rewriter);
         $attachmentUrlRewriter = new AttachmentUrlRewriter($rewriter);
         $avatarRewriter = new AvatarRewriter($rewriter);
+        $intermediateRewriter = new IntermediateSizeRewriter($rewriter);
 
         add_filter('wp_content_img_tag', [$contentRewriter, 'rewrite'], 10, 3);
         add_filter('wp_calculate_image_srcset', [$srcsetRewriter, 'rewrite'], 10, 5);
         add_filter('wp_get_attachment_image_src', [$attachmentRewriter, 'rewrite'], 10, 4);
         add_filter('wp_get_attachment_url', [$attachmentUrlRewriter, 'rewrite'], 10, 2);
         add_filter('get_avatar', [$avatarRewriter, 'rewrite'], 10, 5);
+
+        // CRITICAL: image_get_intermediate_size must run BEFORE WordPress
+        // core builds the URL via path_join(dirname(wp_get_attachment_url()),
+        // $file). Without this, the intermediate URL is built from the
+        // already-rewritten imgproxy URL (encoded source segment) and
+        // path_join replaces the encoded segment with the intermediate
+        // filename basename → imgproxy 403 "Invalid signature".
+        // Priority 1 (early) so we rebuild $data['url'] before any other
+        // filter inspects it. Recursion guard inside the handler prevents
+        // re-entry via wp_get_attachment_url.
+        add_filter('image_get_intermediate_size', [$intermediateRewriter, 'rewrite'], 1, 3);
 
         // Ф5: image_downsize at priority 99 (late, to override earlier
         // filters). Catches plugins/themes that call image_downsize()

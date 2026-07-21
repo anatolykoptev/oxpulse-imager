@@ -132,6 +132,26 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return $map[$id] ?? false;
         }
     }
+    if (!function_exists('get_post_meta')) {
+        function get_post_meta($post_id, $key = '', $single = false) {
+            $map = $GLOBALS['__oxpulse_post_meta'][$post_id] ?? [];
+            if ($key === '') {
+                return $map;
+            }
+            $value = $map[$key] ?? '';
+            return $single ? $value : [$value];
+        }
+    }
+    if (!function_exists('wp_get_upload_dir')) {
+        function wp_get_upload_dir() {
+            return $GLOBALS['__oxpulse_upload_dir'] ?? [
+                'baseurl'    => 'https://example.test/wp-content/uploads',
+                'basedir'    => '/tmp/wp-content/uploads',
+                'baseurlrel' => '/wp-content/uploads',
+                'error'      => false,
+            ];
+        }
+    }
     if (!function_exists('wp_get_attachment_metadata')) {
         function wp_get_attachment_metadata($id) {
             $map = $GLOBALS['__oxpulse_attachment_meta'] ?? [];

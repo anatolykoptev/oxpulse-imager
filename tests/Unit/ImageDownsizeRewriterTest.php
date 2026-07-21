@@ -51,6 +51,18 @@ class ImageDownsizeRewriterTest extends TestCase
                 ],
             ],
         ];
+        // AttachmentOriginResolver reads _wp_attached_file from post_meta
+        // and builds the URL from wp_get_upload_dir()['baseurl']. Set
+        // baseurl to match the allowed source prefix so the resolved URL
+        // passes SourcePolicy authorization.
+        $GLOBALS['__oxpulse_upload_dir'] = [
+            'baseurl'    => 'https://example.com/wp-content/uploads',
+            'basedir'    => '/tmp/wp-content/uploads',
+            'error'      => false,
+        ];
+        $GLOBALS['__oxpulse_post_meta'] = [
+            42 => ['_wp_attached_file' => '2024/01/photo.jpg'],
+        ];
 
         $rewriter = new UrlRewriter(
             new SourcePolicy(),
@@ -67,7 +79,12 @@ class ImageDownsizeRewriterTest extends TestCase
     protected function tearDown(): void
     {
         parent::tearDown();
-        unset($GLOBALS['__oxpulse_attachment_urls'], $GLOBALS['__oxpulse_attachment_meta']);
+        unset(
+            $GLOBALS['__oxpulse_attachment_urls'],
+            $GLOBALS['__oxpulse_attachment_meta'],
+            $GLOBALS['__oxpulse_post_meta'],
+            $GLOBALS['__oxpulse_upload_dir']
+        );
     }
 
     public function test_rewrites_for_registered_size_thumbnail(): void
@@ -129,12 +146,16 @@ class ImageDownsizeRewriterTest extends TestCase
         // Attachment ID with no metadata.
         $GLOBALS['__oxpulse_attachment_meta'] = [99 => false];
         $GLOBALS['__oxpulse_attachment_urls'] = [99 => 'https://example.com/wp-content/uploads/photo.jpg'];
+        // AttachmentOriginResolver reads _wp_attached_file to build the
+        // URL. Without it, resolveOriginalUrl returns null → rewrite()
+        // returns false (let WP core handle).
+        $GLOBALS['__oxpulse_post_meta'] = [
+            99 => ['_wp_attached_file' => 'photo.jpg'],
+        ];
 
         $result = $this->downsizeRewriter->rewrite(false, 99, 'full');
 
         // No metadata → dimensions [0,0] → still rewrites (imgproxy auto).
-        // Actually with [0,0] and 'full', the rewriter will produce a URL
-        // without rs:fit. Let's verify it still rewrites.
         $this->assertIsArray($result);
         $this->assertStringContainsString('imgproxy.example.com', $result[0]);
     }
@@ -184,23 +205,21 @@ class ImageDownsizeRewriterTest extends TestCase
 
     public function test_recursion_guard_prevents_infinite_loop(): void
     {
-        // The handler calls wp_get_attachment_url() which would trigger
-        // the wp_get_attachment_url filter. In the unit test environment
-        // there's no real filter chain, but the recursion guard ensures
-        // that if the handler is somehow re-entered, it bails immediately.
-        // We verify the guard works by calling rewrite() within a
-        // simulated re-entry.
+        // RecursionGuard trait uses a per-class static flag keyed by
+        // static::class. Simulate re-entry by setting the flag directly,
+        // then call rewrite() — it should bail (return $out unchanged).
         $reflection = new \ReflectionClass(ImageDownsizeRewriter::class);
-        $prop = $reflection->getProperty('inDownsize');
+        $prop = $reflection->getProperty('guardFlags');
         $prop->setAccessible(true);
-        $prop->setValue(null, true);
+        $prop->setValue(null, [ImageDownsizeRewriter::class => true]);
 
         try {
-            // Simulate re-entry: $inDownsize is true → should bail.
+            // Simulate re-entry: guard flag is true → should bail,
+            // returning $out (false) unchanged.
             $result = $this->downsizeRewriter->rewrite(false, 42, 'thumbnail');
             $this->assertFalse($result);
         } finally {
-            $prop->setValue(null, false);
+            $prop->setValue(null, [ImageDownsizeRewriter::class => false]);
         }
     }
 

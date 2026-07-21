@@ -6,9 +6,11 @@
  * filters) so that plugins/themes calling image_downsize() directly —
  * bypassing wp_get_attachment_image_src — get rewritten imgproxy URLs.
  *
- * Recursion guard: wp_get_attachment_url() inside the handler triggers
- * the wp_get_attachment_url filter, which is also hooked by the plugin.
- * A static $inDownsize flag breaks the cycle.
+ * Uses AttachmentOriginResolver to read the original (unrewritten)
+ * attachment URL directly from _wp_attached_file metadata, bypassing
+ * the wp_get_attachment_url filter chain. This avoids the recursion
+ * cycle that would occur if wp_get_attachment_url() were called here
+ * (it's also hooked by AttachmentUrlRewriter).
  *
  * @package OXPulse\Imager\Integration\WordPress\Delivery
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -23,14 +25,9 @@ use OXPulse\Imager\Application\Delivery\UrlRewriter;
 
 final class ImageDownsizeRewriter
 {
-    private UrlRewriter $rewriter;
+    use RecursionGuard;
 
-    /**
-     * Recursion guard. Set while the handler is running so the
-     * wp_get_attachment_url filter (called inside this handler via
-     * wp_get_attachment_url()) does not re-enter image_downsize.
-     */
-    private static bool $inDownsize = false;
+    private UrlRewriter $rewriter;
 
     public function __construct(UrlRewriter $rewriter)
     {
@@ -47,11 +44,6 @@ final class ImageDownsizeRewriter
      */
     public function rewrite($out, int $id, $size)
     {
-        // Recursion guard — if we're already inside this handler, bail.
-        if (self::$inDownsize) {
-            return $out;
-        }
-
         // If another filter already produced a result at higher priority,
         // respect it (don't override). We only act when WP core would
         // handle the downsize (false = "let WP core do it").
@@ -59,13 +51,18 @@ final class ImageDownsizeRewriter
             return $out;
         }
 
-        self::$inDownsize = true;
+        if ($this->inGuard()) {
+            return $out;
+        }
+
+        $this->enterGuard();
         try {
-            // Get the direct attachment URL. This triggers the
-            // wp_get_attachment_url filter (also hooked by the plugin),
-            // but the recursion guard prevents re-entry.
-            $url = wp_get_attachment_url($id);
-            if (!is_string($url) || $url === '') {
+            // Resolve the original attachment URL directly from metadata,
+            // bypassing the wp_get_attachment_url filter (hooked by
+            // AttachmentUrlRewriter). This avoids the recursion cycle
+            // without needing a separate flag.
+            $url = AttachmentOriginResolver::resolveOriginalUrl($id);
+            if ($url === null) {
                 return false;
             }
 
@@ -89,7 +86,7 @@ final class ImageDownsizeRewriter
 
             return [$result->url, $width, $height, $isIntermediate];
         } finally {
-            self::$inDownsize = false;
+            $this->exitGuard();
         }
     }
 
