@@ -59,6 +59,37 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.1](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.0...v0.1.1) (2026-07-21)
+
+
+### Added
+
+* **i18n:** full Russian translation + JS i18n pipeline ([ac15950](https://github.com/anatolykoptev/oxpulse-imager/commit/ac159502845062f34cea37944fb26772b9651513))
+
+
+### Fixed
+
+* **admin:** grant manage_oxpulse_imager capability to administrators + add Settings link ([c904a76](https://github.com/anatolykoptev/oxpulse-imager/commit/c904a768d783f6d0fcab63df1c5bde41851bf5be))
+* **content-disposition:** strip source extension in auto mode to prevent double extension ([a06faa4](https://github.com/anatolykoptev/oxpulse-imager/commit/a06faa4cc014420709f807bbe60f31360c4edbe1))
+* emit absolute imgproxy URLs (resolve relative endpoint against site host) ([#25](https://github.com/anatolykoptev/oxpulse-imager/issues/25)) ([6f69d5b](https://github.com/anatolykoptev/oxpulse-imager/commit/6f69d5bd38ced7e0fbb6a231b7681f2ad92167f7))
+* **i18n:** JS JSON filename must use script handle, not domain ([6c77c60](https://github.com/anatolykoptev/oxpulse-imager/commit/6c77c60ab15ad35b3259a750b81948da25cc82bf))
+* **i18n:** pass filesystem path to wp_set_script_translations ([9b08500](https://github.com/anatolykoptev/oxpulse-imager/commit/9b08500ddb2cabb480ab0b2beb478d8b20ac4f71))
+* **i18n:** wp_set_script_translations path must point at languages/ dir ([d698078](https://github.com/anatolykoptev/oxpulse-imager/commit/d698078dd40d31d43527bad3aa625766fff0248a))
+* **intermediate:** rewrite image_get_intermediate_size URL to fix 403 on theme crop sizes ([388834b](https://github.com/anatolykoptev/oxpulse-imager/commit/388834b98aceb7710b79fcb0228a6a7d86321017))
+* **local:** prepend leading slash in local:// path (imgproxy expects local:///path) ([04e35e1](https://github.com/anatolykoptev/oxpulse-imager/commit/04e35e1683e742aa7b60dfccbb4be3aed9172fe9))
+* **local:** return path RELATIVE to localBasePath for imgproxy local:// ([af3fee3](https://github.com/anatolykoptev/oxpulse-imager/commit/af3fee3ed3532ac848b8fcee097ef7eff52e7fa0))
+* **local:** use imgproxy ENCODED source format (base64url of local:///path) ([dc6463a](https://github.com/anatolykoptev/oxpulse-imager/commit/dc6463ab77e94ab09ce58a4d227f2083a5b6c616))
+
+
+### Documentation
+
+* **roadmap:** Phase 6 LocalBackend design (standard-hosting local delivery) ([#26](https://github.com/anatolykoptev/oxpulse-imager/issues/26)) ([01a0a7d](https://github.com/anatolykoptev/oxpulse-imager/commit/01a0a7d0d1c39968a3d04f5b11cbe2abe2491562))
+
+
+### Reverts
+
+* no major version bump — stay on 0.1.0 ([49cf03c](https://github.com/anatolykoptev/oxpulse-imager/commit/49cf03cd46168dd139384afa1a184e66cc3368f1))
+
 ## 0.1.0
 
 Initial public release.
