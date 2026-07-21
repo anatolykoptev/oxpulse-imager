@@ -63,53 +63,31 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 - Admin UX: Test AVIF button, diagnostic level dropdown, remove on uninstall
 - 5 WordPress filters covered, 188 tests, green on PHP 8.3/8.4/8.5
 
+### Phase 5.1 — imgproxy-native enhancements ✅
+
+**Shipped:** LQIP placeholders (`blur:`), DPR-aware srcset (`dpr:`), per-format quality (`fq:`), watermark (`wm:`). All via imgproxy URL options, no PHP image processing.
+
+**Scope note:** "Responsive breakpoints srcset" (Cloudinary-style optimal breakpoints vs WP fixed sizes) was deferred — `SrcsetRewriter` already handles existing srcset, and generating optimal breakpoints requires an `info:` endpoint round-trip per image that doesn't fit the on-the-fly model. May revisit in a later phase.
+
+**Commit:** `4cc7f63`
+
+### Phase 5.2 — Modern React admin ✅
+
+**Shipped (re-scoped from original ROADMAP):** Self-contained React SPA (Vite 4 + Tailwind 3 + Radix UI + Zustand, all bundled — no `wp-element`/`wp-api-fetch` deps). 6 sections (Connection, Format, Enhancements, Diagnostics, Tools, Pre-warm). REST backend (`/oxpulse/v1/options`). Deterministic build (Terser, content-hashed, CI rebuild-verification). Ported from the UTM Linker plugin pattern.
+
+**Scope note:** The original ROADMAP defined Phase 5.2 as "WP integration 2026" (media library column, WP-CLI, Optimization Detective integration). That scope was re-prioritized: the React admin unblocked the modern UX surface first. The WP-CLI + Optimization Detective + media column items moved to Phase 5.7.
+
+**Commit:** `ffbd612`
+
+### Phase 5.3 — REST API + bulk pre-warm (synchronous) ✅
+
+**Shipped:** `HealthRestController` (`POST /health`, `POST /avif-check`), `PrewarmRestController` (`POST /prewarm` with synchronous batch HEAD dispatch, concurrency=5 via `curl_multi`). `PrewarmService` builds signed imgproxy URLs via the existing `UrlRewriter` pipeline (only authorized sources warmed). SPA `ToolsSection` rewritten to call REST directly; new `PrewarmSection` with per-URL results table.
+
+**Scope note (deferred to Phase 5.7):** The original ROADMAP specified background processing via WordPress cron with job IDs + polling (`GET /warm/<job_id>`), plus `GET /status` and `GET /info?url=` endpoints. The synchronous implementation handles up to 50 URLs per batch in seconds — enough for most use cases. Background cron + polling deferred to Phase 5.7 (headless WP / external automation with large catalogs need it; the SPA doesn't).
+
+**Commit:** `71f1cbc`
+
 ## Upcoming phases
-
-### Phase 5.1 — imgproxy-native enhancements
-
-**Why:** These are capabilities imgproxy has that WordPress core never will. This is our real differentiator vs Optimole/EWWW/Imagify — they process images in PHP or via cloud API; we get them free from imgproxy URL options.
-
-**Scope:**
-- **LQIP placeholders** — imgproxy `blur:1` option generates a tiny blurred placeholder. Add `data-placeholder` attribute or inline `data:image/svg+xml` background. Reduces CLS, improves perceived performance. Cloudinary and Imgix do this; WP native does not.
-- **DPR-aware srcset** — extend `SrcsetRewriter` to emit `1x/2x/3x` DPR variants via imgproxy `dpr:` option. Mobile retina displays get sharper images without over-serving desktop.
-- **Responsive breakpoints srcset** — instead of WP fixed sizes (thumbnail/medium/large), generate srcset with Cloudinary-style optimal breakpoints (e.g. 200/400/800/1200/1600). Configurable in settings.
-- **Watermark** — expose imgproxy `wm:` option. Settings: watermark image URL, opacity, position, scale. Applied on-the-fly, no local file processing.
-- **Quality per format** — imgproxy supports `q:` per format (`q:avif:70` separate from `q:webp:80`). Expose in settings for fine-tuned AVIF/WebP quality.
-
-**Effort:** Medium-Large. ~800 lines + tests.
-
-### Phase 5.2 — WP integration 2026
-
-**Why:** Meet power users where they are. Media library column and WP-CLI are table stakes for any serious image plugin. Integration with Optimization Detective is the 2026 way to enhance LCP handling without duplicating core.
-
-**Scope:**
-- **Media library column** — `manage_media_custom_column` filter. Shows "OXPulse: rewritten" status, file size savings (via imgproxy `info:` endpoint), "Re-optimize" button.
-- **`wp_prepare_attachment_for_js`** — status in media modal (Gutenberg/REST).
-- **Optimization Detective integration** — if the Performance Lab / Optimization Detective plugin is active, register our imgproxy URLs for breakpoint-specific preload links. We don't reimplement LCP detection; we feed our URLs into their pipeline.
-- **WP-CLI commands:**
-  - `wp oxpulse warm --all` — pre-warm CDN cache for all images
-  - `wp oxpulse warm --attachment=<id>` — warm a single attachment
-  - `wp oxpulse status` — config + health + counts
-  - `wp oxpulse flush` — clear object cache for rewritten URLs
-  - `wp oxpulse info <url>` — show imgproxy URL that would be generated for a source URL
-
-**Effort:** Medium. ~500 lines + tests.
-
-### Phase 5.3 — REST API + bulk pre-warming
-
-**Why:** Headless WP / React admin / external automation need REST. Bulk pre-warming gives users the "Optimize all images" button they expect from Optimole/Imagify — even though imgproxy caches on first request, users want progress feedback.
-
-**Scope:**
-- **REST endpoints:**
-  - `GET /wp-json/oxpulse/v1/status` — config + health + counts
-  - `POST /wp-json/oxpulse/v1/warm` — trigger bulk pre-warm (returns job ID)
-  - `GET /wp-json/oxpulse/v1/warm/<job_id>` — poll job progress
-  - `GET /wp-json/oxpulse/v1/health` — health check + AVIF check
-  - `GET /wp-json/oxpulse/v1/info?url=<source>` — preview generated imgproxy URL
-- **Bulk pre-warm admin page** — "Warm all images" button, progress bar, results table. Background processing via WordPress cron.
-- **Per-attachment warm** via REST and admin media column.
-
-**Effort:** Medium. ~500 lines + tests.
 
 ### Phase 5.4 — Diagnostics implementation + admin bar
 
@@ -157,6 +135,26 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 
 **Effort:** Small-Medium. ~200 lines + assets.
 
+### Phase 5.7 — WP integration 2026 + async pre-warm (backlog from 5.2/5.3)
+
+**Why:** The original Phase 5.2/5.3 scope that was re-prioritized when the React admin unblocked the UX surface first. These items are what power users + headless WP / external automation need.
+
+**Scope:**
+- **Media library column** — `manage_media_custom_column` filter. Shows "OXPulse: rewritten" status, file size savings (via imgproxy `info:` endpoint), "Re-optimize" button.
+- **`wp_prepare_attachment_for_js`** — status in media modal (Gutenberg/REST).
+- **Optimization Detective integration** — if the Performance Lab / Optimization Detective plugin is active, register imgproxy URLs for breakpoint-specific preload links. We don't reimplement LCP detection; we feed URLs into their pipeline.
+- **WP-CLI commands:**
+  - `wp oxpulse warm --all` — pre-warm CDN cache for all images
+  - `wp oxpulse warm --attachment=<id>` — warm a single attachment
+  - `wp oxpulse status` — config + health + counts
+  - `wp oxpulse flush` — clear object cache for rewritten URLs
+  - `wp oxpulse info <url>` — show imgproxy URL that would be generated for a source URL
+- **Async pre-warm via WordPress cron** — `POST /prewarm` returns a job ID instead of blocking; `GET /prewarm/<job_id>` polls progress. Replaces the synchronous batch for large catalogs (50+ images).
+- **`GET /status`** — config + health + counts in one call.
+- **`GET /info?url=<source>`** — preview the generated imgproxy URL without dispatching a request.
+
+**Effort:** Medium-Large. ~800 lines + tests.
+
 ## Out of scope (different plugin category)
 
 - **Media offload to S3/Cloud Storage** — different concern (storage, not delivery). Use a dedicated offload plugin alongside OXPulse.
@@ -173,9 +171,10 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 | Version | Phases | Status |
 |---|---|---|
 | 0.1.0 | 0, 1, 2, 3, 3.1, 4 | Released (current `main`) |
-| 0.2.0 | 5.1 (imgproxy-native: LQIP, DPR srcset, watermark, quality-per-format) | Planned |
-| 0.3.0 | 5.2 (media column, WP-CLI, Optimization Detective integration) | Planned |
-| 0.4.0 | 5.3 (REST API, bulk pre-warm) | Planned |
+| 0.2.0 | 5.1 (imgproxy-native: LQIP, DPR srcset, watermark, quality-per-format) | Released (`4cc7f63`) |
+| 0.3.0 | 5.2 (modern React admin SPA) | Released (`ffbd612`) |
+| 0.4.0 | 5.3 (REST API for health/AVIF + synchronous bulk pre-warm) | Released (`71f1cbc`) |
 | 0.5.0 | 5.4 (diagnostics + admin bar) | Planned |
 | 0.6.0 | 5.5 (onboarding wizard) | Planned |
+| 0.7.0 | 5.7 (WP-CLI, Optimization Detective, async cron pre-warm, /status, /info) | Planned — backlog from re-scoped 5.2/5.3 |
 | 1.0.0 | 5.6 (wordpress.org release) | Planned — first stable release |
