@@ -42,7 +42,7 @@ final class WordPressPrewarmClient implements PrewarmHttpClient
 
         if (!function_exists('curl_multi_init')) {
             return array_map(
-                fn () => ['status' => 0, 'error' => 'cURL extension not available.', 'elapsed_ms' => 0],
+                fn () => ['status' => 0, 'error' => __('cURL extension not available.', 'oxpulse-imager'), 'elapsed_ms' => 0],
                 $imgproxyUrls
             );
         }
@@ -123,7 +123,7 @@ final class WordPressPrewarmClient implements PrewarmHttpClient
         // Fill any nulls (shouldn't happen, but defensive).
         foreach ($results as $idx => $r) {
             if ($r === null) {
-                $results[$idx] = ['status' => 0, 'error' => 'Unknown error.', 'elapsed_ms' => 0];
+                $results[$idx] = ['status' => 0, 'error' => __('Unknown error.', 'oxpulse-imager'), 'elapsed_ms' => 0];
             }
         }
 

@@ -29,7 +29,7 @@ final readonly class PrewarmItemResult
 
     public static function warmed(string $sourceUrl, int $width, string $imgproxyUrl, int $httpStatus): self
     {
-        return new self($sourceUrl, $width, 'warmed', $imgproxyUrl, $httpStatus, 'OK');
+        return new self($sourceUrl, $width, 'warmed', $imgproxyUrl, $httpStatus, __('OK', 'oxpulse-imager'));
     }
 
     public static function skipped(string $sourceUrl, int $width, string $imgproxyUrl, string $reason): self

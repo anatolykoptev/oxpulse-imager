@@ -49,7 +49,7 @@ final class FlushCommand extends AbstractCommand
             $cleared++;
         }
 
-        $this->success('Flushed ' . $cleared . ' cache entry/entries.');
-        $this->log('Note: imgproxy\'s own cache is not cleared — use your CDN/imgproxy purge API for that.');
+        $this->success(sprintf(__('Flushed %d cache entry/entries.', 'oxpulse-imager'), $cleared));
+        $this->log(__('Note: imgproxy\'s own cache is not cleared — use your CDN/imgproxy purge API for that.', 'oxpulse-imager'));
     }
 }

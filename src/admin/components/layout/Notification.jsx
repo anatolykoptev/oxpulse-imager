@@ -7,6 +7,7 @@
 import clsx from 'clsx';
 import { useUIStore } from '@store/useUIStore';
 import { IconCheck, IconAlert, IconInfo } from '@components/ui/icons';
+import { __ } from '@utils/i18n';
 
 const Notification = () => {
   const notification = useUIStore((s) => s.notification);
@@ -42,7 +43,7 @@ const Notification = () => {
         type="button"
         onClick={clearNotification}
         className="oxp-ml-2 oxp-text-current oxp-opacity-60 hover:oxp-opacity-100"
-        aria-label="Dismiss"
+        aria-label={__('Dismiss', 'oxpulse-imager')}
       >
         ×
       </button>

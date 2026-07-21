@@ -56,7 +56,8 @@ final class AdminBarDiagnostics
         }
 
         $text = sprintf(
-            'OXPulse: %d rewritten, %d preserved',
+            /* translators: 1: rewritten count, 2: preserved count */
+            __('OXPulse: %1$d rewritten, %2$d preserved', 'oxpulse-imager'),
             $summary['rewritten'],
             $summary['preserved']
         );

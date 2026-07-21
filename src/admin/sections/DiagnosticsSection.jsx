@@ -103,7 +103,7 @@ const DiagnosticsSection = () => {
           <Button onClick={handleClear} variant="secondary" disabled={clearing || entries.length === 0}>
             {clearing ? __('Clearing…', 'oxpulse-imager') : __('Clear log', 'oxpulse-imager')}
           </Button>
-          <StatusPill status={level === 'off' ? 'neutral' : 'ok'} label={`level: ${level}`} />
+          <StatusPill status={level === 'off' ? 'neutral' : 'ok'} label={__('level: ', 'oxpulse-imager') + level} />
         </div>
 
         {error && (
@@ -121,11 +121,11 @@ const DiagnosticsSection = () => {
             <table className="oxp-w-full oxp-text-xs">
               <thead className="oxp-sticky oxp-top-0 oxp-bg-gray-50">
                 <tr>
-                  <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">Context</th>
-                  <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">Status</th>
+                  <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">{__('Context', 'oxpulse-imager')}</th>
+                  <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">{__('Status', 'oxpulse-imager')}</th>
                   <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">URL</th>
                   <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">W</th>
-                  <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">Reason</th>
+                  <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">{__('Reason', 'oxpulse-imager')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -134,7 +134,7 @@ const DiagnosticsSection = () => {
                     <td className="oxp-px-3 oxp-py-2 oxp-text-gray-700">{entry.context}</td>
                     <td className="oxp-px-3 oxp-py-2">
                       <span className={entry.rewritten ? 'oxp-text-success' : 'oxp-text-warning'}>
-                        {entry.rewritten ? 'rewritten' : 'preserved'}
+                        {entry.rewritten ? __('rewritten', 'oxpulse-imager') : __('preserved', 'oxpulse-imager')}
                       </span>
                     </td>
                     <td className="oxp-px-3 oxp-py-2 oxp-font-mono oxp-text-gray-500 oxp-break-all">{entry.sourceUrl}</td>

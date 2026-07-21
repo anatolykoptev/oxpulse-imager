@@ -22,7 +22,7 @@ final class WordPressHealthClient implements HealthCheckHttpClient
     public function head(string $url, int $timeoutSeconds): array
     {
         if (!function_exists('wp_remote_head')) {
-            return ['status' => 0, 'error' => 'WordPress HTTP API not available.', 'headers' => []];
+            return ['status' => 0, 'error' => __('WordPress HTTP API not available.', 'oxpulse-imager'), 'headers' => []];
         }
 
         $response = wp_remote_head($url, [
@@ -37,7 +37,7 @@ final class WordPressHealthClient implements HealthCheckHttpClient
     public function get(string $url, int $timeoutSeconds, array $headers = []): array
     {
         if (!function_exists('wp_remote_get')) {
-            return ['status' => 0, 'error' => 'WordPress HTTP API not available.', 'headers' => []];
+            return ['status' => 0, 'error' => __('WordPress HTTP API not available.', 'oxpulse-imager'), 'headers' => []];
         }
 
         $response = wp_remote_get($url, [

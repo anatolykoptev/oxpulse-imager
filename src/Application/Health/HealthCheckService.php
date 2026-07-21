@@ -42,12 +42,12 @@ final class HealthCheckService
     {
         $endpoint = trim($endpoint);
         if ($endpoint === '') {
-            return HealthResult::failed('Endpoint URL is empty.');
+            return HealthResult::failed(__('Endpoint URL is empty.', 'oxpulse-imager'));
         }
 
         $parsed = parse_url($endpoint);
         if ($parsed === false || !isset($parsed['scheme'], $parsed['host'])) {
-            return HealthResult::failed('Endpoint URL is malformed.');
+            return HealthResult::failed(__('Endpoint URL is malformed.', 'oxpulse-imager'));
         }
 
         $healthUrl = rtrim($endpoint, '/') . '/health';
@@ -63,14 +63,14 @@ final class HealthCheckService
         }
 
         if ($result['status'] === 404) {
-            return HealthResult::failed('Endpoint responded but health check path was not found.', 404);
+            return HealthResult::failed(__('Endpoint responded but health check path was not found.', 'oxpulse-imager'), 404);
         }
 
         if ($result['status'] >= 500) {
-            return HealthResult::failed('imgproxy returned a server error.', $result['status']);
+            return HealthResult::failed(__('imgproxy returned a server error.', 'oxpulse-imager'), $result['status']);
         }
 
-        return HealthResult::failed('Unexpected response status.', $result['status']);
+        return HealthResult::failed(__('Unexpected response status.', 'oxpulse-imager'), $result['status']);
     }
 
     /**
@@ -89,12 +89,12 @@ final class HealthCheckService
     {
         $endpoint = trim($endpoint);
         if ($endpoint === '') {
-            return HealthResult::failed('Endpoint URL is empty.');
+            return HealthResult::failed(__('Endpoint URL is empty.', 'oxpulse-imager'));
         }
 
         $sampleImageUrl = trim($sampleImageUrl);
         if ($sampleImageUrl === '') {
-            return HealthResult::failed('Sample image URL is empty.');
+            return HealthResult::failed(__('Sample image URL is empty.', 'oxpulse-imager'));
         }
 
         // Build a minimal imgproxy URL for the sample image without
@@ -113,7 +113,7 @@ final class HealthCheckService
 
         if ($result['status'] !== 200) {
             return HealthResult::failed(
-                'imgproxy returned non-200 for format negotiation check.',
+                __('imgproxy returned non-200 for format negotiation check.', 'oxpulse-imager'),
                 $result['status']
             );
         }
@@ -122,17 +122,17 @@ final class HealthCheckService
         $contentType = strtolower($contentType);
 
         if (str_contains($contentType, 'image/avif')) {
-            return HealthResult::ok('AVIF format negotiation is supported.');
+            return HealthResult::ok(__('AVIF format negotiation is supported.', 'oxpulse-imager'));
         }
 
         if (str_contains($contentType, 'image/webp')) {
             return HealthResult::failed(
-                'imgproxy returned WebP, not AVIF. Enable IMGPROXY_AUTO_AVIF on the server for AVIF delivery.'
+                __('imgproxy returned WebP, not AVIF. Enable IMGPROXY_AUTO_AVIF on the server for AVIF delivery.', 'oxpulse-imager')
             );
         }
 
         return HealthResult::failed(
-            'imgproxy did not return AVIF. Check IMGPROXY_AUTO_AVIF configuration. Got Content-Type: ' . $contentType
+            sprintf(__('imgproxy did not return AVIF. Check IMGPROXY_AUTO_AVIF configuration. Got Content-Type: %s', 'oxpulse-imager'), $contentType)
         );
     }
 }

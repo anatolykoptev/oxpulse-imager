@@ -15,6 +15,70 @@ msgstr ""
 "Language-Team: Anatoly Koptev <koptev@koptev.org>\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#: src/Application/Health/HealthCheckService.php:45, src/Application/Health/HealthCheckService.php:92, src/Integration/WordPress/Admin/HealthRestController.php:90, src/Integration/WordPress/Admin/HealthRestController.php:125
+msgid "Endpoint URL is empty."
+msgstr ""
+
+#: src/Application/Health/HealthCheckService.php:50
+msgid "Endpoint URL is malformed."
+msgstr ""
+
+#: src/Application/Health/HealthCheckService.php:66
+msgid "Endpoint responded but health check path was not found."
+msgstr ""
+
+#: src/Application/Health/HealthCheckService.php:70
+msgid "imgproxy returned a server error."
+msgstr ""
+
+#: src/Application/Health/HealthCheckService.php:73
+msgid "Unexpected response status."
+msgstr ""
+
+#: src/Application/Health/HealthCheckService.php:97
+msgid "Sample image URL is empty."
+msgstr ""
+
+#: src/Application/Health/HealthCheckService.php:116
+msgid "imgproxy returned non-200 for format negotiation check."
+msgstr ""
+
+#: src/Application/Health/HealthCheckService.php:125
+msgid "AVIF format negotiation is supported."
+msgstr ""
+
+#: src/Application/Health/HealthCheckService.php:130
+msgid "imgproxy returned WebP, not AVIF. Enable IMGPROXY_AUTO_AVIF on the server for AVIF delivery."
+msgstr ""
+
+#: src/Application/Health/HealthCheckService.php:135
+msgid "imgproxy did not return AVIF. Check IMGPROXY_AUTO_AVIF configuration. Got Content-Type: %s"
+msgstr ""
+
+#: src/Application/Health/HealthResult.php:26
+msgid "Connection successful."
+msgstr ""
+
+#: src/Application/Prewarm/PrewarmService.php:111
+msgid "imgproxy returned HTTP %d"
+msgstr ""
+
+#: src/Domain/Prewarm/PrewarmItemResult.php:32
+msgid "OK"
+msgstr ""
+
+#: src/Infrastructure/Http/WordPressHealthClient.php:25, src/Infrastructure/Http/WordPressHealthClient.php:40
+msgid "WordPress HTTP API not available."
+msgstr ""
+
+#: src/Infrastructure/Http/WordPressPrewarmClient.php:45
+msgid "cURL extension not available."
+msgstr ""
+
+#: src/Infrastructure/Http/WordPressPrewarmClient.php:126
+msgid "Unknown error."
+msgstr ""
+
 #: src/Infrastructure/WordPress/ServiceRegistrar.php:271
 msgid "Settings"
 msgstr ""
@@ -111,12 +175,13 @@ msgstr ""
 msgid "Watermark scale must be between 0 and 1."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminBarDiagnostics.php:69
-msgid "OXPulse Imager diagnostics — click to view details"
+#. translators: 1: rewritten count, 2: preserved count
+#: src/Integration/WordPress/Admin/AdminBarDiagnostics.php:60
+msgid "OXPulse: %1$d rewritten, %2$d preserved"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/HealthRestController.php:90, src/Integration/WordPress/Admin/HealthRestController.php:125
-msgid "Endpoint URL is empty."
+#: src/Integration/WordPress/Admin/AdminBarDiagnostics.php:70
+msgid "OXPulse Imager diagnostics — click to view details"
 msgstr ""
 
 #: src/Integration/WordPress/Admin/HealthRestController.php:140
@@ -144,11 +209,11 @@ msgstr ""
 msgid "Delivery is disabled. Enable it in Connection settings first."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/PrewarmRestController.php:172
+#: src/Integration/WordPress/Admin/PrewarmRestController.php:172, src/Integration/WordPress/Cli/WarmCommand.php:61
 msgid "No imgproxy endpoint configured."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/PrewarmRestController.php:180
+#: src/Integration/WordPress/Admin/PrewarmRestController.php:180, src/Integration/WordPress/Cli/WarmCommand.php:64
 msgid "No signing secrets configured."
 msgstr ""
 
@@ -172,12 +237,242 @@ msgstr ""
 msgid "You do not have permission to access this page."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/SettingsPage.php:110
+#: src/Integration/WordPress/Admin/SettingsPage.php:125
 msgid "OXPulse Imager admin failed to load. Try a hard refresh; if it still does not load, check for caching plugins or contact your site administrator."
 msgstr ""
 
 #: src/Integration/WordPress/Admin/StatusRestController.php:136
 msgid "No source URL provided."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/AbstractCommand.php:52
+msgid "Success: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/AbstractCommand.php:65
+msgid "Warning: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/FlushCommand.php:52
+msgid "Flushed %d cache entry/entries."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/FlushCommand.php:53
+msgid "Note: imgproxy's own cache is not cleared — use your CDN/imgproxy purge API for that."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:45
+msgid "Usage: wp oxpulse info <url> [--width=<n>]"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:54
+msgid "Source URL: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:55
+msgid "Target width: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:55
+msgid "no resize"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:56, src/Integration/WordPress/Cli/StatusCommand.php:45
+msgid "Delivery enabled: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:56, src/Integration/WordPress/Cli/StatusCommand.php:45
+msgid "yes"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:56, src/Integration/WordPress/Cli/StatusCommand.php:45
+msgid "no"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:59
+msgid "Delivery is disabled — the source URL would NOT be rewritten on the frontend."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:64
+msgid "No endpoint configured — the source URL would NOT be rewritten."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:69
+msgid "No signing secrets configured — the source URL would NOT be rewritten."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:77
+msgid "Result: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:77
+msgid "REWRITTEN"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:77
+msgid "PRESERVED"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:78
+msgid "Reason: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/InfoCommand.php:82
+msgid "imgproxy URL:"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:43
+msgid "OXPulse Imager status"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:46, src/Integration/WordPress/Cli/WarmCommand.php:75
+msgid "Endpoint: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:46
+msgid "(not configured)"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:47
+msgid "Output format: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:48
+msgid "Default quality: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:49
+msgid "Allowed sources: %d"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:51
+msgid "  - %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:54
+msgid "Signing: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:54
+msgid "configured (key+salt set)"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:54
+msgid "NOT configured"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:55
+msgid "LQIP: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:55
+msgid "enabled (blur=%s)"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:55, src/Integration/WordPress/Cli/StatusCommand.php:56, src/Integration/WordPress/Cli/StatusCommand.php:57
+msgid "disabled"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:56
+msgid "DPR srcset: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:56
+msgid "enabled (%s)"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:57
+msgid "Watermark: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:57
+msgid "enabled"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:63
+msgid "Diagnostic level: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:66
+msgid "Health check: (skipped via --no-health)"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:71
+msgid "Health check: no endpoint configured."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:76
+msgid "Health check..."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:82
+msgid "imgproxy health: %s — %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:80
+msgid "imgproxy reachable: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:87
+msgid "AVIF check (sample: %s)..."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:92
+msgid "AVIF: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/StatusCommand.php:90
+msgid "AVIF supported: %s"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/WarmCommand.php:58
+msgid "Delivery is disabled. Enable it in Settings > OXPulse Imager first."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/WarmCommand.php:71
+msgid "No URLs to warm. Provide URLs as args, or use --attachment=<id> / --all."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/WarmCommand.php:74
+msgid "Warming %d URL(s) at widths: %s"
+msgstr ""
+
+#. translators: 1: current batch, 2: total batches, 3: URLs in this batch
+#: src/Integration/WordPress/Cli/WarmCommand.php:86
+msgid "Batch %1$d/%2$d (%3$d URLs)..."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/WarmCommand.php:101
+msgid "  [%1$s] %2$s — %3$s"
+msgstr ""
+
+#. translators: 1: total, 2: warmed, 3: skipped, 4: failed
+#: src/Integration/WordPress/Cli/WarmCommand.php:113
+msgid "Done. Total: %1$d, Warmed: %2$d, Skipped: %3$d, Failed: %4$d"
+msgstr ""
+
+#: src/Integration/WordPress/Cli/WarmCommand.php:123
+msgid "%d URL(s) warmed."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/WarmCommand.php:121
+msgid "%d URL(s) failed to warm."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/WarmCommand.php:185
+msgid "WordPress functions not available (wp_get_attachment_url)."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/WarmCommand.php:217
+msgid "WordPress functions not available (get_posts)."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/WarmCommand.php:220
+msgid "Enumerating media library..."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/WarmCommand.php:234
+msgid "Found %d attachment(s)."
 msgstr ""
 
 #. translators: %s: PHP version requirement.
@@ -294,6 +589,18 @@ msgstr ""
 msgid "Pre-warm failed."
 msgstr ""
 
+#: src/admin/sections/PrewarmSection.jsx:63
+msgid "%d failed"
+msgstr ""
+
+#: src/admin/sections/PrewarmSection.jsx:66
+msgid "%d skipped"
+msgstr ""
+
+#: src/admin/sections/PrewarmSection.jsx:68
+msgid "%d warmed"
+msgstr ""
+
 #: src/admin/sections/PrewarmSection.jsx:73
 msgid "Bulk pre-warm"
 msgstr ""
@@ -344,6 +651,18 @@ msgstr ""
 
 #: src/admin/sections/PrewarmSection.jsx:128
 msgid "Per-URL results"
+msgstr ""
+
+#: src/admin/sections/PrewarmSection.jsx:136 src/admin/sections/DiagnosticsSection.jsx:125
+msgid "Status"
+msgstr ""
+
+#: src/admin/sections/PrewarmSection.jsx:137
+msgid "Message"
+msgstr ""
+
+#: src/admin/sections/FormatSection.jsx:15
+msgid "auto (Accept negotiation)"
 msgstr ""
 
 #: src/admin/sections/FormatSection.jsx:43
@@ -570,12 +889,32 @@ msgstr ""
 msgid "Clear log"
 msgstr ""
 
+#: src/admin/sections/DiagnosticsSection.jsx:106
+msgid "level: "
+msgstr ""
+
 #: src/admin/sections/DiagnosticsSection.jsx:116
 msgid "Diagnostics are off. Set a level above and save to start logging."
 msgstr ""
 
 #: src/admin/sections/DiagnosticsSection.jsx:117
 msgid "No entries yet. Visit a frontend page with images to generate log entries."
+msgstr ""
+
+#: src/admin/sections/DiagnosticsSection.jsx:124
+msgid "Context"
+msgstr ""
+
+#: src/admin/sections/DiagnosticsSection.jsx:128
+msgid "Reason"
+msgstr ""
+
+#: src/admin/sections/DiagnosticsSection.jsx:137
+msgid "rewritten"
+msgstr ""
+
+#: src/admin/sections/DiagnosticsSection.jsx:137
+msgid "preserved"
 msgstr ""
 
 #: src/admin/sections/ConnectionSection.jsx:23
@@ -818,6 +1157,14 @@ msgstr ""
 msgid "Enabling…"
 msgstr ""
 
+#: src/admin/components/ui/Card.jsx:81
+msgid "Collapse section"
+msgstr ""
+
+#: src/admin/components/ui/Card.jsx:81
+msgid "Expand section"
+msgstr ""
+
 #: src/admin/components/layout/TopNav.jsx:30
 msgid "Settings saved."
 msgstr ""
@@ -832,4 +1179,8 @@ msgstr ""
 
 #: src/admin/components/layout/TopNav.jsx:76
 msgid "Save"
+msgstr ""
+
+#: src/admin/components/layout/Notification.jsx:46
+msgid "Dismiss"
 msgstr ""

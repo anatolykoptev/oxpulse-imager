@@ -12,7 +12,7 @@ import SelectField from '@components/ui/SelectField';
 import TextField from '@components/ui/TextField';
 
 const FORMAT_OPTIONS = [
-  { value: 'auto', label: 'auto (Accept negotiation)' },
+  { value: 'auto', label: __('auto (Accept negotiation)', 'oxpulse-imager') },
   { value: 'avif', label: 'avif' },
   { value: 'webp', label: 'webp' },
   { value: 'jpeg', label: 'jpeg' },

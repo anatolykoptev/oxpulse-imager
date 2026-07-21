@@ -49,7 +49,7 @@ abstract class AbstractCommand
             \WP_CLI::success($message);
         } else {
             // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
-            echo "Success: {$message}\n";
+            echo sprintf(__('Success: %s', 'oxpulse-imager'), $message) . "\n";
         }
     }
 
@@ -62,7 +62,7 @@ abstract class AbstractCommand
             \WP_CLI::warning($message);
         } else {
             // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
-            echo "Warning: {$message}\n";
+            echo sprintf(__('Warning: %s', 'oxpulse-imager'), $message) . "\n";
         }
     }
 

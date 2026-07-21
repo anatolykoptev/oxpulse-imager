@@ -84,6 +84,15 @@
       "Pre-warm failed.": [
         "Прогрев не удался."
       ],
+      "%d failed": [
+        "%d ошибок"
+      ],
+      "%d skipped": [
+        "%d пропущено"
+      ],
+      "%d warmed": [
+        "%d прогрето"
+      ],
       "Bulk pre-warm": [
         "Массовый прогрев"
       ],
@@ -122,6 +131,15 @@
       ],
       "Per-URL results": [
         "Результаты по URL"
+      ],
+      "Status": [
+        "Статус"
+      ],
+      "Message": [
+        "Сообщение"
+      ],
+      "auto (Accept negotiation)": [
+        "auto (согласование Accept)"
       ],
       "Output format": [
         "Формат вывода"
@@ -291,11 +309,26 @@
       "Clear log": [
         "Очистить лог"
       ],
+      "level: ": [
+        "уровень: "
+      ],
       "Diagnostics are off. Set a level above and save to start logging.": [
         "Диагностика выключена. Установите уровень выше и сохраните, чтобы начать логирование."
       ],
       "No entries yet. Visit a frontend page with images to generate log entries.": [
         "Записей пока нет. Откройте frontend-страницу с изображениями, чтобы сгенерировать записи."
+      ],
+      "Context": [
+        "Контекст"
+      ],
+      "Reason": [
+        "Причина"
+      ],
+      "rewritten": [
+        "переписан"
+      ],
+      "preserved": [
+        "сохранён"
       ],
       "Secrets configured. Values are hidden for security.": [
         "Secrets настроены. Значения скрыты для безопасности."
@@ -477,6 +510,12 @@
       "Enabling…": [
         "Включение…"
       ],
+      "Collapse section": [
+        "Свернуть раздел"
+      ],
+      "Expand section": [
+        "Развернуть раздел"
+      ],
       "Settings saved.": [
         "Настройки сохранены."
       ],
@@ -488,6 +527,9 @@
       ],
       "Save": [
         "Сохранить"
+      ],
+      "Dismiss": [
+        "Закрыть"
       ]
     }
   },
@@ -577,6 +619,15 @@
       "Pre-warm failed.": [
         "Прогрев не удался."
       ],
+      "%d failed": [
+        "%d ошибок"
+      ],
+      "%d skipped": [
+        "%d пропущено"
+      ],
+      "%d warmed": [
+        "%d прогрето"
+      ],
       "Bulk pre-warm": [
         "Массовый прогрев"
       ],
@@ -615,6 +666,15 @@
       ],
       "Per-URL results": [
         "Результаты по URL"
+      ],
+      "Status": [
+        "Статус"
+      ],
+      "Message": [
+        "Сообщение"
+      ],
+      "auto (Accept negotiation)": [
+        "auto (согласование Accept)"
       ],
       "Output format": [
         "Формат вывода"
@@ -784,11 +844,26 @@
       "Clear log": [
         "Очистить лог"
       ],
+      "level: ": [
+        "уровень: "
+      ],
       "Diagnostics are off. Set a level above and save to start logging.": [
         "Диагностика выключена. Установите уровень выше и сохраните, чтобы начать логирование."
       ],
       "No entries yet. Visit a frontend page with images to generate log entries.": [
         "Записей пока нет. Откройте frontend-страницу с изображениями, чтобы сгенерировать записи."
+      ],
+      "Context": [
+        "Контекст"
+      ],
+      "Reason": [
+        "Причина"
+      ],
+      "rewritten": [
+        "переписан"
+      ],
+      "preserved": [
+        "сохранён"
       ],
       "Secrets configured. Values are hidden for security.": [
         "Secrets настроены. Значения скрыты для безопасности."
@@ -970,6 +1045,12 @@
       "Enabling…": [
         "Включение…"
       ],
+      "Collapse section": [
+        "Свернуть раздел"
+      ],
+      "Expand section": [
+        "Развернуть раздел"
+      ],
       "Settings saved.": [
         "Настройки сохранены."
       ],
@@ -981,6 +1062,9 @@
       ],
       "Save": [
         "Сохранить"
+      ],
+      "Dismiss": [
+        "Закрыть"
       ]
     }
   }

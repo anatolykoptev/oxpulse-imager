@@ -108,7 +108,7 @@ final class PrewarmService
                 $key['sourceUrl'],
                 $key['width'],
                 $imgproxyUrl,
-                'imgproxy returned HTTP ' . $http['status'],
+                sprintf(__('imgproxy returned HTTP %d', 'oxpulse-imager'), $http['status']),
                 $http['status']
             );
         }

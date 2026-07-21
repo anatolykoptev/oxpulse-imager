@@ -249,6 +249,112 @@ T = {
 
     # --- Misc ---
     "No source URL provided.": "Не передан source URL.",
+
+    # --- Health check service (REST API messages) ---
+    "Endpoint URL is empty.": "URL endpoint пуст.",
+    "Endpoint URL is malformed.": "URL endpoint некорректен.",
+    "Endpoint responded but health check path was not found.": "Endpoint ответил, но путь health check не найден.",
+    "imgproxy returned a server error.": "imgproxy вернул ошибку сервера.",
+    "Unexpected response status.": "Неожиданный статус ответа.",
+    "Sample image URL is empty.": "URL тестового изображения пуст.",
+    "imgproxy returned non-200 for format negotiation check.": "imgproxy вернул не-200 для проверки согласования формата.",
+    "AVIF format negotiation is supported.": "Согласование формата AVIF поддерживается.",
+    "imgproxy returned WebP, not AVIF. Enable IMGPROXY_AUTO_AVIF on the server for AVIF delivery.": "imgproxy вернул WebP вместо AVIF. Включите IMGPROXY_AUTO_AVIF на сервере для отдачи AVIF.",
+    "imgproxy did not return AVIF. Check IMGPROXY_AUTO_AVIF configuration. Got Content-Type: %s": "imgproxy не вернул AVIF. Проверьте конфигурацию IMGPROXY_AUTO_AVIF. Получен Content-Type: %s",
+    "Connection successful.": "Подключение успешно.",
+    "imgproxy returned HTTP %d": "imgproxy вернул HTTP %d",
+    "OK": "OK",
+    "WordPress HTTP API not available.": "WordPress HTTP API недоступен.",
+    "cURL extension not available.": "Расширение cURL недоступно.",
+    "Unknown error.": "Неизвестная ошибка.",
+
+    # --- Admin bar ---
+    "OXPulse: %1$d rewritten, %2$d preserved": "OXPulse: %1$d переписано, %2$d сохранено",
+
+    # --- WP-CLI abstract ---
+    "Success: %s": "Успешно: %s",
+    "Warning: %s": "Предупреждение: %s",
+
+    # --- WP-CLI flush ---
+    "Flushed %d cache entry/entries.": "Очищено %d записей кэша.",
+    "Note: imgproxy's own cache is not cleared — use your CDN/imgproxy purge API for that.": "Примечание: собственный кэш imgproxy не очищается — используйте API purge вашего CDN/imgproxy.",
+
+    # --- WP-CLI info ---
+    "Usage: wp oxpulse info <url> [--width=<n>]": "Использование: wp oxpulse info <url> [--width=<n>]",
+    "Source URL: %s": "Исходный URL: %s",
+    "Target width: %s": "Целевая ширина: %s",
+    "no resize": "без масштабирования",
+    "Delivery enabled: %s": "Доставка включена: %s",
+    "yes": "да",
+    "no": "нет",
+    "Delivery is disabled — the source URL would NOT be rewritten on the frontend.": "Доставка отключена — исходный URL НЕ будет переписан на фронтенде.",
+    "No endpoint configured — the source URL would NOT be rewritten.": "Endpoint не настроен — исходный URL НЕ будет переписан.",
+    "No signing secrets configured — the source URL would NOT be rewritten.": "Секреты подписи не настроены — исходный URL НЕ будет переписан.",
+    "Result: %s": "Результат: %s",
+    "REWRITTEN": "ПЕРЕПИСАН",
+    "PRESERVED": "СОХРАНЁН",
+    "Reason: %s": "Причина: %s",
+    "imgproxy URL:": "URL imgproxy:",
+
+    # --- WP-CLI status ---
+    "OXPulse Imager status": "Статус OXPulse Imager",
+    "Endpoint: %s": "Endpoint: %s",
+    "(not configured)": "(не настроен)",
+    "Output format: %s": "Формат вывода: %s",
+    "Default quality: %s": "Качество по умолчанию: %s",
+    "Allowed sources: %d": "Разрешённые источники: %d",
+    "  - %s": "  - %s",
+    "Signing: %s": "Подпись: %s",
+    "configured (key+salt set)": "настроена (key+salt заданы)",
+    "NOT configured": "НЕ настроена",
+    "LQIP: %s": "LQIP: %s",
+    "enabled (blur=%s)": "включён (blur=%s)",
+    "disabled": "отключён",
+    "DPR srcset: %s": "DPR srcset: %s",
+    "enabled (%s)": "включён (%s)",
+    "enabled": "включён",
+    "Watermark: %s": "Водяной знак: %s",
+    "Diagnostic level: %s": "Уровень диагностики: %s",
+    "Health check: (skipped via --no-health)": "Health check: (пропущен через --no-health)",
+    "Health check: no endpoint configured.": "Health check: endpoint не настроен.",
+    "Health check...": "Health check...",
+    "imgproxy health: %s — %s": "Health imgproxy: %s — %s",
+    "imgproxy reachable: %s": "imgproxy доступен: %s",
+    "AVIF check (sample: %s)...": "Проверка AVIF (тест: %s)...",
+    "AVIF: %s": "AVIF: %s",
+    "AVIF supported: %s": "AVIF поддерживается: %s",
+
+    # --- WP-CLI warm ---
+    "Delivery is disabled. Enable it in Settings > OXPulse Imager first.": "Доставка отключена. Сначала включите её в Настройки > OXPulse Imager.",
+    "No imgproxy endpoint configured.": "Endpoint imgproxy не настроен.",
+    "No signing secrets configured.": "Секреты подписи не настроены.",
+    "No URLs to warm. Provide URLs as args, or use --attachment=<id> / --all.": "Нет URL для прогрева. Передайте URL как аргументы или используйте --attachment=<id> / --all.",
+    "Warming %d URL(s) at widths: %s": "Прогрев %d URL(ов) на ширинах: %s",
+    "Batch %1$d/%2$d (%3$d URLs)...": "Батч %1$d/%2$d (%3$d URL)...",
+    "  [%1$s] %2$s — %3$s": "  [%1$s] %2$s — %3$s",
+    "Done. Total: %1$d, Warmed: %2$d, Skipped: %3$d, Failed: %4$d": "Готово. Всего: %1$d, Прогрето: %2$d, Пропущено: %3$d, Ошибок: %4$d",
+    "%d URL(s) warmed.": "%d URL(ов) прогрето.",
+    "%d URL(s) failed to warm.": "%d URL(ов) не удалось прогреть.",
+    "WordPress functions not available (wp_get_attachment_url).": "Функции WordPress недоступны (wp_get_attachment_url).",
+    "WordPress functions not available (get_posts).": "Функции WordPress недоступны (get_posts).",
+    "Enumerating media library...": "Перечисление медиатеки...",
+    "Found %d attachment(s).": "Найдено %d вложений.",
+
+    # --- JS UI ---
+    "%d failed": "%d ошибок",
+    "%d skipped": "%d пропущено",
+    "%d warmed": "%d прогрето",
+    "Status": "Статус",
+    "Message": "Сообщение",
+    "auto (Accept negotiation)": "auto (согласование Accept)",
+    "level: ": "уровень: ",
+    "Context": "Контекст",
+    "Reason": "Причина",
+    "rewritten": "переписан",
+    "preserved": "сохранён",
+    "Collapse section": "Свернуть раздел",
+    "Expand section": "Развернуть раздел",
+    "Dismiss": "Закрыть",
 }
 
 

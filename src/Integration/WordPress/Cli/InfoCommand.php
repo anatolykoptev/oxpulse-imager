@@ -42,7 +42,7 @@ final class InfoCommand extends AbstractCommand
     public function info(array $args, array $assoc_args): void
     {
         if (!isset($args[0])) {
-            $this->error('Usage: wp oxpulse info <url> [--width=<n>]');
+            $this->error(__('Usage: wp oxpulse info <url> [--width=<n>]', 'oxpulse-imager'));
         }
 
         $sourceUrl = (string) $args[0];
@@ -51,22 +51,22 @@ final class InfoCommand extends AbstractCommand
         $delivery = $this->repository->loadDeliveryConfig();
         $signing = $this->repository->loadSigningConfig();
 
-        $this->log('Source URL: ' . $sourceUrl);
-        $this->log('Target width: ' . ($width > 0 ? "{$width}px" : 'no resize'));
-        $this->log('Delivery enabled: ' . ($delivery->enabled ? 'yes' : 'no'));
+        $this->log(sprintf(__('Source URL: %s', 'oxpulse-imager'), $sourceUrl));
+        $this->log(sprintf(__('Target width: %s', 'oxpulse-imager'), $width > 0 ? "{$width}px" : __('no resize', 'oxpulse-imager')));
+        $this->log(sprintf(__('Delivery enabled: %s', 'oxpulse-imager'), $delivery->enabled ? __('yes', 'oxpulse-imager') : __('no', 'oxpulse-imager')));
 
         if (!$delivery->enabled) {
-            $this->warning('Delivery is disabled — the source URL would NOT be rewritten on the frontend.');
+            $this->warning(__('Delivery is disabled — the source URL would NOT be rewritten on the frontend.', 'oxpulse-imager'));
             return;
         }
 
         if ($delivery->endpoint === '') {
-            $this->warning('No endpoint configured — the source URL would NOT be rewritten.');
+            $this->warning(__('No endpoint configured — the source URL would NOT be rewritten.', 'oxpulse-imager'));
             return;
         }
 
         if ($signing === null) {
-            $this->warning('No signing secrets configured — the source URL would NOT be rewritten.');
+            $this->warning(__('No signing secrets configured — the source URL would NOT be rewritten.', 'oxpulse-imager'));
             return;
         }
 
@@ -74,12 +74,12 @@ final class InfoCommand extends AbstractCommand
         $result = $rewriter->rewrite($sourceUrl, $width, 0, 'cli');
 
         $this->log('');
-        $this->log('Result: ' . ($result->rewritten ? 'REWRITTEN' : 'PRESERVED'));
-        $this->log('Reason: ' . $result->reason);
+        $this->log(sprintf(__('Result: %s', 'oxpulse-imager'), $result->rewritten ? __('REWRITTEN', 'oxpulse-imager') : __('PRESERVED', 'oxpulse-imager')));
+        $this->log(sprintf(__('Reason: %s', 'oxpulse-imager'), $result->reason));
 
         if ($result->rewritten) {
             $this->log('');
-            $this->log('imgproxy URL:');
+            $this->log(__('imgproxy URL:', 'oxpulse-imager'));
             $this->log('  ' . $result->url);
         }
     }

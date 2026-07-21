@@ -20,8 +20,11 @@ final readonly class HealthResult
         public int $statusCode = 0
     ) {}
 
-    public static function ok(string $message = 'Connection successful.'): self
+    public static function ok(string $message = ''): self
     {
+        if ($message === '') {
+            $message = __('Connection successful.', 'oxpulse-imager');
+        }
         return new self(true, 'ok', $message);
     }
 

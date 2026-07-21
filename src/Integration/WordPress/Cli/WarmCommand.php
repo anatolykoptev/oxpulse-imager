@@ -55,24 +55,24 @@ final class WarmCommand extends AbstractCommand
         $signing = $this->repository->loadSigningConfig();
 
         if (!$delivery->enabled) {
-            $this->error('Delivery is disabled. Enable it in Settings > OXPulse Imager first.');
+            $this->error(__('Delivery is disabled. Enable it in Settings > OXPulse Imager first.', 'oxpulse-imager'));
         }
         if ($delivery->endpoint === '') {
-            $this->error('No imgproxy endpoint configured.');
+            $this->error(__('No imgproxy endpoint configured.', 'oxpulse-imager'));
         }
         if ($signing === null) {
-            $this->error('No signing secrets configured.');
+            $this->error(__('No signing secrets configured.', 'oxpulse-imager'));
         }
 
         $widths = $this->parseWidths($assoc_args['widths'] ?? '');
         $urls = $this->resolveUrls($args, $assoc_args);
 
         if (count($urls) === 0) {
-            $this->error('No URLs to warm. Provide URLs as args, or use --attachment=<id> / --all.');
+            $this->error(__('No URLs to warm. Provide URLs as args, or use --attachment=<id> / --all.', 'oxpulse-imager'));
         }
 
-        $this->log('Warming ' . count($urls) . ' URL(s) at widths: ' . implode(',', $widths));
-        $this->log('Endpoint: ' . $delivery->endpoint);
+        $this->log(sprintf(__('Warming %d URL(s) at widths: %s', 'oxpulse-imager'), count($urls), implode(',', $widths)));
+        $this->log(sprintf(__('Endpoint: %s', 'oxpulse-imager'), $delivery->endpoint));
         $this->log('');
 
         // Process in batches of 50 (PrewarmRequest::MAX_URLS_PER_BATCH).
@@ -82,7 +82,8 @@ final class WarmCommand extends AbstractCommand
         foreach ($batches as $batchIdx => $batch) {
             if (count($batches) > 1) {
                 $this->log(sprintf(
-                    'Batch %d/%d (%d URLs)...',
+                    /* translators: 1: current batch, 2: total batches, 3: URLs in this batch */
+                    __('Batch %1$d/%2$d (%3$d URLs)...', 'oxpulse-imager'),
                     $batchIdx + 1,
                     count($batches),
                     count($batch)
@@ -97,7 +98,7 @@ final class WarmCommand extends AbstractCommand
                 $status = $item->status;
                 $url = $item->sourceUrl;
                 $msg = $item->message;
-                $this->log(sprintf('  [%s] %s — %s', $status, $url, $msg));
+                $this->log(sprintf(__('  [%1$s] %2$s — %3$s', 'oxpulse-imager'), $status, $url, $msg));
             }
 
             $totals['warmed'] += $result->warmedCount();
@@ -108,7 +109,8 @@ final class WarmCommand extends AbstractCommand
 
         $this->log('');
         $this->log(sprintf(
-            'Done. Total: %d, Warmed: %d, Skipped: %d, Failed: %d',
+            /* translators: 1: total, 2: warmed, 3: skipped, 4: failed */
+            __('Done. Total: %1$d, Warmed: %2$d, Skipped: %3$d, Failed: %4$d', 'oxpulse-imager'),
             $totals['total'],
             $totals['warmed'],
             $totals['skipped'],
@@ -116,9 +118,9 @@ final class WarmCommand extends AbstractCommand
         ));
 
         if ($totals['failed'] > 0) {
-            $this->warning($totals['failed'] . ' URL(s) failed to warm.');
+            $this->warning(sprintf(__('%d URL(s) failed to warm.', 'oxpulse-imager'), $totals['failed']));
         } else {
-            $this->success($totals['warmed'] . ' URL(s) warmed.');
+            $this->success(sprintf(__('%d URL(s) warmed.', 'oxpulse-imager'), $totals['warmed']));
         }
     }
 
@@ -180,7 +182,7 @@ final class WarmCommand extends AbstractCommand
     private function urlsForAttachment(int $id): array
     {
         if (!function_exists('wp_get_attachment_url') || !function_exists('wp_get_attachment_metadata')) {
-            $this->error('WordPress functions not available (wp_get_attachment_url).');
+            $this->error(__('WordPress functions not available (wp_get_attachment_url).', 'oxpulse-imager'));
         }
 
         $urls = [];
@@ -212,10 +214,10 @@ final class WarmCommand extends AbstractCommand
     private function urlsForAllAttachments(): array
     {
         if (!function_exists('get_posts')) {
-            $this->error('WordPress functions not available (get_posts).');
+            $this->error(__('WordPress functions not available (get_posts).', 'oxpulse-imager'));
         }
 
-        $this->log('Enumerating media library...');
+        $this->log(__('Enumerating media library...', 'oxpulse-imager'));
 
         $attachments = get_posts([
             'post_type'      => 'attachment',
@@ -229,7 +231,7 @@ final class WarmCommand extends AbstractCommand
             return [];
         }
 
-        $this->log('Found ' . count($attachments) . ' attachment(s).');
+        $this->log(sprintf(__('Found %d attachment(s).', 'oxpulse-imager'), count($attachments)));
 
         $urls = [];
         foreach ($attachments as $id) {

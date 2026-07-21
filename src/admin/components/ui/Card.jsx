@@ -8,6 +8,7 @@
 
 import * as CollapsiblePrimitive from '@radix-ui/react-collapsible';
 import { useId, useState } from 'react';
+import { __ } from '@utils/i18n';
 import clsx from 'clsx';
 
 const ChevronIcon = ({ isOpen, className = '' }) => (
@@ -77,7 +78,7 @@ const Card = ({ title, description, children, collapsible = false, defaultOpen =
             'oxp-shrink-0 oxp-rounded-md oxp-border-none oxp-bg-transparent oxp-p-1 oxp-text-gray-500 hover:oxp-bg-gray-100',
             'focus-visible:oxp-outline-none focus-visible:oxp-shadow-focus-ring'
           )}
-          aria-label={isOpen ? 'Collapse section' : 'Expand section'}
+          aria-label={isOpen ? __('Collapse section', 'oxpulse-imager') : __('Expand section', 'oxpulse-imager')}
         >
           <ChevronIcon isOpen={isOpen} />
         </CollapsiblePrimitive.Trigger>

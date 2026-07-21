@@ -7,7 +7,7 @@
  */
 
 import { useState } from 'react';
-import { __ } from '@utils/i18n';
+import { __, sprintf } from '@utils/i18n';
 import { prewarm } from '@utils/api-extended';
 import Card from '@components/ui/Card';
 import Button from '@components/ui/Button';
@@ -60,12 +60,12 @@ const PrewarmSection = () => {
   const summaryPill = () => {
     if (!result) return null;
     if (result.failed > 0) {
-      return <StatusPill status="error" label={`${result.failed} failed`} />;
+      return <StatusPill status="error" label={sprintf(__('%d failed', 'oxpulse-imager'), result.failed)} />;
     }
     if (result.skipped > 0) {
-      return <StatusPill status="warning" label={`${result.skipped} skipped`} />;
+      return <StatusPill status="warning" label={sprintf(__('%d skipped', 'oxpulse-imager'), result.skipped)} />;
     }
-    return <StatusPill status="ok" label={`${result.warmed} warmed`} />;
+    return <StatusPill status="ok" label={sprintf(__('%d warmed', 'oxpulse-imager'), result.warmed)} />;
   };
 
   return (
@@ -133,8 +133,8 @@ const PrewarmSection = () => {
                     <tr>
                       <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">URL</th>
                       <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">W</th>
-                      <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">Status</th>
-                      <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">Message</th>
+                      <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">{__('Status', 'oxpulse-imager')}</th>
+                      <th className="oxp-px-3 oxp-py-2 oxp-text-left oxp-font-medium oxp-text-gray-600">{__('Message', 'oxpulse-imager')}</th>
                     </tr>
                   </thead>
                   <tbody>
