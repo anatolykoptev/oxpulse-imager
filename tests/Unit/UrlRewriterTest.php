@@ -244,9 +244,11 @@ class UrlRewriterTest extends TestCase
         $result = $rewriter->rewrite('https://example.com/wp-content/uploads/photo.jpg');
 
         $this->assertTrue($result->rewritten);
-        // In auto mode, the filename is the original basename.
-        // Verify the base64url-encoded 'photo.jpg' appears in the URL.
-        $expected = rtrim(strtr(base64_encode('photo.jpg'), '+/', '-_'), '=');
+        // In auto mode, the filename is the basename WITHOUT extension —
+        // imgproxy appends the negotiated format extension (avif/webp/jpeg)
+        // to the Content-Disposition filename. Including the source
+        // extension here would produce a double extension (photo.jpg.avif).
+        $expected = rtrim(strtr(base64_encode('photo'), '+/', '-_'), '=');
         $this->assertStringContainsString('fn:' . $expected . ':1', $result->url);
     }
 

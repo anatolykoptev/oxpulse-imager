@@ -286,9 +286,12 @@ final class UrlRewriter
      *
      * When an explicit output format is configured (avif/webp/jpeg),
      * the filename extension is replaced to match. In 'auto' mode
-     * (Accept negotiation), the original filename is preserved —
-     * imgproxy will set the correct extension in Content-Disposition
-     * based on the negotiated format.
+     * (Accept negotiation), the filename is returned WITHOUT extension —
+     * imgproxy appends the correct extension based on the negotiated
+     * format (e.g. "photo" → "photo.avif" / "photo.webp" / "photo.jpg").
+     * Returning the source extension here would produce a double
+     * extension (e.g. "photo.webp.png" when imgproxy negotiates PNG from
+     * a WebP source).
      */
     private function buildContentDispositionFilename(string $sourceUrl): ?string
     {
@@ -304,7 +307,15 @@ final class UrlRewriter
 
         $format = $this->delivery->outputFormat;
         if ($format === '' || $format === 'auto') {
-            return $basename;
+            // Auto mode: strip the source extension. imgproxy appends the
+            // negotiated format extension to the Content-Disposition
+            // filename, so including the source extension here would
+            // produce a double extension (photo.webp.png).
+            $dotPos = strrpos($basename, '.');
+            if ($dotPos === false) {
+                return $basename;
+            }
+            return substr($basename, 0, $dotPos);
         }
 
         $dotPos = strrpos($basename, '.');
