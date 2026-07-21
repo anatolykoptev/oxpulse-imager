@@ -79,7 +79,7 @@ msgstr ""
 msgid "Unknown error."
 msgstr ""
 
-#: src/Infrastructure/WordPress/ServiceRegistrar.php:278
+#: src/Infrastructure/WordPress/ServiceRegistrar.php:331
 msgid "Settings"
 msgstr ""
 
@@ -253,11 +253,15 @@ msgstr ""
 msgid "Warning: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/FlushCommand.php:52
+#: src/Integration/WordPress/Cli/FlushCommand.php:70
+msgid "Purged %d entries from the local cache (%s)."
+msgstr ""
+
+#: src/Integration/WordPress/Cli/FlushCommand.php:78
 msgid "Flushed %d cache entry/entries."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/FlushCommand.php:53
+#: src/Integration/WordPress/Cli/FlushCommand.php:79
 msgid "Note: imgproxy's own cache is not cleared — use your CDN/imgproxy purge API for that."
 msgstr ""
 
