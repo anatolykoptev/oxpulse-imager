@@ -14,7 +14,7 @@
  *
  * @return {{restUrl: string, nonce: string}}
  */
-const getConfig = () => {
+export const getConfig = () => {
   const config = typeof window !== 'undefined' ? window.oxpulseAdmin : undefined;
 
   if (!config || !config.restUrl) {
@@ -35,7 +35,7 @@ const getConfig = () => {
  * @param {Response} response
  * @return {Promise<Object>}
  */
-const parseResponse = async (response) => {
+export const parseResponse = async (response) => {
   let body = null;
 
   try {

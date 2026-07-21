@@ -18,6 +18,7 @@ import FormatSection from '@sections/FormatSection';
 import EnhancementsSection from '@sections/EnhancementsSection';
 import DiagnosticsSection from '@sections/DiagnosticsSection';
 import ToolsSection from '@sections/ToolsSection';
+import PrewarmSection from '@sections/PrewarmSection';
 import { useOptionsStore } from '@store/useOptionsStore';
 
 const SECTIONS = [
@@ -26,6 +27,7 @@ const SECTIONS = [
   { id: 'enhancements', label: __('Enhancements', 'oxpulse-imager') },
   { id: 'diagnostics', label: __('Diagnostics', 'oxpulse-imager') },
   { id: 'tools', label: __('Tools', 'oxpulse-imager') },
+  { id: 'prewarm', label: __('Pre-warm', 'oxpulse-imager') },
 ];
 
 const ADMIN_VERSION =
@@ -115,6 +117,14 @@ const App = () => {
           description={__('Health check and AVIF format verification.', 'oxpulse-imager')}
         >
           <ToolsSection />
+        </Section>
+
+        <Section
+          id="prewarm"
+          title={__('Pre-warm', 'oxpulse-imager')}
+          description={__('Bulk pre-warm imgproxy cache for a batch of source image URLs.', 'oxpulse-imager')}
+        >
+          <PrewarmSection />
         </Section>
       </div>
 

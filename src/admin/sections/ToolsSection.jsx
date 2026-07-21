@@ -1,15 +1,15 @@
 /**
  * OXPulse Imager Admin - Tools Section
  *
- * Health check + AVIF format check. These still use the legacy
- * admin-post endpoints (form POST → redirect) until Phase 5.3
- * moves them to REST endpoints. The forms below submit to
- * admin-post.php with the nonce from window.oxpulseAdmin.
+ * Health check + AVIF format check. Calls the REST API directly
+ * (POST /oxpulse/v1/health, POST /oxpulse/v1/avif-check) — no
+ * admin-post form POST + redirect dance.
  */
 
 import { useState } from 'react';
 import { __ } from '@utils/i18n';
 import { useOptionsStore } from '@store/useOptionsStore';
+import { checkHealth, checkAvif } from '@utils/api-extended';
 import Card from '@components/ui/Card';
 import Button from '@components/ui/Button';
 import TextField from '@components/ui/TextField';
@@ -17,75 +17,49 @@ import TextField from '@components/ui/TextField';
 const ToolsSection = () => {
   const options = useOptionsStore((s) => s.options);
   const [healthResult, setHealthResult] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(false);
   const [avifResult, setAvifResult] = useState(null);
+  const [avifLoading, setAvifLoading] = useState(false);
   const [sampleImage, setSampleImage] = useState('');
 
-  const config = typeof window !== 'undefined' ? window.oxpulseAdmin : {};
-  const nonce = config.nonce || '';
-  const adminPostUrl = typeof window !== 'undefined'
-    ? window.location.origin + '/wp-admin/admin-post.php'
-    : '';
-
   const handleHealthCheck = async () => {
-    setHealthResult({ type: 'info', message: __('Checking…', 'oxpulse-imager') });
-
+    setHealthLoading(true);
+    setHealthResult(null);
     try {
-      const formData = new FormData();
-      formData.append('action', 'oxpulse_imager_test_connection');
-      formData.append('oxpulse_imager_nonce', nonce);
-      formData.append('oxpulse_imager[endpoint]', options.endpoint);
-
-      const response = await fetch(adminPostUrl, {
-        method: 'POST',
-        credentials: 'same-origin',
-        body: formData,
-      });
-
-      // admin-post.php redirects on success — we can't follow it from
-      // fetch. Instead, just report that the check was dispatched.
-      // The real result will show on the next page load (legacy flow).
-      setHealthResult({
-        type: response.ok ? 'success' : 'error',
-        message: response.ok
-          ? __('Health check dispatched. Reload to see results.', 'oxpulse-imager')
-          : __('Health check failed to dispatch.', 'oxpulse-imager'),
-      });
+      const result = await checkHealth(options.endpoint);
+      setHealthResult(result);
     } catch (error) {
-      setHealthResult({
-        type: 'error',
-        message: error.message || __('Health check failed.', 'oxpulse-imager'),
-      });
+      setHealthResult({ ok: false, status: 'error', message: error.message });
+    } finally {
+      setHealthLoading(false);
     }
   };
 
   const handleAvifCheck = async () => {
-    setAvifResult({ type: 'info', message: __('Checking…', 'oxpulse-imager') });
-
+    setAvifLoading(true);
+    setAvifResult(null);
     try {
-      const formData = new FormData();
-      formData.append('action', 'oxpulse_imager_test_avif');
-      formData.append('oxpulse_imager_nonce', nonce);
-      formData.append('oxpulse_imager[endpoint]', options.endpoint);
-      formData.append('oxpulse_imager[sample_image]', sampleImage);
-
-      const response = await fetch(adminPostUrl, {
-        method: 'POST',
-        credentials: 'same-origin',
-        body: formData,
-      });
-
-      setAvifResult({
-        type: response.ok ? 'success' : 'error',
-        message: response.ok
-          ? __('AVIF check dispatched. Reload to see results.', 'oxpulse-imager')
-          : __('AVIF check failed to dispatch.', 'oxpulse-imager'),
-      });
+      const result = await checkAvif(options.endpoint, sampleImage);
+      setAvifResult(result);
     } catch (error) {
-      setAvifResult({
-        type: 'error',
-        message: error.message || __('AVIF check failed.', 'oxpulse-imager'),
-      });
+      setAvifResult({ ok: false, status: 'error', message: error.message });
+    } finally {
+      setAvifLoading(false);
     }
+  };
+
+  const renderResult = (result) => {
+    if (!result) return null;
+    const color = result.ok
+      ? 'oxp-text-success'
+      : result.status === 'unreachable'
+      ? 'oxp-text-danger'
+      : 'oxp-text-warning';
+    return (
+      <p className={`oxp-mt-3 oxp-text-sm ${color}`}>
+        <strong>{result.status}:</strong> {result.message}
+      </p>
+    );
   };
 
   return (
@@ -94,22 +68,10 @@ const ToolsSection = () => {
         title={__('Health check', 'oxpulse-imager')}
         description={__('Verify that the configured imgproxy endpoint is reachable and reports healthy status.', 'oxpulse-imager')}
       >
-        <Button onClick={handleHealthCheck} variant="secondary">
-          {__('Test connection', 'oxpulse-imager')}
+        <Button onClick={handleHealthCheck} variant="secondary" disabled={healthLoading}>
+          {healthLoading ? __('Checking…', 'oxpulse-imager') : __('Test connection', 'oxpulse-imager')}
         </Button>
-        {healthResult && (
-          <p
-            className={`oxp-mt-3 oxp-text-sm ${
-              healthResult.type === 'success'
-                ? 'oxp-text-success'
-                : healthResult.type === 'error'
-                ? 'oxp-text-danger'
-                : 'oxp-text-info'
-            }`}
-          >
-            {healthResult.message}
-          </p>
-        )}
+        {renderResult(healthResult)}
       </Card>
 
       <Card
@@ -125,22 +87,10 @@ const ToolsSection = () => {
           value={sampleImage}
           onChange={setSampleImage}
         />
-        <Button onClick={handleAvifCheck} variant="secondary">
-          {__('Test AVIF support', 'oxpulse-imager')}
+        <Button onClick={handleAvifCheck} variant="secondary" disabled={avifLoading}>
+          {avifLoading ? __('Checking…', 'oxpulse-imager') : __('Test AVIF support', 'oxpulse-imager')}
         </Button>
-        {avifResult && (
-          <p
-            className={`oxp-mt-3 oxp-text-sm ${
-              avifResult.type === 'success'
-                ? 'oxp-text-success'
-                : avifResult.type === 'error'
-                ? 'oxp-text-danger'
-                : 'oxp-text-info'
-            }`}
-          >
-            {avifResult.message}
-          </p>
-        )}
+        {renderResult(avifResult)}
       </Card>
     </>
   );

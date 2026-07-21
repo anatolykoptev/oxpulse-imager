@@ -21,8 +21,9 @@ use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Application\Health\HealthCheckService;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
+use OXPulse\Imager\Integration\WordPress\Admin\HealthRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\OptionsRestController;
-use OXPulse\Imager\Integration\WordPress\Admin\SettingsController;
+use OXPulse\Imager\Integration\WordPress\Admin\PrewarmRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsPage;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentUrlRewriter;
@@ -112,13 +113,9 @@ final class ServiceRegistrar
 
     /**
      * Register the admin settings page (React SPA shell) + REST
-     * controller backing it. Only wired when is_admin() is true so
-     * the frontend never loads admin dependencies.
-     *
-     * The REST controller is registered on every admin request (it
-     * hooks rest_api_init which only fires on REST requests anyway),
-     * so the SPA can talk to it regardless of which admin page is
-     * currently displayed.
+     * controllers backing it (options, health, prewarm). Only wired
+     * when is_admin() is true so the frontend never loads admin
+     * dependencies.
      */
     private static function registerAdminSettings(Plugin $plugin): void
     {
@@ -134,16 +131,18 @@ final class ServiceRegistrar
         $page = new SettingsPage();
         $page->register();
 
-        // REST controller backing the SPA — GET|POST /oxpulse/v1/options.
-        $restController = new OptionsRestController($repository, $validator);
-        $restController->register();
+        // REST: GET|POST /oxpulse/v1/options — settings read/write.
+        $optionsRest = new OptionsRestController($repository, $validator);
+        $optionsRest->register();
 
-        // Legacy admin-post handlers for health check + AVIF test
-        // (still used until Phase 5.3 moves them to REST endpoints).
-        $healthClient = new WordPressHealthClient();
-        $healthCheck = new HealthCheckService($healthClient);
-        $controller = new SettingsController($repository, $validator, $healthCheck);
-        $controller->register();
+        // REST: POST /oxpulse/v1/health + /avif-check — health checks.
+        $healthCheck = new HealthCheckService(new WordPressHealthClient());
+        $healthRest = new HealthRestController($healthCheck);
+        $healthRest->register();
+
+        // REST: POST /oxpulse/v1/prewarm — bulk cache pre-warm.
+        $prewarmRest = new PrewarmRestController($repository);
+        $prewarmRest->register();
     }
 
     private static function deliveryEnabled(): bool

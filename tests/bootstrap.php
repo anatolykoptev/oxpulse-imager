@@ -250,13 +250,75 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!class_exists('WP_Error')) {
         class WP_Error {
             public $errors = [];
+            public $data;
             public function __construct($code = '', $message = '', $data = '') {
                 if ($code) { $this->errors[$code] = [$message]; }
+                $this->data = $data;
             }
             public function get_error_message($code = '') {
                 if ($code === '') { $code = array_key_first($this->errors); }
                 return $this->errors[$code][0] ?? '';
             }
+            public function get_error_data($code = '') {
+                if ($code === '') { $code = array_key_first($this->errors); }
+                return $this->data;
+            }
+        }
+    }
+
+    // REST API stubs — for testing REST controllers.
+    if (!class_exists('WP_REST_Server')) {
+        class WP_REST_Server {
+            const READABLE   = 'GET';
+            const CREATABLE  = 'POST';
+            const EDITABLE   = 'POST, PUT, PATCH';
+            const DELETABLE  = 'DELETE';
+            const ALLMETHODS = 'GET, POST, PUT, PATCH, DELETE';
+        }
+    }
+    if (!class_exists('WP_REST_Response')) {
+        class WP_REST_Response {
+            public $data;
+            public $status = 200;
+            public function __construct($data = null, $status = 200) {
+                $this->data = $data;
+                $this->status = $status;
+            }
+            public function get_data() { return $this->data; }
+            public function set_data($data) { $this->data = $data; }
+        }
+    }
+    if (!class_exists('WP_REST_Request')) {
+        class WP_REST_Request {
+            private array $params = [];
+            private array $jsonParams = [];
+            public function __construct(array $jsonParams = []) {
+                $this->jsonParams = $jsonParams;
+                $this->params = $jsonParams;
+            }
+            public function get_json_params() { return $this->jsonParams; }
+            public function get_param($key) { return $this->params[$key] ?? null; }
+            public function set_param($key, $value) { $this->params[$key] = $value; }
+        }
+    }
+    if (!function_exists('register_rest_route')) {
+        function register_rest_route($namespace, $route, $args = []) {
+            // Normalize: route may or may not start with '/'. Real WP
+            // builds "namespace/route" with a single slash.
+            $route = ltrim($route, '/');
+            $GLOBALS['__oxpulse_rest_routes'][$namespace . '/' . $route] = $args;
+        }
+    }
+    if (!function_exists('rest_ensure_response')) {
+        function rest_ensure_response($data) {
+            if ($data instanceof \WP_REST_Response) { return $data; }
+            if ($data instanceof \WP_Error) { return $data; }
+            return new \WP_REST_Response($data);
+        }
+    }
+    if (!function_exists('rest_url')) {
+        function rest_url($path = '') {
+            return 'http://example.test/wp-json/' . ltrim($path, '/');
         }
     }
 
