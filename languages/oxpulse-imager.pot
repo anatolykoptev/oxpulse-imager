@@ -79,7 +79,7 @@ msgstr ""
 msgid "Unknown error."
 msgstr ""
 
-#: src/Infrastructure/WordPress/ServiceRegistrar.php:271
+#: src/Infrastructure/WordPress/ServiceRegistrar.php:278
 msgid "Settings"
 msgstr ""
 
@@ -217,15 +217,15 @@ msgstr ""
 msgid "No signing secrets configured."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/PrewarmRestController.php:199
+#: src/Integration/WordPress/Admin/PrewarmRestController.php:204
 msgid "Pre-warm job created. Poll GET /oxpulse/v1/prewarm/<jobId> for progress."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/PrewarmRestController.php:222
+#: src/Integration/WordPress/Admin/PrewarmRestController.php:227
 msgid "No job ID provided."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/PrewarmRestController.php:233
+#: src/Integration/WordPress/Admin/PrewarmRestController.php:238
 msgid "Job not found. It may have expired (jobs are kept for 1 hour)."
 msgstr ""
 
