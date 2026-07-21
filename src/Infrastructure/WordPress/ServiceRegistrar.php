@@ -18,12 +18,15 @@ namespace OXPulse\Imager\Infrastructure\WordPress;
 
 use OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
+use OXPulse\Imager\Application\Diagnostics\DiagnosticLoggerInterface;
 use OXPulse\Imager\Application\Health\HealthCheckService;
 use OXPulse\Imager\Application\Prewarm\AsyncPrewarmService;
 use OXPulse\Imager\Application\Prewarm\PrewarmJobStore;
 use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
+use OXPulse\Imager\Integration\WordPress\Admin\AdminBarDiagnostics;
+use OXPulse\Imager\Integration\WordPress\Admin\DiagnosticsRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\HealthRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\OptionsRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\PrewarmRestController;
@@ -40,6 +43,13 @@ use OXPulse\Imager\Plugin;
 
 final class ServiceRegistrar
 {
+    /**
+     * Shared diagnostic logger instance. Created once and passed to
+     * both the frontend UrlRewriter (for recording entries) and the
+     * admin bar + REST controller (for reading the summary).
+     */
+    private static ?WordPressDiagnosticLogger $diagnosticLogger = null;
+
     public static function register(Plugin $plugin): void
     {
         self::registerTextDomain($plugin);
@@ -48,6 +58,17 @@ final class ServiceRegistrar
         self::registerCli($plugin);
         self::registerPerformanceIntegration($plugin);
         self::registerAsyncPrewarmCron($plugin);
+    }
+
+    /**
+     * Get the shared diagnostic logger instance (lazy-initialized).
+     */
+    public static function diagnosticLogger(): WordPressDiagnosticLogger
+    {
+        if (self::$diagnosticLogger === null) {
+            self::$diagnosticLogger = new WordPressDiagnosticLogger();
+        }
+        return self::$diagnosticLogger;
     }
 
     private static function registerTextDomain(Plugin $plugin): void
@@ -102,7 +123,16 @@ final class ServiceRegistrar
         $delivery = $repository->loadDeliveryConfig();
         $signing = $repository->loadSigningConfig();
 
-        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
+        $logger = self::diagnosticLogger();
+        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, $logger);
+
+        // Schedule the logger flush at shutdown — writes the
+        // accumulated entries to error_log once per request.
+        add_action('shutdown', [$logger, 'flush']);
+
+        // Admin bar item — shows rewrite counts for the current page.
+        $adminBar = new AdminBarDiagnostics($logger);
+        $adminBar->register();
 
         // Phase 5.1: LQIP placeholder builder (only when enabled).
         $lqipBuilder = $delivery->lqipEnabled ? new LqipPlaceholderBuilder($rewriter) : null;
@@ -156,6 +186,10 @@ final class ServiceRegistrar
         // REST: GET /oxpulse/v1/status + /info — status + URL preview.
         $statusRest = new StatusRestController($repository, $healthCheck);
         $statusRest->register();
+
+        // REST: GET/DELETE /oxpulse/v1/diagnostics — recent log entries.
+        $diagnosticsRest = new DiagnosticsRestController(self::diagnosticLogger());
+        $diagnosticsRest->register();
     }
 
     /**

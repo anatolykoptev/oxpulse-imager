@@ -89,20 +89,16 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 
 ## Upcoming phases
 
-### Phase 5.4 — Diagnostics implementation + admin bar
+### Phase 5.4 — Diagnostics implementation + admin bar ✅
 
-**Why:** `diagnostic_level` setting exists but no logging implementation. Admin bar diagnostics give per-page visibility (EWWW has this).
+**Shipped:**
+- **`DiagnosticLoggerInterface`** (Application) + **`WordPressDiagnosticLogger`** (Infrastructure) — accumulates rewrite decisions in memory during the request, flushes to `error_log()` at shutdown. Three levels: `off` (silent), `basic` (per-request summary with counts by context), `verbose` (per-URL entries with redacted source URL). Recent entries (capped at 100) stored in a transient for the admin page.
+- **`UrlRewriter` logging hook** — optional `DiagnosticLoggerInterface` in the constructor; records a `LogEntry` on every rewrite decision (rewritten or preserved with reason). No-op when no logger is attached (the default for tests).
+- **`AdminBarDiagnostics`** — adds "OXPulse: X rewritten, Y preserved" to the WordPress admin bar on frontend pages. Only visible to users with `OXPULSE_IMAGER_CAPABILITY`. Shows live in-memory counts from the current request.
+- **`DiagnosticsRestController`** — `GET /oxpulse/v1/diagnostics` (recent entries + level), `DELETE /oxpulse/v1/diagnostics` (clear transient).
+- **SPA `DiagnosticsSection`** — extended with recent log entries table (context, status, URL, width, reason), refresh + clear buttons, level pill.
 
-**Scope:**
-- **`DiagnosticLogger` service** — reads `diagnostic_level` option, writes via `error_log()`:
-  - `off`: silent
-  - `basic`: per-request rewrite/preserve counts
-  - `verbose`: per-URL with reason
-- Hook into `UrlRewriter` and each adapter to emit log entries.
-- **Admin bar item** — "OXPulse: X rewritten, Y preserved on this page" with link to full diagnostics.
-- **Diagnostics page** in admin — recent log entries, filterable by level. Reads from error log or a custom log table.
-
-**Effort:** Small. ~350 lines + tests.
+**Effort:** ~900 lines + tests. 310 PHP tests green on 8.3/8.4/8.5.
 
 ### Phase 5.5 — Onboarding wizard
 
@@ -165,7 +161,7 @@ Source of truth for OXPulse Imager development phases. Status reflects the actua
 | 0.2.0 | 5.1 (imgproxy-native: LQIP, DPR srcset, watermark, quality-per-format) | Released (`4cc7f63`) |
 | 0.3.0 | 5.2 (modern React admin SPA) | Released (`ffbd612`) |
 | 0.4.0 | 5.3 (REST API for health/AVIF + synchronous bulk pre-warm) | Released (`71f1cbc`) |
-| 0.5.0 | 5.4 (diagnostics + admin bar) | Planned |
+| 0.5.0 | 5.4 (diagnostics + admin bar) | Released |
 | 0.6.0 | 5.5 (onboarding wizard) | Planned |
 | 0.7.0 | 5.7 (WP-CLI, Optimization Detective, async cron pre-warm, /status, /info) | Released |
 | 1.0.0 | 5.6 (wordpress.org release) | Planned — first stable release |

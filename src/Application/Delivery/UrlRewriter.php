@@ -22,8 +22,10 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Application\Delivery;
 
+use OXPulse\Imager\Application\Diagnostics\DiagnosticLoggerInterface;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
+use OXPulse\Imager\Domain\Diagnostics\LogEntry;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Infrastructure\Imgproxy\HmacSigner;
@@ -35,17 +37,20 @@ final class UrlRewriter
     private SourcePolicy $policy;
     private DeliveryConfig $delivery;
     private ?SigningConfig $signing;
+    private ?DiagnosticLoggerInterface $logger;
 
     private ?ImgproxyUrlGenerator $generator = null;
 
     public function __construct(
         SourcePolicy $policy,
         DeliveryConfig $delivery,
-        ?SigningConfig $signing
+        ?SigningConfig $signing,
+        ?DiagnosticLoggerInterface $logger = null
     ) {
         $this->policy = $policy;
         $this->delivery = $delivery;
         $this->signing = $signing;
+        $this->logger = $logger;
     }
 
     /**
@@ -60,19 +65,23 @@ final class UrlRewriter
     public function rewrite(string $sourceUrl, int $width = 0, int $height = 0, string $context = 'content'): RewriteResult
     {
         if (!$this->delivery->enabled) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'delivery_disabled'));
             return RewriteResult::preserved($sourceUrl, 'delivery_disabled');
         }
 
         if ($this->delivery->endpoint === '') {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'no_endpoint'));
             return RewriteResult::preserved($sourceUrl, 'no_endpoint');
         }
 
         if ($this->signing === null) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'no_signing_config'));
             return RewriteResult::preserved($sourceUrl, 'no_signing_config');
         }
 
         $decision = $this->policy->authorize($sourceUrl, $this->delivery);
         if (!$decision->authorized) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, $decision->reason));
             return RewriteResult::preserved($sourceUrl, $decision->reason);
         }
 
@@ -93,10 +102,25 @@ final class UrlRewriter
 
             $filename = $this->buildContentDispositionFilename($sourceUrl);
 
-            return RewriteResult::rewritten($this->generator()->generate($request, $filename));
+            $url = $this->generator()->generate($request, $filename);
+            $this->log(LogEntry::rewritten($context, $sourceUrl, $width));
+            return RewriteResult::rewritten($url);
         } catch (\Throwable $e) {
             // Fail safe: any unexpected error preserves the original URL.
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'generation_error'));
             return RewriteResult::preserved($sourceUrl, 'generation_error');
+        }
+    }
+
+    /**
+     * Record a log entry if a logger is attached. No-op when no
+     * logger is configured (the default — logging is opt-in via
+     * diagnostic_level).
+     */
+    private function log(LogEntry $entry): void
+    {
+        if ($this->logger !== null) {
+            $this->logger->log($entry);
         }
     }
 
