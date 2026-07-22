@@ -22,6 +22,7 @@ declare(strict_types=1);
 namespace OXPulse\Imager\Integration\WordPress\Delivery;
 
 use OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder;
+use OXPulse\Imager\Application\Delivery\PictureElementWrapper;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 
@@ -29,16 +30,19 @@ final class ContentImgTagRewriter
 {
     private UrlRewriter $rewriter;
     private ?LqipPlaceholderBuilder $lqipBuilder;
+    private ?PictureElementWrapper $pictureWrapper;
     private DeliveryConfig $delivery;
 
     public function __construct(
         UrlRewriter $rewriter,
         DeliveryConfig $delivery,
-        ?LqipPlaceholderBuilder $lqipBuilder = null
+        ?LqipPlaceholderBuilder $lqipBuilder = null,
+        ?PictureElementWrapper $pictureWrapper = null
     ) {
         $this->rewriter = $rewriter;
         $this->delivery = $delivery;
         $this->lqipBuilder = $lqipBuilder;
+        $this->pictureWrapper = $pictureWrapper;
     }
 
     /**
@@ -73,6 +77,17 @@ final class ContentImgTagRewriter
         if (preg_match('/\bsrc=["\']([^"\']+)["\']/', $filteredImage, $srcMatch)) {
             $originalSrc = $srcMatch[1];
         }
+        // Capture the ORIGINAL srcset BEFORE rewriteSrcsetAttribute() runs
+        // — PictureElementWrapper::wrap() needs the pre-rewrite srcset to
+        // build per-format <source> srcset candidates, exactly as $originalSrc
+        // is captured before rewriteSrcAttribute() for the single-URL path.
+        // Without this, wrap() would extract the ALREADY-rewritten srcset
+        // (imgproxy / cache URLs) and every candidate would be rejected by
+        // the proxy-loop / already-rewritten guard → no <source> emitted.
+        $originalSrcset = '';
+        if (preg_match('/\bsrcset=["\']([^"\']+)["\']/', $filteredImage, $srcsetMatch)) {
+            $originalSrcset = $srcsetMatch[1];
+        }
         $originalWidth = $this->extractAttribute($filteredImage, 'width');
         $originalHeight = $this->extractAttribute($filteredImage, 'height');
 
@@ -96,6 +111,29 @@ final class ContentImgTagRewriter
         // (ours or another plugin's) can skip this tag as already-handled.
         // Only add when we actually rewrote something (the src changed).
         $filteredImage = $this->addOxpulseMarker($filteredImage, $originalSrc);
+
+        // Phase 1: <picture> element wrapping (default OFF). Wraps the
+        // <img> in <picture style="display:contents"><source type="image/avif"><source type="image/webp">
+        // so a modern browser negotiates AVIF client-side on standard Apache.
+        // The runtime oxpulse_picture_enabled filter is the SINGLE honest
+        // gate — it mirrors oxpulse_buffer_rewrite_enabled: an operator can
+        // force-enable OR force-disable at rewrite time, overriding
+        // pictureEnabled in either direction. PictureElementWrapper::wrap()
+        // has no internal enable check, so a force-enable filter takes
+        // effect (a second internal check would make it a silent no-op).
+        // When no wrapper is injected (pre-Phase-1 callers) or the filter
+        // returns false, skip.
+        if ($this->pictureWrapper !== null
+            && apply_filters('oxpulse_picture_enabled', $this->delivery->pictureEnabled)
+        ) {
+            $filteredImage = $this->pictureWrapper->wrap(
+                $filteredImage,
+                $originalSrc,
+                $originalSrcset,
+                $originalWidth,
+                $originalHeight
+            );
+        }
 
         return $filteredImage;
     }

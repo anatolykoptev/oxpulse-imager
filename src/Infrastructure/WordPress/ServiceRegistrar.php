@@ -18,6 +18,7 @@ namespace OXPulse\Imager\Infrastructure\WordPress;
 
 use OXPulse\Imager\Application\Delivery\DeliveryBackendFactory;
 use OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder;
+use OXPulse\Imager\Application\Delivery\PictureElementWrapper;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Application\Diagnostics\DiagnosticLoggerInterface;
 use OXPulse\Imager\Application\Health\HealthCheckService;
@@ -189,7 +190,15 @@ final class ServiceRegistrar
         // Phase 5.1: LQIP placeholder builder (only when enabled).
         $lqipBuilder = $delivery->lqipEnabled ? new LqipPlaceholderBuilder($rewriter) : null;
 
-        $contentRewriter = new ContentImgTagRewriter($rewriter, $delivery, $lqipBuilder);
+        // Phase 1: <picture> element wrapper (default OFF via
+        // pictureEnabled). Always constructed and injected — the
+        // pictureEnabled flag + the oxpulse_picture_enabled filter
+        // gate the actual wrapping at rewrite time inside
+        // ContentImgTagRewriter::rewrite(), mirroring the
+        // bufferRewritingEnabled / oxpulse_buffer_rewrite_enabled shape.
+        $pictureWrapper = new PictureElementWrapper($rewriter);
+
+        $contentRewriter = new ContentImgTagRewriter($rewriter, $delivery, $lqipBuilder, $pictureWrapper);
         $srcsetRewriter = new SrcsetRewriter($rewriter);
         $attachmentRewriter = new AttachmentImageSrcRewriter($rewriter);
         $attachmentUrlRewriter = new AttachmentUrlRewriter($rewriter);

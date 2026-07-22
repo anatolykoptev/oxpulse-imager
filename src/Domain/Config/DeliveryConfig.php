@@ -41,6 +41,12 @@ final readonly class DeliveryConfig
      * @param bool $bufferRewritingEnabled Whether to register ob_start buffer rewriting
      *        for theme-hardcoded <img> tags. Default false — opt-in for themes (e.g. Foxiz)
      *        that bypass wp_content_img_tag.
+     * @param bool $pictureEnabled Whether to wrap eligible content <img> tags in a
+     *        <picture> element with <source> per format (avif-first, then webp) so
+     *        a modern browser negotiates AVIF client-side on standard Apache. Default
+     *        false — ships OFF; an operator turns it on. The runtime
+     *        oxpulse_picture_enabled filter mirrors oxpulse_buffer_rewrite_enabled
+     *        so an operator can force-disable at rewrite time.
      * @param bool $rankMathCompatibility Whether to register the RankMath og:image
      *        compatibility filter (restores direct URLs in OpenGraph/Twitter meta tags
      *        so RankMath's wp_check_filetype() validation doesn't drop them). Default true.
@@ -74,6 +80,7 @@ final readonly class DeliveryConfig
         public string $sourceMode = 'http',
         public string $localBasePath = '',
         public bool $bufferRewritingEnabled = false,
+        public bool $pictureEnabled = false,
         public bool $rankMathCompatibility = true,
         public int $saveDataQualityReduction = 15,
         public array $sizeQualityTiers = []
@@ -136,6 +143,7 @@ final readonly class DeliveryConfig
             sourceMode: $this->sourceMode,
             localBasePath: $this->localBasePath,
             bufferRewritingEnabled: $this->bufferRewritingEnabled,
+            pictureEnabled: $this->pictureEnabled,
             rankMathCompatibility: $this->rankMathCompatibility,
             saveDataQualityReduction: $this->saveDataQualityReduction,
             sizeQualityTiers: $this->sizeQualityTiers,

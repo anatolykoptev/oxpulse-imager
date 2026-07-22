@@ -50,6 +50,11 @@ final class OptionSettingsRepository
     // Buffer rewriting (Ф2): ob_start + regex for theme-hardcoded <img> tags.
     public const OPTION_BUFFER_REWRITING_ENABLED = 'oxpulse_imager_buffer_rewriting_enabled';
 
+    // <picture> element wrapping (Phase 1): wrap eligible content <img> tags in
+    // <picture><source type="image/avif"><source type="image/webp"><img></picture>
+    // so a modern browser negotiates AVIF client-side on standard Apache.
+    public const OPTION_PICTURE_ENABLED = 'oxpulse_imager_picture_enabled';
+
     // RankMath compatibility (Ф3): restore direct URLs in og:image meta tags.
     public const OPTION_RANKMATH_COMPATIBILITY = 'oxpulse_imager_rankmath_compatibility';
 
@@ -105,6 +110,10 @@ final class OptionSettingsRepository
             sourceMode: (string) get_option(self::OPTION_SOURCE_MODE, 'http'),
             localBasePath: (string) get_option(self::OPTION_LOCAL_BASE_PATH, ''),
             bufferRewritingEnabled: (bool) get_option(self::OPTION_BUFFER_REWRITING_ENABLED, false),
+            // Phase 1 enablement: the `oxpulse_picture_enabled` filter or a
+            // direct update_option. The settings-UI toggle (validator +
+            // OptionsMapper + save) lands with the SPA integration.
+            pictureEnabled: (bool) get_option(self::OPTION_PICTURE_ENABLED, false),
             rankMathCompatibility: (bool) get_option(self::OPTION_RANKMATH_COMPATIBILITY, true),
             saveDataQualityReduction: (int) get_option(self::OPTION_SAVE_DATA_QUALITY_REDUCTION, 15),
             sizeQualityTiers: $this->loadSizeQualityTiers(),
@@ -226,6 +235,13 @@ final class OptionSettingsRepository
         if (array_key_exists('buffer_rewriting_enabled', $values)) {
             update_option(self::OPTION_BUFFER_REWRITING_ENABLED, (bool) $values['buffer_rewriting_enabled']);
         }
+
+        // NOTE: <picture> element wrapping (Phase 1) has NO save branch
+        // here — SettingsValidator::validate() never emits 'picture_enabled',
+        // so a branch would be dead code. The full UI toggle (React field +
+        // OptionsMapper entry + validator producer + save branch) lands as a
+        // cohesive unit with the SPA integration. Phase-1 enablement is the
+        // oxpulse_picture_enabled filter or a direct update_option.
 
         // RankMath compatibility (Ф3).
         if (array_key_exists('rankmath_compatibility', $values)) {

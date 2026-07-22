@@ -633,4 +633,102 @@ class UrlRewriterTest extends TestCase
         $this->assertFalse($result->rewritten);
         $this->assertSame('already_rewritten', $result->reason);
     }
+
+    // --- Phase 1: rewriteFormat (explicit per-call format override) ---
+
+    public function test_rewrite_format_avif_produces_avif_url(): void
+    {
+        $rewriter = $this->createRewriter();
+        $result = $rewriter->rewriteFormat(
+            'https://example.com/wp-content/uploads/img.jpg',
+            800,
+            600,
+            'avif'
+        );
+
+        $this->assertTrue($result->rewritten);
+        $this->assertStringContainsString('@avif', $result->url);
+        $this->assertStringNotContainsString('@webp', $result->url);
+    }
+
+    public function test_rewrite_format_webp_produces_webp_url(): void
+    {
+        $rewriter = $this->createRewriter();
+        $result = $rewriter->rewriteFormat(
+            'https://example.com/wp-content/uploads/img.jpg',
+            800,
+            600,
+            'webp'
+        );
+
+        $this->assertTrue($result->rewritten);
+        $this->assertStringContainsString('@webp', $result->url);
+        $this->assertStringNotContainsString('@avif', $result->url);
+    }
+
+    public function test_rewrite_format_filename_reflects_explicit_format(): void
+    {
+        $rewriter = $this->createRewriter();
+        $result = $rewriter->rewriteFormat(
+            'https://example.com/wp-content/uploads/photo.jpg',
+            0,
+            0,
+            'avif'
+        );
+
+        $this->assertTrue($result->rewritten);
+        // The Content-Disposition filename (fn: option) must carry the
+        // explicit format extension, not the config outputFormat.
+        $this->assertStringContainsString('fn:', $result->url);
+        // Decode the fn: base64url to verify the .avif extension.
+        preg_match('/\/fn:([A-Za-z0-9_-]+):1\//', $result->url, $m);
+        $this->assertNotEmpty($m, 'fn: option must be present');
+        $filename = base64_decode(strtr($m[1], '-_', '+/'), true);
+        $this->assertSame('photo.avif', $filename);
+    }
+
+    public function test_rewrite_format_preserves_when_delivery_disabled(): void
+    {
+        $rewriter = $this->createRewriter(enabled: false);
+        $result = $rewriter->rewriteFormat(
+            'https://example.com/wp-content/uploads/img.jpg',
+            800,
+            600,
+            'avif'
+        );
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('delivery_disabled', $result->reason);
+    }
+
+    public function test_rewrite_format_preserves_non_allowed_source(): void
+    {
+        $rewriter = $this->createRewriter();
+        $result = $rewriter->rewriteFormat(
+            'https://evil.com/images/img.jpg',
+            800,
+            600,
+            'avif'
+        );
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('source_not_in_allowlist', $result->reason);
+    }
+
+    public function test_rewrite_format_context_is_picture(): void
+    {
+        $rewriter = $this->createRewriter();
+        // rewriteFormat defaults context to 'picture'. The context is
+        // diagnostic (does not change the URL), so we just verify it
+        // does not throw and produces a rewritten URL.
+        $result = $rewriter->rewriteFormat(
+            'https://example.com/wp-content/uploads/img.jpg',
+            0,
+            0,
+            'webp'
+        );
+
+        $this->assertTrue($result->rewritten);
+        $this->assertStringContainsString('@webp', $result->url);
+    }
 }
