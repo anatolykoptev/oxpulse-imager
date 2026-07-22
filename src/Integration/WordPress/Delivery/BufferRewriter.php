@@ -84,6 +84,7 @@ final class BufferRewriter
                 return;
             }
             if (!ob_start([$this, 'rewrite'])) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_trigger_error -- defensive dev-only warning.
                 trigger_error(
                     'OXPulse: ob_start failed — buffer rewriting disabled',
                     E_USER_WARNING
@@ -136,6 +137,7 @@ final class BufferRewriter
         }
         // Page-builder edit modes via $_GET.
         foreach (self::PAGE_BUILDER_GET_KEYS as $key) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only GET inspection, no state mutation.
             if (isset($_GET[$key])) {
                 return false;
             }

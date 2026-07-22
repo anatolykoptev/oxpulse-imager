@@ -67,7 +67,8 @@ final class FlushCommand extends AbstractCommand
             $purged = $invalidator->purgeAll();
             if ($purged > 0) {
                 $this->log(sprintf(
-                    __('Purged %d entries from the local cache (%s).', 'oxpulse-imager'),
+                    /* translators: 1: number of purged cache entries, 2: cache directory path */
+                    __('Purged %1$d entries from the local cache (%2$s).', 'oxpulse-imager'),
                     $purged,
                     $cacheDir
                 ));
@@ -75,7 +76,11 @@ final class FlushCommand extends AbstractCommand
             }
         }
 
-        $this->success(sprintf(__('Flushed %d cache entry/entries.', 'oxpulse-imager'), $cleared));
+        $this->success(sprintf(
+            /* translators: %d: number of flushed cache entries. */
+            __('Flushed %d cache entry/entries.', 'oxpulse-imager'),
+            $cleared
+        ));
         $this->log(__('Note: imgproxy\'s own cache is not cleared — use your CDN/imgproxy purge API for that.', 'oxpulse-imager'));
     }
 

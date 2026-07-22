@@ -71,8 +71,17 @@ final class WarmCommand extends AbstractCommand
             $this->error(__('No URLs to warm. Provide URLs as args, or use --attachment=<id> / --all.', 'oxpulse-imager'));
         }
 
-        $this->log(sprintf(__('Warming %d URL(s) at widths: %s', 'oxpulse-imager'), count($urls), implode(',', $widths)));
-        $this->log(sprintf(__('Endpoint: %s', 'oxpulse-imager'), $delivery->endpoint));
+        $this->log(sprintf(
+            /* translators: 1: number of URLs to warm, 2: comma-separated target widths */
+            __('Warming %1$d URL(s) at widths: %2$s', 'oxpulse-imager'),
+            count($urls),
+            implode(',', $widths)
+        ));
+        $this->log(sprintf(
+            /* translators: %s: imgproxy endpoint URL. */
+            __('Endpoint: %s', 'oxpulse-imager'),
+            $delivery->endpoint
+        ));
         $this->log('');
 
         // Process in batches of 50 (PrewarmRequest::MAX_URLS_PER_BATCH).
@@ -98,7 +107,13 @@ final class WarmCommand extends AbstractCommand
                 $status = $item->status;
                 $url = $item->sourceUrl;
                 $msg = $item->message;
-                $this->log(sprintf(__('  [%1$s] %2$s — %3$s', 'oxpulse-imager'), $status, $url, $msg));
+                $this->log(sprintf(
+                    /* translators: 1: status label, 2: source URL, 3: detail message */
+                    __('  [%1$s] %2$s — %3$s', 'oxpulse-imager'),
+                    $status,
+                    $url,
+                    $msg
+                ));
             }
 
             $totals['warmed'] += $result->warmedCount();
@@ -118,9 +133,17 @@ final class WarmCommand extends AbstractCommand
         ));
 
         if ($totals['failed'] > 0) {
-            $this->warning(sprintf(__('%d URL(s) failed to warm.', 'oxpulse-imager'), $totals['failed']));
+            $this->warning(sprintf(
+                /* translators: %d: number of URLs that failed to warm. */
+                __('%d URL(s) failed to warm.', 'oxpulse-imager'),
+                $totals['failed']
+            ));
         } else {
-            $this->success(sprintf(__('%d URL(s) warmed.', 'oxpulse-imager'), $totals['warmed']));
+            $this->success(sprintf(
+                /* translators: %d: number of URLs successfully warmed. */
+                __('%d URL(s) warmed.', 'oxpulse-imager'),
+                $totals['warmed']
+            ));
         }
     }
 
@@ -231,7 +254,11 @@ final class WarmCommand extends AbstractCommand
             return [];
         }
 
-        $this->log(sprintf(__('Found %d attachment(s).', 'oxpulse-imager'), count($attachments)));
+        $this->log(sprintf(
+            /* translators: %d: number of attachments found in the media library. */
+            __('Found %d attachment(s).', 'oxpulse-imager'),
+            count($attachments)
+        ));
 
         $urls = [];
         foreach ($attachments as $id) {

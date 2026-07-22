@@ -500,6 +500,7 @@ final class UrlRewriter
      */
     private function saveDataActive(): bool
     {
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- WP-agnostic Application layer; header only compared to a literal, never output/stored.
         $value = $_SERVER['HTTP_SAVE_DATA'] ?? '';
         return is_string($value) && strtolower(trim($value)) === 'on';
     }

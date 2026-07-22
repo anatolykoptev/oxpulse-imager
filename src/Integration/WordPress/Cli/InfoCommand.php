@@ -51,9 +51,21 @@ final class InfoCommand extends AbstractCommand
         $delivery = $this->repository->loadDeliveryConfig();
         $signing = $this->repository->loadSigningConfig();
 
-        $this->log(sprintf(__('Source URL: %s', 'oxpulse-imager'), $sourceUrl));
-        $this->log(sprintf(__('Target width: %s', 'oxpulse-imager'), $width > 0 ? "{$width}px" : __('no resize', 'oxpulse-imager')));
-        $this->log(sprintf(__('Delivery enabled: %s', 'oxpulse-imager'), $delivery->enabled ? __('yes', 'oxpulse-imager') : __('no', 'oxpulse-imager')));
+        $this->log(sprintf(
+            /* translators: %s: the source image URL being inspected. */
+            __('Source URL: %s', 'oxpulse-imager'),
+            $sourceUrl
+        ));
+        $this->log(sprintf(
+            /* translators: %s: target width in pixels or "no resize". */
+            __('Target width: %s', 'oxpulse-imager'),
+            $width > 0 ? "{$width}px" : __('no resize', 'oxpulse-imager')
+        ));
+        $this->log(sprintf(
+            /* translators: %s: whether delivery is enabled (yes/no). */
+            __('Delivery enabled: %s', 'oxpulse-imager'),
+            $delivery->enabled ? __('yes', 'oxpulse-imager') : __('no', 'oxpulse-imager')
+        ));
 
         if (!$delivery->enabled) {
             $this->warning(__('Delivery is disabled — the source URL would NOT be rewritten on the frontend.', 'oxpulse-imager'));
@@ -74,8 +86,16 @@ final class InfoCommand extends AbstractCommand
         $result = $rewriter->rewrite($sourceUrl, $width, 0, 'cli');
 
         $this->log('');
-        $this->log(sprintf(__('Result: %s', 'oxpulse-imager'), $result->rewritten ? __('REWRITTEN', 'oxpulse-imager') : __('PRESERVED', 'oxpulse-imager')));
-        $this->log(sprintf(__('Reason: %s', 'oxpulse-imager'), $result->reason));
+        $this->log(sprintf(
+            /* translators: %s: rewrite result (REWRITTEN/PRESERVED). */
+            __('Result: %s', 'oxpulse-imager'),
+            $result->rewritten ? __('REWRITTEN', 'oxpulse-imager') : __('PRESERVED', 'oxpulse-imager')
+        ));
+        $this->log(sprintf(
+            /* translators: %s: reason the URL was rewritten or preserved. */
+            __('Reason: %s', 'oxpulse-imager'),
+            $result->reason
+        ));
 
         if ($result->rewritten) {
             $this->log('');

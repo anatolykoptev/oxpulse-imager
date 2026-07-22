@@ -1,14 +1,14 @@
 === OXPulse Imager ===
 Contributors: anatolykoptev
 Tags: images, imgproxy, performance, avif, webp
-Requires at least: 6.2
+Requires at least: 6.7
 Tested up to: 7.0
 Requires PHP: 8.3
 Stable tag: 0.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Bring-your-own imgproxy image delivery for WordPress. Generates signed, deterministic imgproxy URLs for approved local origins. AVIF/WebP on-demand, LQIP placeholders, DPR-aware srcset, watermarking, WP-CLI, Optimization Detective integration, async pre-warming. Disabled by default; no SaaS, no telemetry, no FFI.
+Bring-your-own imgproxy image delivery for WordPress. Signed AVIF/WebP on demand, LQIP, DPR srcset, watermarking, WP-CLI, async pre-warm. No SaaS.
 
 == Description ==
 

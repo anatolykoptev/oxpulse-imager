@@ -148,6 +148,7 @@ final class MissEndpointHandler
         // flock miss-dedupe: lock a sidecar .lock file so concurrent
         // requests for the same dest don't all transcode.
         $lockPath = $cacheFile . '.lock';
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
         $lockFp = @fopen($lockPath, 'cb');
         if ($lockFp === false) {
             // Can't lock → fail-safe: serve original.
@@ -217,10 +218,13 @@ final class MissEndpointHandler
             // Atomic write: temp file → rename.
             $temp = $cacheFile . '.tmp.' . getmypid();
             if (file_put_contents($temp, $webp) === false) {
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
                 @unlink($temp);
                 return $this->serveOriginal($sourcePath);
             }
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
             if (!@rename($temp, $cacheFile)) {
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
                 @unlink($temp);
                 return $this->serveOriginal($sourcePath);
             }
@@ -230,8 +234,10 @@ final class MissEndpointHandler
             // Release lock + clean up lock file.
             if (is_resource($lockFp)) {
                 flock($lockFp, LOCK_UN);
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
                 fclose($lockFp);
             }
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
             @unlink($lockPath);
         }
     }
@@ -245,6 +251,7 @@ final class MissEndpointHandler
     private function ensureCacheDir(string $dir): void
     {
         if (!is_dir($dir)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
             @mkdir($dir, 0755, true);
         }
         $indexHtml = $dir . '/index.html';

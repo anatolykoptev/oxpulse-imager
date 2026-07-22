@@ -102,6 +102,7 @@ final class WordPressDiagnosticLogger implements DiagnosticLoggerInterface
             foreach ($byContext as $key => $count) {
                 $lines[] = '  ' . $key . ': ' . $count;
             }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- plugin diagnostic logger's intended sink.
             error_log(implode("\n", $lines));
         } else {
             // 'verbose': per-URL entries.
@@ -117,6 +118,7 @@ final class WordPressDiagnosticLogger implements DiagnosticLoggerInterface
                     $entry->reason
                 );
             }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- plugin diagnostic logger's intended sink.
             error_log(implode("\n", $lines));
         }
 

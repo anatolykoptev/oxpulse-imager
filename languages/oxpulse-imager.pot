@@ -51,7 +51,8 @@ msgstr ""
 msgid "imgproxy returned WebP, not AVIF. Enable IMGPROXY_AUTO_AVIF on the server for AVIF delivery."
 msgstr ""
 
-#: src/Application/Health/HealthCheckService.php:135
+#. translators: %s: the Content-Type header imgproxy returned.
+#: src/Application/Health/HealthCheckService.php:137
 msgid "imgproxy did not return AVIF. Check IMGPROXY_AUTO_AVIF configuration. Got Content-Type: %s"
 msgstr ""
 
@@ -59,7 +60,8 @@ msgstr ""
 msgid "Connection successful."
 msgstr ""
 
-#: src/Application/Prewarm/PrewarmService.php:111
+#. translators: %d: HTTP status code returned by imgproxy.
+#: src/Application/Prewarm/PrewarmService.php:113
 msgid "imgproxy returned HTTP %d"
 msgstr ""
 
@@ -71,7 +73,7 @@ msgstr ""
 msgid "WordPress HTTP API not available."
 msgstr ""
 
-#: src/Infrastructure/WordPress/ServiceRegistrar.php:314
+#: src/Infrastructure/WordPress/ServiceRegistrar.php:302
 msgid "Settings"
 msgstr ""
 
@@ -176,44 +178,44 @@ msgstr ""
 msgid "OXPulse Imager diagnostics — click to view details"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:267
+#: src/Integration/WordPress/Admin/AdminNotice.php:265
 msgid "The PHP fallback runs PHP for every image (~50-200ms TTFB per image) versus ~5-20ms for static file serving. On an image-heavy page this compounds and can push Largest Contentful Paint past Google's 2.5s \"good\" threshold when an image is the LCP element — the difference between meeting and missing Core Web Vitals, not merely cosmetic."
 msgstr ""
 
 #. translators: %s: list of detected competing plugin names.
-#: src/Integration/WordPress/Admin/AdminNotice.php:315
+#: src/Integration/WordPress/Admin/AdminNotice.php:313
 msgid "Another image-optimization plugin is active (%s). Running two delivery layers can double-rewrite images — pick one to avoid conflicts."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:336
+#: src/Integration/WordPress/Admin/AdminNotice.php:334
 msgid "OXPulse Imager is serving optimized images via a PHP fallback. For best performance, add this nginx rule to your server block and reload nginx:"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:345, src/Integration/WordPress/Admin/AdminNotice.php:381, src/Integration/WordPress/Admin/AdminNotice.php:407, src/Integration/WordPress/Admin/AdminNotice.php:433, src/Integration/WordPress/Admin/SettingsPage.php:40, src/Integration/WordPress/Admin/SettingsPage.php:41
+#: src/Integration/WordPress/Admin/AdminNotice.php:343, src/Integration/WordPress/Admin/AdminNotice.php:379, src/Integration/WordPress/Admin/AdminNotice.php:405, src/Integration/WordPress/Admin/AdminNotice.php:431, src/Integration/WordPress/Admin/SettingsPage.php:40, src/Integration/WordPress/Admin/SettingsPage.php:41
 msgid "OXPulse Imager"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:352, src/Integration/WordPress/Admin/AdminNotice.php:387, src/Integration/WordPress/Admin/AdminNotice.php:413, src/Integration/WordPress/Admin/AdminNotice.php:439
+#: src/Integration/WordPress/Admin/AdminNotice.php:350, src/Integration/WordPress/Admin/AdminNotice.php:385, src/Integration/WordPress/Admin/AdminNotice.php:411, src/Integration/WordPress/Admin/AdminNotice.php:437
 msgid "Testing…"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:353, src/Integration/WordPress/Admin/AdminNotice.php:388, src/Integration/WordPress/Admin/AdminNotice.php:414, src/Integration/WordPress/Admin/AdminNotice.php:440
+#: src/Integration/WordPress/Admin/AdminNotice.php:351, src/Integration/WordPress/Admin/AdminNotice.php:386, src/Integration/WordPress/Admin/AdminNotice.php:412, src/Integration/WordPress/Admin/AdminNotice.php:438
 msgid "Re-test capability"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:369
+#: src/Integration/WordPress/Admin/AdminNotice.php:367
 msgid "OXPulse Imager could not verify whether .htaccess rewrite is available. The probe result is authoritative — click \"Re-test capability\" to retry."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:363
+#: src/Integration/WordPress/Admin/AdminNotice.php:361
 msgid "OXPulse Imager images work via the PHP fallback. For faster static delivery, ask your host to enable AllowOverride All for the cache directory (wp-content/cache/oxpulse/) — or it becomes automatic once the rewrite probe can run."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:397
+#: src/Integration/WordPress/Admin/AdminNotice.php:395
 msgid "OXPulse Imager detected LiteSpeed. The rewrite-capability probe result is authoritative — if images are served via the PHP fallback, click \"Re-test capability\" to retry."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:423
+#: src/Integration/WordPress/Admin/AdminNotice.php:421
 msgid "OXPulse Imager could not verify whether clean cache URLs can be served. The probe result is authoritative — click \"Re-test capability\" to retry."
 msgstr ""
 
@@ -278,23 +280,27 @@ msgstr ""
 msgid "No source URL provided."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/AbstractCommand.php:52
+#. translators: %s: the success message.
+#: src/Integration/WordPress/Cli/AbstractCommand.php:54
 msgid "Success: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/AbstractCommand.php:65
+#. translators: %s: the warning message.
+#: src/Integration/WordPress/Cli/AbstractCommand.php:72
 msgid "Warning: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/FlushCommand.php:70
-msgid "Purged %d entries from the local cache (%s)."
+#. translators: 1: number of purged cache entries, 2: cache directory path
+#: src/Integration/WordPress/Cli/FlushCommand.php:71
+msgid "Purged %1$d entries from the local cache (%2$s)."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/FlushCommand.php:78
+#. translators: %d: number of flushed cache entries.
+#: src/Integration/WordPress/Cli/FlushCommand.php:81
 msgid "Flushed %d cache entry/entries."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/FlushCommand.php:79
+#: src/Integration/WordPress/Cli/FlushCommand.php:84
 msgid "Note: imgproxy's own cache is not cleared — use your CDN/imgproxy purge API for that."
 msgstr ""
 
@@ -302,59 +308,72 @@ msgstr ""
 msgid "Usage: wp oxpulse info <url> [--width=<n>]"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:54
+#. translators: %s: the source image URL being inspected.
+#: src/Integration/WordPress/Cli/InfoCommand.php:56
 msgid "Source URL: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:55
+#. translators: %s: target width in pixels or "no resize".
+#: src/Integration/WordPress/Cli/InfoCommand.php:61
 msgid "Target width: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:55
+#. translators: %s: target width in pixels or "no resize".
+#: src/Integration/WordPress/Cli/InfoCommand.php:62
 msgid "no resize"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:56, src/Integration/WordPress/Cli/StatusCommand.php:45
+#. translators: %s: whether delivery is enabled (yes/no).
+#. translators: %s: whether delivery is enabled (yes/no).
+#: src/Integration/WordPress/Cli/InfoCommand.php:66, src/Integration/WordPress/Cli/StatusCommand.php:47
 msgid "Delivery enabled: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:56, src/Integration/WordPress/Cli/StatusCommand.php:45
+#. translators: %s: whether delivery is enabled (yes/no).
+#. translators: %s: whether delivery is enabled (yes/no).
+#: src/Integration/WordPress/Cli/InfoCommand.php:67, src/Integration/WordPress/Cli/StatusCommand.php:48
 msgid "yes"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:56, src/Integration/WordPress/Cli/StatusCommand.php:45
+#. translators: %s: whether delivery is enabled (yes/no).
+#. translators: %s: whether delivery is enabled (yes/no).
+#: src/Integration/WordPress/Cli/InfoCommand.php:67, src/Integration/WordPress/Cli/StatusCommand.php:48
 msgid "no"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:59
+#: src/Integration/WordPress/Cli/InfoCommand.php:71
 msgid "Delivery is disabled — the source URL would NOT be rewritten on the frontend."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:64
+#: src/Integration/WordPress/Cli/InfoCommand.php:76
 msgid "No endpoint configured — the source URL would NOT be rewritten."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:69
+#: src/Integration/WordPress/Cli/InfoCommand.php:81
 msgid "No signing secrets configured — the source URL would NOT be rewritten."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:77
+#. translators: %s: rewrite result (REWRITTEN/PRESERVED).
+#: src/Integration/WordPress/Cli/InfoCommand.php:91
 msgid "Result: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:77
+#. translators: %s: rewrite result (REWRITTEN/PRESERVED).
+#: src/Integration/WordPress/Cli/InfoCommand.php:92
 msgid "REWRITTEN"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:77
+#. translators: %s: rewrite result (REWRITTEN/PRESERVED).
+#: src/Integration/WordPress/Cli/InfoCommand.php:92
 msgid "PRESERVED"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:78
+#. translators: %s: reason the URL was rewritten or preserved.
+#: src/Integration/WordPress/Cli/InfoCommand.php:96
 msgid "Reason: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/InfoCommand.php:82
+#: src/Integration/WordPress/Cli/InfoCommand.php:102
 msgid "imgproxy URL:"
 msgstr ""
 
@@ -362,103 +381,126 @@ msgstr ""
 msgid "OXPulse Imager status"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:46, src/Integration/WordPress/Cli/WarmCommand.php:75
+#. translators: %s: imgproxy endpoint URL or "(not configured)".
+#. translators: %s: imgproxy endpoint URL.
+#: src/Integration/WordPress/Cli/StatusCommand.php:52, src/Integration/WordPress/Cli/WarmCommand.php:82
 msgid "Endpoint: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:46
+#. translators: %s: imgproxy endpoint URL or "(not configured)".
+#: src/Integration/WordPress/Cli/StatusCommand.php:53
 msgid "(not configured)"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:47
+#. translators: %s: output format (auto/avif/webp/jpeg).
+#: src/Integration/WordPress/Cli/StatusCommand.php:57
 msgid "Output format: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:48
+#. translators: %s: default image quality value.
+#: src/Integration/WordPress/Cli/StatusCommand.php:62
 msgid "Default quality: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:49
+#. translators: %d: number of allowed source origins.
+#: src/Integration/WordPress/Cli/StatusCommand.php:67
 msgid "Allowed sources: %d"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:51
+#. translators: %s: an allowed source origin URL.
+#: src/Integration/WordPress/Cli/StatusCommand.php:73
 msgid "  - %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:54
+#. translators: %s: whether signing secrets are configured.
+#: src/Integration/WordPress/Cli/StatusCommand.php:80
 msgid "Signing: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:54
+#. translators: %s: whether signing secrets are configured.
+#: src/Integration/WordPress/Cli/StatusCommand.php:81
 msgid "configured (key+salt set)"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:54
+#. translators: %s: whether signing secrets are configured.
+#: src/Integration/WordPress/Cli/StatusCommand.php:81
 msgid "NOT configured"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:55
+#. translators: %s: LQIP state (enabled/disabled).
+#: src/Integration/WordPress/Cli/StatusCommand.php:85
 msgid "LQIP: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:55
+#. translators: %s: LQIP blur radius in pixels.
+#: src/Integration/WordPress/Cli/StatusCommand.php:88
 msgid "enabled (blur=%s)"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:55, src/Integration/WordPress/Cli/StatusCommand.php:56, src/Integration/WordPress/Cli/StatusCommand.php:57
+#. translators: %s: watermark state (enabled/disabled).
+#: src/Integration/WordPress/Cli/StatusCommand.php:90, src/Integration/WordPress/Cli/StatusCommand.php:99, src/Integration/WordPress/Cli/StatusCommand.php:104
 msgid "disabled"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:56
+#. translators: %s: DPR srcset state (enabled/disabled).
+#: src/Integration/WordPress/Cli/StatusCommand.php:94
 msgid "DPR srcset: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:56
+#. translators: %s: comma-separated DPR variant values.
+#: src/Integration/WordPress/Cli/StatusCommand.php:97
 msgid "enabled (%s)"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:57
+#. translators: %s: watermark state (enabled/disabled).
+#: src/Integration/WordPress/Cli/StatusCommand.php:103
 msgid "Watermark: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:57
+#. translators: %s: watermark state (enabled/disabled).
+#: src/Integration/WordPress/Cli/StatusCommand.php:104
 msgid "enabled"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:63
+#. translators: %s: diagnostic logging level (off/summary/verbose).
+#: src/Integration/WordPress/Cli/StatusCommand.php:113
 msgid "Diagnostic level: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:66
+#: src/Integration/WordPress/Cli/StatusCommand.php:118
 msgid "Health check: (skipped via --no-health)"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:71
+#: src/Integration/WordPress/Cli/StatusCommand.php:123
 msgid "Health check: no endpoint configured."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:76
+#: src/Integration/WordPress/Cli/StatusCommand.php:128
 msgid "Health check..."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:82
-msgid "imgproxy health: %s — %s"
+#. translators: 1: health-check status code/label, 2: detail message
+#: src/Integration/WordPress/Cli/StatusCommand.php:140
+msgid "imgproxy health: %1$s — %2$s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:80
+#. translators: %s: health-check success message.
+#: src/Integration/WordPress/Cli/StatusCommand.php:134
 msgid "imgproxy reachable: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:87
+#. translators: %s: sample image URL used for the AVIF support check.
+#: src/Integration/WordPress/Cli/StatusCommand.php:150
 msgid "AVIF check (sample: %s)..."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:92
+#. translators: %s: AVIF support failure message.
+#: src/Integration/WordPress/Cli/StatusCommand.php:163
 msgid "AVIF: %s"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/StatusCommand.php:90
+#. translators: %s: AVIF support success message.
+#: src/Integration/WordPress/Cli/StatusCommand.php:157
 msgid "AVIF supported: %s"
 msgstr ""
 
@@ -470,45 +512,50 @@ msgstr ""
 msgid "No URLs to warm. Provide URLs as args, or use --attachment=<id> / --all."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/WarmCommand.php:74
-msgid "Warming %d URL(s) at widths: %s"
+#. translators: 1: number of URLs to warm, 2: comma-separated target widths
+#: src/Integration/WordPress/Cli/WarmCommand.php:76
+msgid "Warming %1$d URL(s) at widths: %2$s"
 msgstr ""
 
 #. translators: 1: current batch, 2: total batches, 3: URLs in this batch
-#: src/Integration/WordPress/Cli/WarmCommand.php:86
+#: src/Integration/WordPress/Cli/WarmCommand.php:95
 msgid "Batch %1$d/%2$d (%3$d URLs)..."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/WarmCommand.php:101
+#. translators: 1: status label, 2: source URL, 3: detail message
+#: src/Integration/WordPress/Cli/WarmCommand.php:112
 msgid "  [%1$s] %2$s — %3$s"
 msgstr ""
 
 #. translators: 1: total, 2: warmed, 3: skipped, 4: failed
-#: src/Integration/WordPress/Cli/WarmCommand.php:113
+#: src/Integration/WordPress/Cli/WarmCommand.php:128
 msgid "Done. Total: %1$d, Warmed: %2$d, Skipped: %3$d, Failed: %4$d"
 msgstr ""
 
-#: src/Integration/WordPress/Cli/WarmCommand.php:123
+#. translators: %d: number of URLs successfully warmed.
+#: src/Integration/WordPress/Cli/WarmCommand.php:144
 msgid "%d URL(s) warmed."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/WarmCommand.php:121
+#. translators: %d: number of URLs that failed to warm.
+#: src/Integration/WordPress/Cli/WarmCommand.php:138
 msgid "%d URL(s) failed to warm."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/WarmCommand.php:185
+#: src/Integration/WordPress/Cli/WarmCommand.php:208
 msgid "WordPress functions not available (wp_get_attachment_url)."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/WarmCommand.php:217
+#: src/Integration/WordPress/Cli/WarmCommand.php:240
 msgid "WordPress functions not available (get_posts)."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/WarmCommand.php:220
+#: src/Integration/WordPress/Cli/WarmCommand.php:243
 msgid "Enumerating media library..."
 msgstr ""
 
-#: src/Integration/WordPress/Cli/WarmCommand.php:234
+#. translators: %d: number of attachments found in the media library.
+#: src/Integration/WordPress/Cli/WarmCommand.php:259
 msgid "Found %d attachment(s)."
 msgstr ""
 

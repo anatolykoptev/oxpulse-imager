@@ -48,8 +48,13 @@ abstract class AbstractCommand
         if (class_exists('\WP_CLI') && method_exists('\WP_CLI', 'success')) {
             \WP_CLI::success($message);
         } else {
-            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
-            echo sprintf(__('Success: %s', 'oxpulse-imager'), $message) . "\n";
+            // phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
+            echo sprintf(
+                /* translators: %s: the success message. */
+                __('Success: %s', 'oxpulse-imager'),
+                $message
+            ) . "\n";
+            // phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
         }
     }
 
@@ -61,8 +66,13 @@ abstract class AbstractCommand
         if (class_exists('\WP_CLI') && method_exists('\WP_CLI', 'warning')) {
             \WP_CLI::warning($message);
         } else {
-            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
-            echo sprintf(__('Warning: %s', 'oxpulse-imager'), $message) . "\n";
+            // phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
+            echo sprintf(
+                /* translators: %s: the warning message. */
+                __('Warning: %s', 'oxpulse-imager'),
+                $message
+            ) . "\n";
+            // phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
         }
     }
 

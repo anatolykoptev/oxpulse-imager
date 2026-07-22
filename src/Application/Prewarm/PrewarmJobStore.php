@@ -76,7 +76,7 @@ final class PrewarmJobStore
         $prefix = '_transient_' . self::TRANSIENT_PREFIX;
         $like = $wpdb->esc_like($prefix) . '%';
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- job-queue state must bypass object cache; stale reads would double-run/skip jobs.
         $rows = $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",

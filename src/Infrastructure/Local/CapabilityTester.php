@@ -178,7 +178,7 @@ class CapabilityTester
         if (function_exists('apache_get_version')) {
             return true;
         }
-        $server = $_SERVER['SERVER_SOFTWARE'] ?? '';
+        $server = sanitize_text_field(wp_unslash($_SERVER['SERVER_SOFTWARE'] ?? ''));
         if (is_string($server) && $server !== '') {
             return stripos($server, 'apache') !== false || stripos($server, 'litespeed') !== false;
         }

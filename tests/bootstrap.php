@@ -586,6 +586,11 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return is_string($value) ? trim(strip_tags($value)) : $value;
         }
     }
+    if (!function_exists('wp_unslash')) {
+        function wp_unslash($value) {
+            return is_string($value) ? stripslashes($value) : $value;
+        }
+    }
     if (!function_exists('is_plugin_active')) {
         function is_plugin_active($plugin) {
             return !empty($GLOBALS['__oxpulse_active_plugins'][$plugin]);
