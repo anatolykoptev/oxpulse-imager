@@ -532,7 +532,7 @@ final class ServiceRegistrar
      * Build the LocalDeliveryInstaller from the WordPress environment.
      *
      * Returns null when the required paths (WP_CONTENT_DIR, uploads
-     * base, plugin autoloader) cannot be resolved — the installer is
+     * base, plugin src/ dir) cannot be resolved — the installer is
      * a no-op in that case (e.g. during unit tests without a real WP
      * environment).
      */
@@ -551,7 +551,11 @@ final class ServiceRegistrar
 
         $cacheDir = WP_CONTENT_DIR . '/cache/oxpulse';
         $cacheBaseUrl = rtrim((string) home_url(), '/') . '/wp-content/cache/oxpulse';
-        $autoloaderPath = OXPULSE_IMAGER_DIR . 'vendor/autoload.php';
+        // FIX #45: thread the plugin src/ dir (NOT vendor/autoload.php)
+        // — the generated endpoint bakes a self-contained PSR-4 autoloader
+        // pointing at src/. vendor/ is export-ignored from the release
+        // ZIP, so a vendor path would 500 on every wordpress.org install.
+        $srcDir = OXPULSE_IMAGER_DIR . 'src';
 
         return new LocalDeliveryInstaller(
             wpContentDir: WP_CONTENT_DIR,
@@ -559,7 +563,7 @@ final class ServiceRegistrar
             uploadsBaseurl: $uploadsBaseurl,
             cacheDir: $cacheDir,
             cacheBaseUrl: $cacheBaseUrl,
-            autoloaderPath: $autoloaderPath,
+            srcDir: $srcDir,
         );
     }
 

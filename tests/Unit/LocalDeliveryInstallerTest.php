@@ -27,7 +27,7 @@ class LocalDeliveryInstallerTest extends TestCase
     private string $wpContentDir;
     private string $uploadsBasedir;
     private string $cacheDir;
-    private string $autoloaderPath;
+    private string $srcDir;
     private string $uploadsBaseurl;
     private string $cacheBaseUrl;
 
@@ -37,14 +37,16 @@ class LocalDeliveryInstallerTest extends TestCase
         $this->wpContentDir = sys_get_temp_dir() . '/oxpulse-inst-wpcontent-' . uniqid();
         $this->uploadsBasedir = sys_get_temp_dir() . '/oxpulse-inst-uploads-' . uniqid();
         $this->cacheDir = $this->wpContentDir . '/cache/oxpulse';
-        $this->autoloaderPath = sys_get_temp_dir() . '/oxpulse-inst-vendor-' . uniqid() . '/autoload.php';
+        // FIX #45: the installer threads the plugin src/ dir (not a
+        // vendor/autoload.php path) — the generated endpoint bakes a
+        // self-contained PSR-4 autoloader pointing at src/.
+        $this->srcDir = sys_get_temp_dir() . '/oxpulse-inst-src-' . uniqid() . '/src';
         $this->uploadsBaseurl = 'https://example.com/wp-content/uploads';
         $this->cacheBaseUrl = 'https://example.com/wp-content/cache/oxpulse';
 
         mkdir($this->wpContentDir, 0755, true);
         mkdir($this->uploadsBasedir, 0755, true);
-        mkdir(dirname($this->autoloaderPath), 0755, true);
-        file_put_contents($this->autoloaderPath, '<?php // stub autoloader');
+        mkdir($this->srcDir, 0755, true);
     }
 
     protected function tearDown(): void
@@ -52,7 +54,7 @@ class LocalDeliveryInstallerTest extends TestCase
         parent::tearDown();
         $this->rmrf($this->wpContentDir);
         $this->rmrf($this->uploadsBasedir);
-        $this->rmrf(dirname($this->autoloaderPath));
+        $this->rmrf(dirname($this->srcDir));
     }
 
     private function rmrf(string $dir): void
@@ -76,7 +78,7 @@ class LocalDeliveryInstallerTest extends TestCase
             uploadsBaseurl: $this->uploadsBaseurl,
             cacheDir: $this->cacheDir,
             cacheBaseUrl: $this->cacheBaseUrl,
-            autoloaderPath: $this->autoloaderPath,
+            srcDir: $this->srcDir,
         );
     }
 

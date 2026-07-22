@@ -5,8 +5,11 @@
  * Verifies the self-contained oxpulse-img.php file generator:
  * - Bakes signing key + salt as PHP constants (not echoed as text).
  * - Bakes uploads base ABSOLUTE path, uploads base URL, cache dir path.
- * - Bakes the autoloader path.
- * - The generated file requires the autoloader + instantiates the handler.
+ * - Bakes the plugin src/ dir + emits a self-contained PSR-4 autoloader
+ *   (NO vendor/autoload.php reference — vendor/ is export-ignored from
+ *   the release ZIP, and the plugin has zero third-party runtime deps;
+ *   FIX #45).
+ * - The generated file instantiates the handler.
  * - No wp-load.php reference.
  * - The signing secret appears only inside a PHP constant (not in a
  *   web-readable echo/print).
@@ -59,7 +62,7 @@ class MissEndpointGeneratorTest extends TestCase
             uploadsBasedir: '/var/www/wp-content/uploads',
             uploadsBaseurl: 'https://example.com/wp-content/uploads',
             cacheDir: '/var/www/wp-content/cache/oxpulse',
-            autoloaderPath: '/var/www/wp-content/plugins/oxpulse-imager/vendor/autoload.php',
+            srcDir: '/var/www/wp-content/plugins/oxpulse-imager/src',
         );
 
         $this->assertSame($this->outputDir . '/oxpulse-img.php', $path);
@@ -73,8 +76,15 @@ class MissEndpointGeneratorTest extends TestCase
         $this->assertStringNotContainsString('wp-load.php', $content);
         $this->assertStringNotContainsString('wp-blog-header', $content);
 
-        // Requires the autoloader.
-        $this->assertStringContainsString("require_once '/var/www/wp-content/plugins/oxpulse-imager/vendor/autoload.php'", $content);
+        // FIX #45: NO vendor/autoload.php reference (vendor/ is
+        // export-ignored from the release ZIP). Instead, a self-
+        // contained PSR-4 autoloader mapping OXPulse\Imager\ to the
+        // baked src/ dir.
+        $this->assertStringNotContainsString('vendor/autoload.php', $content);
+        $this->assertStringNotContainsString('vendor/', $content);
+        $this->assertStringContainsString('spl_autoload_register', $content);
+        $this->assertStringContainsString("OXPulse\\Imager\\", $content);
+        $this->assertStringContainsString('OXPULSE_SRC_DIR', $content);
 
         // Baked constants.
         $this->assertStringContainsString("define('OXPULSE_SIGNING_KEY'", $content);
@@ -82,6 +92,7 @@ class MissEndpointGeneratorTest extends TestCase
         $this->assertStringContainsString("define('OXPULSE_UPLOADS_BASEDIR'", $content);
         $this->assertStringContainsString("define('OXPULSE_UPLOADS_BASEURL'", $content);
         $this->assertStringContainsString("define('OXPULSE_CACHE_DIR'", $content);
+        $this->assertStringContainsString("define('OXPULSE_SRC_DIR'", $content);
 
         // The signing key is baked as a base64 constant (not raw binary
         // in the source, not echoed).
@@ -111,7 +122,7 @@ class MissEndpointGeneratorTest extends TestCase
             uploadsBasedir: '/uploads',
             uploadsBaseurl: 'https://example.com/uploads',
             cacheDir: '/cache',
-            autoloaderPath: '/autoload.php',
+            srcDir: '/plugin/src',
         );
 
         $output = shell_exec('php -l ' . escapeshellarg($path) . ' 2>&1');
@@ -128,7 +139,7 @@ class MissEndpointGeneratorTest extends TestCase
             uploadsBasedir: '/uploads',
             uploadsBaseurl: 'https://example.com/uploads',
             cacheDir: '/cache',
-            autoloaderPath: '/autoload.php',
+            srcDir: '/plugin/src',
         );
         $content = file_get_contents($path);
 
@@ -154,7 +165,7 @@ class MissEndpointGeneratorTest extends TestCase
             uploadsBasedir: '/uploads',
             uploadsBaseurl: 'https://example.com/uploads',
             cacheDir: '/cache',
-            autoloaderPath: '/autoload.php',
+            srcDir: '/plugin/src',
         );
 
         $perms = fileperms($path) & 0777;
@@ -189,7 +200,7 @@ class MissEndpointGeneratorTest extends TestCase
                 uploadsBasedir: '/uploads',
                 uploadsBaseurl: 'https://example.com/uploads',
                 cacheDir: '/cache',
-                autoloaderPath: '/autoload.php',
+                srcDir: '/plugin/src',
             );
             $this->fail('generate() must throw on write failure, not return the path.');
         } catch (\RuntimeException $e) {
@@ -210,7 +221,7 @@ class MissEndpointGeneratorTest extends TestCase
             uploadsBasedir: '/uploads',
             uploadsBaseurl: 'https://example.com/uploads',
             cacheDir: '/cache',
-            autoloaderPath: '/autoload.php',
+            srcDir: '/plugin/src',
         );
 
         $this->assertFileExists($path);
@@ -241,7 +252,7 @@ class MissEndpointGeneratorTest extends TestCase
             uploadsBasedir: "/var/www/someone's-site/wp-content/uploads",
             uploadsBaseurl: "https://example.com/someone's-site/wp-content/uploads",
             cacheDir: "/var/www/someone's-site/wp-content/cache/oxpulse",
-            autoloaderPath: "/var/www/someone's-site/wp-content/plugins/oxpulse-imager/vendor/autoload.php",
+            srcDir: "/var/www/someone's-site/wp-content/plugins/oxpulse-imager/src",
         );
 
         $output = shell_exec('php -l ' . escapeshellarg($path) . ' 2>&1');
@@ -259,7 +270,7 @@ class MissEndpointGeneratorTest extends TestCase
             uploadsBasedir: $uploadsBasedir,
             uploadsBaseurl: 'https://example.com/uploads',
             cacheDir: '/cache',
-            autoloaderPath: '/autoload.php',
+            srcDir: '/plugin/src',
         );
 
         // The generated file must define the constant to the EXACT
@@ -279,5 +290,86 @@ class MissEndpointGeneratorTest extends TestCase
 
         $resolved = shell_exec('php ' . escapeshellarg($scratch) . ' 2>&1');
         $this->assertSame($uploadsBasedir, $resolved, 'Baked path with apostrophe must round-trip to the exact original string.');
+    }
+
+    // --- FIX #45: endpoint bakes require_once vendor/autoload.php, but
+    // vendor/ is export-ignored from the release ZIP → every wordpress.org
+    // install 500s on every cache-miss (free tier broken). The endpoint
+    // must be self-sufficient: bake a PSR-4 autoloader mapping
+    // OXPulse\Imager\ → the plugin src/ dir, NO vendor reference. ---
+
+    public function test_src_dir_constant_round_trips_apostrophe(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $srcDir = "/var/www/someone's-site/wp-content/plugins/oxpulse-imager/src";
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: '/uploads',
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            srcDir: $srcDir,
+        );
+
+        $content = file_get_contents($path);
+        $this->assertStringContainsString("define('OXPULSE_SRC_DIR'", $content);
+
+        $scratch = $this->outputDir . '/scratch-srcdir.php';
+        $php = "<?php\n";
+        if (preg_match("/define\('OXPULSE_SRC_DIR', [^;]+;/", $content, $m)) {
+            $php .= $m[0] . "\n";
+        }
+        $php .= "echo OXPULSE_SRC_DIR;\n";
+        file_put_contents($scratch, $php);
+
+        $resolved = shell_exec('php ' . escapeshellarg($scratch) . ' 2>&1');
+        $this->assertSame($srcDir, $resolved, 'Baked src dir with apostrophe must round-trip to the exact original string.');
+    }
+
+    public function test_baked_src_loader_resolves_class_with_no_vendor(): void
+    {
+        // Generate the endpoint with srcDir pointing at the REAL plugin
+        // src/ (no vendor/ involved). Then extract the baked
+        // spl_autoload_register block, run it in a FRESH subprocess with
+        // NO composer autoloader, and assert the baked loader alone
+        // resolves a real plugin class from src/.
+        $realSrcDir = dirname(__DIR__, 2) . '/src';
+        $this->assertFileExists($realSrcDir . '/Domain/Config/SigningConfig.php');
+
+        $generator = new MissEndpointGenerator();
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: '/uploads',
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            srcDir: $realSrcDir,
+        );
+        $content = file_get_contents($path);
+
+        // Extract the spl_autoload_register(...) block (it is a single
+        // statement ending at the matching ");").
+        $found = preg_match(
+            '/spl_autoload_register\(.+?\}\);/s',
+            $content,
+            $m,
+        );
+        $this->assertSame(1, $found, 'Generated endpoint must contain a spl_autoload_register statement.');
+        $autoloaderBlock = $m[0];
+
+        $scratch = $this->outputDir . '/scratch-loader.php';
+        $php = "<?php\n"
+            . "define('OXPULSE_SRC_DIR', " . var_export($realSrcDir, true) . ");\n"
+            . $autoloaderBlock . "\n"
+            . "// NO composer autoloader loaded — prove the baked loader alone resolves the class.\n"
+            . "\$ok = class_exists('OXPulse\\\\Imager\\\\Domain\\\\Config\\\\SigningConfig', true);\n"
+            . "echo \$ok ? 'LOADED' : 'NOT-LOADED';\n";
+        file_put_contents($scratch, $php);
+
+        // Fresh php process: no vendor/autoload.php, no project autoloader.
+        $out = shell_exec('php ' . escapeshellarg($scratch) . ' 2>&1');
+        $this->assertSame('LOADED', $out, 'Baked src-loader must load a plugin class with NO vendor autoloader available.');
     }
 }
