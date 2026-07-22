@@ -79,16 +79,26 @@ back to the output-buffer mode if not.
 ### nginx
 
 nginx does not support `.htaccess`. Use the output-buffer fallback
-(automatic) or add this `try_files` snippet to your server block:
+(automatic) or add this `try_files` snippet to your server block. Also
+add a deny-PHP location for the cache dir (belt-and-braces) BEFORE it:
 
 ```nginx
-location ~* /wp-content/cache/oxpulse/([0-9a-f]{16})/(.+)\.(webp|avif)$ {
+# Belt-and-braces: never execute scripts inside the cache dir.
+location ~* ^/wp-content/cache/oxpulse/.*\.(php|phtml)$ { deny all; }
+
+# Serve existing cache files directly; on miss, route to the endpoint
+# with the key extracted from the filename.
+location ~* ^/wp-content/cache/oxpulse/([0-9a-f]+)/(.+)\.(webp|avif)$ {
+    add_header Vary Accept;
     try_files $uri /wp-content/oxpulse-img.php?k=$2;
 }
 ```
 
-This serves existing cache files directly; on miss, it routes to the
-endpoint with the key extracted from the filename.
+Note: the location regex uses `[0-9a-f]+` (not a `{16}` quantifier) —
+an unquoted regex containing `{` / `}` makes nginx parse the braces as
+a block and fail to load (`pcre2_compile() failed`). Battle-tested
+plugins (WebP Express, Converter for Media) avoid the quantifier for
+this reason.
 
 ### Security note (cache-dir hardening)
 
