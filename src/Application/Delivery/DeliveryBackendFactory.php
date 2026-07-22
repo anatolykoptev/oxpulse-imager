@@ -49,6 +49,23 @@ final class DeliveryBackendFactory
             return new ImgproxyBackend($delivery, $signing);
         }
 
+        // #29.2: LocalBackend requires http source mode. When
+        // sourceMode='local', SourcePolicy resolves the source to a bare
+        // filesystem path (SourceDecision::fsPath !== null) and
+        // UrlRewriter feeds that path — not the URL — into the
+        // TransformRequest. LocalBackend then signs a key whose payload
+        // 'source' is a bare fs path (no scheme+host). At miss-endpoint
+        // time, PathGuard::resolve() requires scheme+host from
+        // payload['source'] → null → 404 on every image; URL-normalized
+        // invalidation can't match either. Returning null here makes
+        // UrlRewriter preserve the original URL (no rewrite) — the safe
+        // behavior when no imgproxy endpoint is configured for local
+        // source mode. imgproxy + sourceMode='local' (local:// transport)
+        // is handled by the ImgproxyBackend branch above.
+        if ($delivery->sourceMode === 'local') {
+            return null;
+        }
+
         return new LocalBackend($signing);
     }
 }

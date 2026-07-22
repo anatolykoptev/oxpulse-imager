@@ -1,23 +1,25 @@
 <?php
 /**
- * WordPress/cURL pre-warm HTTP client.
+ * WordPress HTTP API pre-warm client.
  *
- * Implements PrewarmHttpClient using curl_multi for bounded concurrency
- * (max 5 simultaneous requests). Bypasses wp_remote_* because that API
- * is single-request — for a batch of 50+ URLs, sequential requests
- * would take minutes.
+ * Implements PrewarmHttpClient using wp_remote_head() for each URL in
+ * the batch. Runs in WP context (prewarm cron / REST / WP-CLI), so
+ * wp-load is available and the WP HTTP API is the correct transport —
+ * raw curl_* triggers WordPress.WP.AlternativeFunctions.curl_curl_error
+ * (a WARNING that is not suppressable via ignore-codes for wordpress.org
+ * submission).
  *
- * Uses HEAD requests (not GET) — we only need to trigger imgproxy's
+ * HEAD requests are used (not GET) — we only need to trigger imgproxy's
  * processing + cache fill, not download the response body. imgproxy
  * processes the image on a HEAD request the same as a GET (the
- * processing happens before the response is sent, regardless of
- * method).
+ * processing happens before the response is sent, regardless of method).
  *
- * NOTE: Plugin Check flags curl_* as "use wp_remote_get() instead" —
- * that's a false positive here. wp_remote_* is single-request; the
- * HTTP API has no multi/concurrency primitive. The curl_* ignore-codes
- * are declared in .github/workflows/{test,deploy}.yml (Plugin Check
- * action's ignore-codes input). See wp-org-deploy SKILL.md.
+ * The WP HTTP API is single-request (no multi/concurrency primitive),
+ * so the batch is sequential. For a prewarm cron job this is acceptable
+ * — the batch is bounded (max 50 URLs) and each HEAD completes in well
+ * under the per-request timeout. The previous curl_multi implementation
+ * provided bounded concurrency (5 simultaneous) but at the cost of
+ * wordpress.org Plugin Check compliance.
  *
  * @package OXPulse\Imager\Infrastructure\Http
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -32,99 +34,50 @@ use OXPulse\Imager\Application\Prewarm\PrewarmHttpClient;
 
 final class WordPressPrewarmClient implements PrewarmHttpClient
 {
-    private const MAX_CONCURRENCY = 5;
-
     public function headBatch(array $imgproxyUrls, int $timeoutSeconds): array
     {
         if (count($imgproxyUrls) === 0) {
             return [];
         }
 
-        if (!function_exists('curl_multi_init')) {
+        if (!function_exists('wp_remote_head')) {
             return array_map(
-                fn () => ['status' => 0, 'error' => __('cURL extension not available.', 'oxpulse-imager'), 'elapsed_ms' => 0],
+                fn () => ['status' => 0, 'error' => __('WordPress HTTP API not available.', 'oxpulse-imager'), 'elapsed_ms' => 0],
                 $imgproxyUrls
             );
         }
 
-        $results = array_fill(0, count($imgproxyUrls), null);
-        $handles = [];
-        $mh = curl_multi_init();
-
-        // Initialize all handles up front.
+        $results = [];
         foreach ($imgproxyUrls as $idx => $url) {
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_NOBODY, true);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, $timeoutSeconds);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, min($timeoutSeconds, 5));
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-            // imgproxy needs the Accept header for format negotiation.
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Accept: image/avif,image/webp,image/*,*/*;q=0.8',
+            $start = microtime(true);
+
+            $response = wp_remote_head($url, [
+                'timeout' => $timeoutSeconds,
+                'redirection' => 0,
+                'sslverify' => true,
+                // imgproxy needs the Accept header for format negotiation.
+                'headers' => [
+                    'Accept' => 'image/avif,image/webp,image/*,*/*;q=0.8',
+                ],
             ]);
 
-            $handles[$idx] = $ch;
-        }
+            $elapsedMs = (int) round((microtime(true) - $start) * 1000);
 
-        // Process with bounded concurrency: add MAX_CONCURRENCY handles
-        // to the multi handle, run until some complete, add more, repeat.
-        $pending = array_keys($handles);
-        $running = 0;
-
-        do {
-            // Add handles up to the concurrency limit.
-            while (count($pending) > 0 && $running < self::MAX_CONCURRENCY) {
-                $idx = array_shift($pending);
-                curl_multi_add_handle($mh, $handles[$idx]);
-                $running++;
-            }
-
-            if ($running === 0) {
-                break;
-            }
-
-            // Execute.
-            do {
-                $status = curl_multi_exec($mh, $running);
-                if ($status === CURLM_OK && $running > 0) {
-                    curl_multi_select($mh, 1.0);
-                }
-            } while ($status === CURLM_OK && $running > 0);
-
-            // Collect completed handles.
-            while (($info = curl_multi_info_read($mh)) !== false) {
-                $ch = $info['handle'];
-                $idx = array_search($ch, $handles, true);
-                if ($idx === false) {
-                    continue;
-                }
-
-                $start = microtime(true);
-                $httpStatus = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-                $error = curl_error($ch);
+            if (is_wp_error($response)) {
+                $error = $response->get_error_message();
                 $results[$idx] = [
-                    'status'     => $httpStatus,
-                    'error'      => $error !== '' ? $this->redactUrl($error) : null,
-                    'elapsed_ms' => (int) round((microtime(true) - $start) * 1000),
+                    'status' => 0,
+                    'error' => $this->redactUrl($error ?? ''),
+                    'elapsed_ms' => $elapsedMs,
                 ];
-
-                curl_multi_remove_handle($mh, $ch);
-                // curl_close() is a no-op since PHP 8.0 and deprecated
-                // in 8.5 — curl handles are freed when their refcount
-                // hits zero. Remove the call entirely.
+                continue;
             }
-        } while (count($pending) > 0 || $running > 0);
 
-        curl_multi_close($mh);
-
-        // Fill any nulls (shouldn't happen, but defensive).
-        foreach ($results as $idx => $r) {
-            if ($r === null) {
-                $results[$idx] = ['status' => 0, 'error' => __('Unknown error.', 'oxpulse-imager'), 'elapsed_ms' => 0];
-            }
+            $results[$idx] = [
+                'status' => (int) wp_remote_retrieve_response_code($response),
+                'error' => null,
+                'elapsed_ms' => $elapsedMs,
+            ];
         }
 
         return $results;

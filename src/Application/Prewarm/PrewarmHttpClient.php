@@ -4,7 +4,7 @@
  *
  * The Application layer's interface for dispatching batch HEAD requests
  * to imgproxy. The Infrastructure layer provides the implementation
- * (WordPressPrewarmClient using curl_multi for concurrency).
+ * (WordPressPrewarmClient using the WP HTTP API wp_remote_head).
  *
  * @package OXPulse\Imager\Application\Prewarm
  * @copyright Copyright (c) 2026 Anatoly Koptev
