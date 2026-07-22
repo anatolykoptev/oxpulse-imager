@@ -141,4 +141,24 @@ final readonly class DeliveryConfig
             sizeQualityTiers: $this->sizeQualityTiers,
         );
     }
+
+    /**
+     * #43 Phase 2 fold-in: whether LocalBackend is the active delivery
+     * backend (no imgproxy endpoint configured). Used as the shared
+     * predicate across ServiceRegistrar::recheckRewriteCapability()
+     * and LocalDeliveryInstaller::install() so both use ONE idiom
+     * instead of divergent `resolveEndpoint() === ''` vs
+     * `$delivery->endpoint !== ''` checks.
+     *
+     * The config should be endpoint-resolved (via withEndpoint +
+     * OptionSettingsRepository::resolveEndpoint) before calling —
+     * a relative endpoint like '/imgproxy' resolves to a non-empty
+     * absolute URL, so isLocalBackendActive() correctly returns false.
+     * On a raw (unresolved) config, a non-empty relative endpoint is
+     * still non-empty → also correct.
+     */
+    public function isLocalBackendActive(): bool
+    {
+        return $this->endpoint === '';
+    }
 }

@@ -24,7 +24,11 @@ use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
+use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
+use OXPulse\Imager\Infrastructure\Local\LocalRewriteProbe;
+use OXPulse\Imager\Infrastructure\Local\HttpRequester;
+use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use PHPUnit\Framework\TestCase;
 
 class LocalBackendTest extends TestCase
@@ -347,5 +351,198 @@ class LocalBackendTest extends TestCase
         $backend = DeliveryBackendFactory::select($delivery, $signing);
 
         $this->assertInstanceOf(LocalBackend::class, $backend);
+    }
+
+    // --- #43 Phase 2: ?k= fallback URL emission ---
+
+    /**
+     * Build a stub CapabilityTester that returns a canned fallback
+     * decision. Records how many times fallbackNeeded() was called
+     * so we can assert the decision is resolved ONCE per instance.
+     */
+    private function stubTester(bool $fallback): CapabilityTester
+    {
+        $probe = new FallbackStubProbe('no');
+        return new class($probe, $fallback) extends CapabilityTester {
+            private int $callCount = 0;
+            public function __construct(
+                ?LocalRewriteProbe $probe,
+                private bool $fallback,
+            ) {
+                parent::__construct($probe);
+            }
+            public function fallbackNeeded(): bool
+            {
+                $this->callCount++;
+                return $this->fallback;
+            }
+            public function rewriteAvailable(): bool
+            {
+                $this->callCount++;
+                return !$this->fallback;
+            }
+            public function callCount(): int
+            {
+                return $this->callCount;
+            }
+        };
+    }
+
+    /**
+     * When fallbackNeeded() is true, generate() emits a
+     * ?k=<key> endpoint URL (no format extension — the endpoint
+     * recovers format from the signed payload).
+     */
+    public function test_generate_emits_kurl_when_fallback_needed(): void
+    {
+        $tester = $this->stubTester(fallback: true);
+        $backend = new LocalBackend(
+            SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX),
+            $tester,
+        );
+
+        $url = $backend->generate($this->request());
+
+        $this->assertStringContainsString('/wp-content/oxpulse-img.php?k=', $url);
+        $this->assertStringNotContainsString('/wp-content/cache/oxpulse/', $url);
+        // No format extension — the ?k= form drops it.
+        $this->assertStringNotContainsString('.webp', $url);
+    }
+
+    /**
+     * When fallbackNeeded() is false, generate() emits the clean
+     * cache URL as before.
+     */
+    public function test_generate_emits_clean_url_when_fallback_not_needed(): void
+    {
+        $tester = $this->stubTester(fallback: false);
+        $backend = new LocalBackend(
+            SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX),
+            $tester,
+        );
+
+        $url = $backend->generate($this->request());
+
+        $this->assertStringContainsString('/wp-content/cache/oxpulse/', $url);
+        $this->assertStringEndsWith('.webp', $url);
+        $this->assertStringNotContainsString('oxpulse-img.php', $url);
+    }
+
+    /**
+     * The same signed key appears in both URL forms — the ?k= form
+     * carries the same key as the clean URL's filename (minus the
+     * format extension).
+     */
+    public function test_same_signed_key_in_both_url_forms(): void
+    {
+        $signing = SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX);
+        $req = $this->request();
+
+        $cleanBackend = new LocalBackend($signing, $this->stubTester(false));
+        $fallbackBackend = new LocalBackend($signing, $this->stubTester(true));
+
+        $cleanUrl = $cleanBackend->generate($req);
+        $fallbackUrl = $fallbackBackend->generate($req);
+
+        // Extract the key from the clean URL: <key>.webp
+        $cleanBasename = basename(parse_url($cleanUrl, PHP_URL_PATH));
+        $key = substr($cleanBasename, 0, strrpos($cleanBasename, '.'));
+
+        // The fallback URL must contain the same key as ?k=<key>.
+        $this->assertStringContainsString('?k=' . $key, $fallbackUrl);
+    }
+
+    /**
+     * The opt-out filter 'oxpulse_fallback_rewrite_enabled' forces
+     * clean URLs even when the capability tester says fallback is
+     * needed (an operator who pasted the nginx snippet).
+     */
+    public function test_opt_out_filter_forces_clean_url_even_when_fallback_needed(): void
+    {
+        $tester = $this->stubTester(fallback: true);
+        $backend = new LocalBackend(
+            SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX),
+            $tester,
+        );
+
+        add_filter('oxpulse_fallback_rewrite_enabled', '__return_false');
+
+        $url = $backend->generate($this->request());
+
+        $this->assertStringContainsString('/wp-content/cache/oxpulse/', $url);
+        $this->assertStringEndsWith('.webp', $url);
+        $this->assertStringNotContainsString('oxpulse-img.php', $url);
+    }
+
+    /**
+     * The fallback decision is resolved ONCE per instance — not
+     * per generate() call. A page has many images; the tester must
+     * be consulted once, not N times.
+     */
+    public function test_fallback_decision_resolved_once_not_per_generate(): void
+    {
+        $tester = $this->stubTester(fallback: true);
+        $backend = new LocalBackend(
+            SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX),
+            $tester,
+        );
+
+        // Generate multiple URLs (simulating a page with many images).
+        $backend->generate($this->request(['width' => 100]));
+        $backend->generate($this->request(['width' => 200]));
+        $backend->generate($this->request(['width' => 300]));
+
+        // The tester must have been consulted at most once (memoized).
+        $this->assertLessThanOrEqual(
+            1,
+            $tester->callCount(),
+            'Fallback decision must be resolved once per instance, not per generate() call',
+        );
+    }
+
+    /**
+     * When no CapabilityTester is injected (null), LocalBackend
+     * defaults to clean URLs — the generated oxpulse-img.php endpoint
+     * constructs LocalBackend without a tester (it only verifies keys,
+     * never generates URLs).
+     */
+    public function test_null_capability_defaults_to_clean_url(): void
+    {
+        $backend = new LocalBackend(
+            SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX),
+        );
+
+        $url = $backend->generate($this->request());
+
+        $this->assertStringContainsString('/wp-content/cache/oxpulse/', $url);
+        $this->assertStringEndsWith('.webp', $url);
+    }
+}
+
+/**
+ * Stub LocalRewriteProbe for fallback tests — returns a canned result.
+ */
+class FallbackStubProbe extends LocalRewriteProbe
+{
+    public function __construct(string $result)
+    {
+        parent::__construct(
+            '/tmp/stub',
+            'https://stub.test/.probe',
+            new NullHttpRequesterForFallback(),
+        );
+    }
+
+    public function probe(): string
+    {
+        return 'no';
+    }
+}
+
+class NullHttpRequesterForFallback implements HttpRequester
+{
+    public function get(string $url): array
+    {
+        return ['status' => 0, 'body' => '', 'error' => 'null'];
     }
 }

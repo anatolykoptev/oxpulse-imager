@@ -22,12 +22,15 @@ declare(strict_types=1);
 namespace OXPulse\Imager\Tests\Unit;
 
 use OXPulse\Imager\Application\Delivery\DeliveryBackend;
+use OXPulse\Imager\Application\Delivery\DeliveryBackendFactory;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
+use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
+use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use PHPUnit\Framework\TestCase;
 
 class DeliveryBackendSeamTest extends TestCase
@@ -121,5 +124,51 @@ class DeliveryBackendSeamTest extends TestCase
         $this->assertFalse($result->rewritten);
         $this->assertSame('no_endpoint', $result->reason);
         $this->assertSame('https://example.com/wp-content/uploads/photo.jpg', $result->url);
+    }
+
+    // --- #43 Phase 2: factory injects CapabilityTester into LocalBackend ---
+
+    /**
+     * When the factory selects LocalBackend (endpoint empty + http
+     * source mode), the constructed LocalBackend must carry a
+     * CapabilityTester so generate() can emit ?k= fallback URLs.
+     */
+    public function test_factory_injects_capability_tester_into_local_backend(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: '',
+            allowedSources: [self::ALLOWED],
+            sourceMode: 'http',
+        );
+        $signing = SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX);
+
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+
+        $this->assertInstanceOf(LocalBackend::class, $backend);
+        $this->assertTrue(
+            $backend->hasCapabilityTester(),
+            'Factory-constructed LocalBackend must carry a CapabilityTester',
+        );
+    }
+
+    /**
+     * The imgproxy selection path is byte-identical — the factory
+     * returns an ImgproxyBackend (not LocalBackend) when an endpoint
+     * is configured. No CapabilityTester is involved.
+     */
+    public function test_factory_imgproxy_path_unchanged(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: self::ENDPOINT,
+            allowedSources: [self::ALLOWED],
+        );
+        $signing = SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX);
+
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+
+        $this->assertInstanceOf(ImgproxyBackend::class, $backend);
+        $this->assertNotInstanceOf(LocalBackend::class, $backend);
     }
 }

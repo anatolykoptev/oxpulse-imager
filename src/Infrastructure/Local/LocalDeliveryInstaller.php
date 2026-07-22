@@ -52,7 +52,9 @@ final class LocalDeliveryInstaller
         // imgproxy is configured, it manages its own cache — the local
         // endpoint + .htaccess must not be generated (and any stale ones
         // from a previous LocalBackend config should be removed).
-        if ($delivery->endpoint !== '') {
+        // #43 Phase 2 fold-in: use the shared isLocalBackendActive()
+        // predicate (same idiom as ServiceRegistrar::recheckRewriteCapability).
+        if (!$delivery->isLocalBackendActive()) {
             $this->uninstall();
             return;
         }

@@ -23,6 +23,7 @@ namespace OXPulse\Imager\Application\Delivery;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
+use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 
 final class DeliveryBackendFactory
@@ -66,6 +67,10 @@ final class DeliveryBackendFactory
             return null;
         }
 
-        return new LocalBackend($signing);
+        // #43 Phase 2: inject a CapabilityTester so LocalBackend can
+        // emit ?k= fallback URLs when rewrite is unavailable. The
+        // tester reads the cached capability option (front-end-safe,
+        // zero blocking I/O — see CapabilityTester::rewriteAvailable()).
+        return new LocalBackend($signing, new CapabilityTester());
     }
 }

@@ -27,7 +27,6 @@ use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
-use OXPulse\Imager\Infrastructure\Local\FallbackRewriter;
 use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminBarDiagnostics;
 use OXPulse\Imager\Integration\WordPress\Admin\DiagnosticsRestController;
@@ -72,15 +71,6 @@ final class ServiceRegistrar
      * original URL).
      */
     private static ?UrlRewriter $rewriter = null;
-
-    /**
-     * #43 Phase 1 review: test seam — counts how many times
-     * recheckRewriteCapability() actually invoked the probe (endpoint
-     * empty + recheck called). Tests reset it in setUp and assert on it
-     * to verify the write-time trigger wiring (activation / settings-save
-     * / version-gated re-probe) without a real HTTP round-trip.
-     */
-    public static int $recheckCallCount = 0;
 
     public static function register(Plugin $plugin): void
     {
@@ -272,41 +262,16 @@ final class ServiceRegistrar
             $rankMath->register();
         }
 
-        // Dispatch 3: LocalBackend fallback rewriter. When LocalBackend
-        // is active (no imgproxy endpoint) AND the capability test says
-        // .htaccess rewrite is unavailable (nginx, AllowOverride None,
-        // mod_rewrite missing), register the FallbackRewriter
-        // output-buffer so cache URLs emitted by LocalBackend are
-        // rewritten to oxpulse-img.php?k=<key> in the HTML output —
-        // serving works without any server-side rewrite rules. When
-        // ImgproxyBackend is active, the fallback is not registered
-        // (imgproxy URLs don't hit the cache path).
-        if ($delivery->endpoint === '') {
-            $tester = new CapabilityTester();
-            if ($tester->fallbackNeeded()) {
-                $fallback = new FallbackRewriter(
-                    homeUrl: rtrim((string) home_url(), '/'),
-                    endpointPath: '/wp-content/oxpulse-img.php',
-                );
-                self::registerFallbackBuffer($fallback);
-            }
-        }
-    }
-
-    /**
-     * Register the FallbackRewriter as an output-buffer handler.
-     *
-     * Starts the buffer at template_redirect (frontend only) and rewrites
-     * the buffer at shutdown. Kept as a separate method so the wiring is
-     * testable without a full WP environment.
-     */
-    private static function registerFallbackBuffer(FallbackRewriter $rewriter): void
-    {
-        add_action('template_redirect', static function () use ($rewriter): void {
-            ob_start(static function (string $buffer) use ($rewriter): string {
-                return $rewriter->rewrite($buffer);
-            });
-        });
+        // #43 Phase 2: the auto-register-FallbackRewriter-on-fallbackNeeded
+        // block is REMOVED. After Phase 2, LocalBackend emits ?k= URLs
+        // DIRECTLY through the collision-safe wp_content_img_tag filter
+        // (and the other 5 filters above), so the post-hoc output-buffer
+        // rewrite of clean URLs is no longer needed for the content path.
+        // BufferRewriter (gated on bufferRewritingEnabled, default OFF)
+        // remains as the explicit opt-in for THEME-HARDCODED <img> tags
+        // (Foxiz) — its original purpose. FallbackRewriter itself is not
+        // removed (it may be re-wired in a future phase for defense-in-
+        // depth), but the auto-on-fallbackNeeded registration is gone.
     }
 
     /**
@@ -450,9 +415,10 @@ final class ServiceRegistrar
             // Only wire invalidation when LocalBackend is active (no
             // imgproxy endpoint). When imgproxy is configured, it
             // manages its own cache — the local cache dir is not used.
+            // #43 Phase 2 fold-in: shared isLocalBackendActive() predicate.
             $repository = new OptionSettingsRepository();
             $delivery = $repository->loadDeliveryConfig();
-            if ($delivery->endpoint !== '') {
+            if (!$delivery->isLocalBackendActive()) {
                 return;
             }
 
@@ -562,16 +528,21 @@ final class ServiceRegistrar
     {
         $repository = new OptionSettingsRepository();
         $delivery = $repository->loadDeliveryConfig();
-        $endpoint = OptionSettingsRepository::resolveEndpoint($delivery->endpoint);
 
         // Only probe when LocalBackend is active (no imgproxy endpoint).
-        if ($endpoint !== '') {
+        // Fold-in 2: use the shared isLocalBackendActive() predicate
+        // (same idiom as LocalDeliveryInstaller::install()).
+        if (!$delivery->isLocalBackendActive()) {
             return;
         }
 
         $tester = $tester ?? new CapabilityTester();
         $tester->recheck();
-        self::$recheckCallCount++;
+        // #43 Phase 2 fold-in: marker action replaces the removed
+        // $recheckCallCount test counter. Tests assert via
+        // did_action('oxpulse_recheck_rewrite_capability') — no
+        // prod-code test state.
+        do_action('oxpulse_recheck_rewrite_capability');
     }
 
     /**

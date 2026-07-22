@@ -54,12 +54,30 @@ use OXPulse\Imager\Infrastructure\Imgproxy\HmacSigner;
 final class LocalBackend implements DeliveryBackend
 {
     private const CACHE_PATH = '/wp-content/cache/oxpulse/';
+    private const ENDPOINT_PATH = '/wp-content/oxpulse-img.php';
 
     private HmacSigner $signer;
+    private ?CapabilityTester $capability;
 
-    public function __construct(SigningConfig $signing)
+    /**
+     * Memoized fallback decision — resolved ONCE per instance, not per
+     * generate() call. A page has many images; the capability tester
+     * must be consulted once. Null = not yet resolved.
+     */
+    private ?bool $fallback = null;
+
+    /**
+     * @param SigningConfig $signing
+     * @param CapabilityTester|null $capability #43 Phase 2: inject for
+     *   fallback URL emission. Null (default) = no fallback decision
+     *   available → clean cache URLs (used by the generated
+     *   oxpulse-img.php endpoint, which only verifies keys + serves
+     *   files, never generates URLs — it has no WP option access).
+     */
+    public function __construct(SigningConfig $signing, ?CapabilityTester $capability = null)
     {
         $this->signer = new HmacSigner($signing);
+        $this->capability = $capability;
     }
 
     public function available(): bool
@@ -70,13 +88,58 @@ final class LocalBackend implements DeliveryBackend
         return true;
     }
 
+    /**
+     * #43 Phase 2: whether this instance carries a CapabilityTester.
+     * Used by tests to verify the factory injects the tester. The
+     * generated oxpulse-img.php endpoint constructs LocalBackend
+     * WITHOUT a tester (it only verifies keys, never generates URLs).
+     */
+    public function hasCapabilityTester(): bool
+    {
+        return $this->capability !== null;
+    }
+
     public function generate(TransformRequest $request, ?string $filename = null): string
     {
         $fmt = $this->resolveFormat($request->format);
         $key = $this->buildKey($request, $fmt);
         $hash = self::sourceHash($request->sourceUrl);
 
+        // #43 Phase 2: emit ?k= URLs when the host can't serve clean
+        // .webp URLs (nginx, AllowOverride None, mod_rewrite missing).
+        // The decision is resolved ONCE per instance (memoized) — not
+        // per generate() call. An opt-out filter lets an operator who
+        // pasted the nginx snippet force clean URLs even when the
+        // capability probe said fallback is needed.
+        if ($this->shouldFallback()) {
+            return home_url(self::ENDPOINT_PATH . '?k=' . $key);
+        }
+
         return home_url(self::CACHE_PATH . $hash . '/' . $key . '.' . $fmt);
+    }
+
+    /**
+     * Resolve the fallback decision ONCE per instance (memoized).
+     *
+     * The decision is: apply_filters('oxpulse_fallback_rewrite_enabled',
+     * $capability->fallbackNeeded()). An operator who pasted the nginx
+     * snippet can add_filter('oxpulse_fallback_rewrite_enabled',
+     * '__return_false') to force clean URLs. When no CapabilityTester
+     * is injected (the generated endpoint case), defaults to false
+     * (clean URLs — the endpoint never generates URLs anyway).
+     */
+    private function shouldFallback(): bool
+    {
+        if ($this->fallback !== null) {
+            return $this->fallback;
+        }
+
+        $capabilityFallback = $this->capability !== null && $this->capability->fallbackNeeded();
+        $this->fallback = (bool) apply_filters(
+            'oxpulse_fallback_rewrite_enabled',
+            $capabilityFallback,
+        );
+        return $this->fallback;
     }
 
     /**
