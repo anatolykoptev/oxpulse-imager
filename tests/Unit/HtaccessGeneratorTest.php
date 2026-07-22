@@ -61,7 +61,12 @@ class HtaccessGeneratorTest extends TestCase
             endpointRelPath: 'oxpulse-img.php',
         );
 
-        $this->assertStringContainsString('php_flag engine off', $rules);
+        // php_flag is mod_php-only; the real deny is FilesMatch + type
+        // stripping (effective under php-fpm too).
+        $this->assertStringContainsString('<FilesMatch', $rules);
+        $this->assertStringContainsString('Require all denied', $rules);
+        $this->assertStringContainsString('RemoveType .php', $rules);
+        $this->assertStringContainsString('AddType image/webp .webp', $rules);
     }
 
     /**
@@ -123,10 +128,14 @@ class HtaccessGeneratorTest extends TestCase
     }
 
     /**
-     * The derivation follows a custom WP_CONTENT_URL / CDN cache base,
-     * not a hardcoded '/wp-content/'.
+     * The endpoint URL-path is derived RELATIVE to the given cacheBaseUrl
+     * (a pure generator property — two levels up), not a hardcoded
+     * '/wp-content/'. NOTE: the sole runtime caller always passes a
+     * home_url() . '/wp-content/cache/oxpulse' base, so end-to-end
+     * custom-WP_CONTENT_DIR support is a separate, out-of-scope concern;
+     * this only locks the generator's relative-derivation logic.
      */
-    public function test_endpoint_path_derived_for_custom_content_base(): void
+    public function test_endpoint_path_derived_relative_to_cache_base(): void
     {
         $gen = new HtaccessGenerator();
         $rules = $gen->generate(
