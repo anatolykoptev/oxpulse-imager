@@ -36,7 +36,7 @@ final class LocalDeliveryInstaller
         private string $uploadsBaseurl,
         private string $cacheDir,
         private string $cacheBaseUrl,
-        private string $autoloaderPath,
+        private string $srcDir,
     ) {}
 
     /**
@@ -73,7 +73,7 @@ final class LocalDeliveryInstaller
             uploadsBasedir: $this->uploadsBasedir,
             uploadsBaseurl: $this->uploadsBaseurl,
             cacheDir: $this->cacheDir,
-            autoloaderPath: $this->autoloaderPath,
+            srcDir: $this->srcDir,
         );
 
         // Cache dir .htaccess (miss → endpoint routing).
