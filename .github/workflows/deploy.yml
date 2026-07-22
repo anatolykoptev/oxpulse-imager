@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   deploy:
@@ -113,9 +113,15 @@ jobs:
           fi
           echo "✓ PHP constant match: $CONST_VERSION"
 
-      # For the FIRST deploy, set dry-run: true to verify SVN access
-      # without committing. Remove dry-run after the first successful run.
-      - name: Deploy to SVN
+      # wordpress.org SVN publish — SKIPPED until the plugin is approved on
+      # wordpress.org and the SVN_USERNAME/SVN_PASSWORD secrets are set. Until
+      # then this job still runs every gate (tests, plugin-check, version
+      # match), builds the distribution ZIP, and attaches it to the GitHub
+      # Release. To go live on wordpress.org: get the plugin approved, add the
+      # two secrets — this step then runs automatically. Set dry-run: true for
+      # the very first SVN run to verify access without committing.
+      - name: Deploy to SVN (wordpress.org)
+        if: ${{ secrets.SVN_USERNAME != '' }}
         uses: 10up/action-wordpress-plugin-deploy@stable
         with:
           generate-zip: true
@@ -125,7 +131,24 @@ jobs:
           SLUG: oxpulse-imager
           VERSION: ${{ steps.version.outputs.VERSION }}
 
-      - name: Upload release asset
+      # When SVN is skipped, build the distribution ZIP ourselves via
+      # `git archive`, which honors .gitattributes export-ignore (the same file
+      # the 10up action uses). Unzips to an `oxpulse-imager/` folder.
+      - name: Build distribution ZIP
+        if: ${{ secrets.SVN_USERNAME == '' }}
+        run: git archive --format=zip --prefix=oxpulse-imager/ -o oxpulse-imager.zip HEAD
+
+      - name: Attach ZIP to the GitHub Release
+        run: |
+          for i in 1 2 3 4 5; do
+            gh release upload "${GITHUB_REF_NAME}" oxpulse-imager.zip --clobber && exit 0
+            echo "release ${GITHUB_REF_NAME} not ready yet — retry $i"; sleep 10
+          done
+          echo "::error::could not attach ZIP to release ${GITHUB_REF_NAME}"; exit 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: oxpulse-imager-${{ steps.version.outputs.VERSION }}
