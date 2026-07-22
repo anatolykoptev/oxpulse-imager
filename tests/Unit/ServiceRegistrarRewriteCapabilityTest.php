@@ -250,6 +250,88 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
         );
     }
 
+    // ─── cache purge on delivery-relevant option change (#43 phase 4) ────
+
+    /**
+     * Saving a delivery-relevant option (OPTION_ENDPOINT) must trigger
+     * CachePurger::purge(), verified via the generic escape-hatch action.
+     */
+    public function test_settings_save_purges_cache_on_endpoint_change(): void
+    {
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, '');
+
+        $callback = $this->findUpdatedOptionCallback();
+        $this->assertNotNull($callback);
+        $callback(OptionSettingsRepository::OPTION_ENDPOINT);
+
+        $this->assertGreaterThan(
+            0,
+            did_action('oxpulse_purge_page_cache'),
+            'Saving OPTION_ENDPOINT must trigger cache purge',
+        );
+    }
+
+    /**
+     * Saving OPTION_KEY (delivery-relevant) must also trigger purge.
+     */
+    public function test_settings_save_purges_cache_on_key_change(): void
+    {
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+
+        $callback = $this->findUpdatedOptionCallback();
+        $this->assertNotNull($callback);
+        $callback(OptionSettingsRepository::OPTION_KEY);
+
+        $this->assertGreaterThan(
+            0,
+            did_action('oxpulse_purge_page_cache'),
+            'Saving OPTION_KEY must trigger cache purge',
+        );
+    }
+
+    /**
+     * Saving OPTION_REWRITE_CAPABILITY (delivery-relevant) must trigger
+     * purge — the URL format changes when capability flips.
+     */
+    public function test_settings_save_purges_cache_on_capability_change(): void
+    {
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+
+        $callback = $this->findUpdatedOptionCallback();
+        $this->assertNotNull($callback);
+        $callback(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY);
+
+        $this->assertGreaterThan(
+            0,
+            did_action('oxpulse_purge_page_cache'),
+            'Saving OPTION_REWRITE_CAPABILITY must trigger cache purge',
+        );
+    }
+
+    /**
+     * Saving an unrelated option must NOT trigger purge — the purge is
+     * gated to delivery-relevant option keys only.
+     */
+    public function test_settings_save_does_not_purge_on_unrelated_option(): void
+    {
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+
+        $callback = $this->findUpdatedOptionCallback();
+        $this->assertNotNull($callback);
+        $callback(OptionSettingsRepository::OPTION_OUTPUT_FORMAT);
+
+        $this->assertSame(
+            0,
+            did_action('oxpulse_purge_page_cache'),
+            'Saving an unrelated option must NOT trigger cache purge',
+        );
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────
 
     /**

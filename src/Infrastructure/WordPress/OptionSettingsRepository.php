@@ -65,6 +65,22 @@ final class OptionSettingsRepository
     public const OPTION_REWRITE_CAPABILITY_CHECKED_AT = 'oxpulse_imager_rewrite_capability_checked_at';
     public const OPTION_PROBE_VERSION = 'oxpulse_imager_probe_version';
 
+    /**
+     * Delivery-relevant option keys whose change requires re-installing
+     * local delivery. Single source of truth for the settings-save
+     * gating in ServiceRegistrar (avoids two hand-maintained arrays
+     * drifting apart). Cache-purge additionally watches
+     * OPTION_REWRITE_CAPABILITY (its flip changes the emitted URL form).
+     *
+     * @var string[]
+     */
+    public const DELIVERY_OPTION_KEYS = [
+        self::OPTION_ENDPOINT,
+        self::OPTION_KEY,
+        self::OPTION_SALT,
+        self::OPTION_ENABLED,
+    ];
+
     public function loadDeliveryConfig(): DeliveryConfig
     {
         return new DeliveryConfig(
