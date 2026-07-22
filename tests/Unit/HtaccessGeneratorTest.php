@@ -63,4 +63,77 @@ class HtaccessGeneratorTest extends TestCase
 
         $this->assertStringContainsString('php_flag engine off', $rules);
     }
+
+    /**
+     * Regression for #40. The .htaccess is written INTO the cache dir
+     * (a per-directory context), where mod_rewrite matches the path
+     * RELATIVE to that dir. The old rule used a docroot-relative
+     * pattern (`^wp-content/cache/oxpulse/(.+)$`) that could never match
+     * there → every cache-miss 404'd on real Apache. The rule must match
+     * the dir-relative trailing "<key>.webp" segment instead, and MUST
+     * NOT carry the docroot-relative prefix.
+     */
+    public function test_rewrite_rule_is_dir_relative_not_docroot(): void
+    {
+        $gen = new HtaccessGenerator();
+        $rules = $gen->generate(
+            cacheBaseUrl: 'https://example.com/wp-content/cache/oxpulse',
+            endpointRelPath: 'oxpulse-img.php',
+        );
+
+        // The broken docroot-relative pattern must be gone.
+        $this->assertStringNotContainsString('^wp-content/cache/oxpulse', $rules);
+        // The broken one-level-up relative target must be gone.
+        $this->assertStringNotContainsString('../oxpulse-img.php', $rules);
+        // The rule matches the dir-relative trailing "<key>.webp".
+        $this->assertStringContainsString('([^/]+)\.webp$', $rules);
+    }
+
+    /**
+     * Regression for #40. The rewrite must forward the signed key as
+     * ?k=<key> to an ABSOLUTE endpoint URL-path (the endpoint re-derives
+     * sourceHash + format from the payload, so the query form suffices
+     * and avoids PATH_INFO/AcceptPathInfo portability differences).
+     */
+    public function test_rewrite_forwards_key_as_query_to_absolute_endpoint(): void
+    {
+        $gen = new HtaccessGenerator();
+        $rules = $gen->generate(
+            cacheBaseUrl: 'https://example.com/wp-content/cache/oxpulse',
+            endpointRelPath: 'oxpulse-img.php',
+        );
+
+        $this->assertStringContainsString('/wp-content/oxpulse-img.php?k=$1', $rules);
+    }
+
+    /**
+     * The endpoint URL-path is derived from cacheBaseUrl (two levels up:
+     * .../wp-content/cache/oxpulse → .../wp-content/oxpulse-img.php), so
+     * it is correct for a WordPress install in a subdirectory.
+     */
+    public function test_endpoint_path_derived_for_subdirectory_install(): void
+    {
+        $gen = new HtaccessGenerator();
+        $rules = $gen->generate(
+            cacheBaseUrl: 'https://example.com/blog/wp-content/cache/oxpulse',
+            endpointRelPath: 'oxpulse-img.php',
+        );
+
+        $this->assertStringContainsString('/blog/wp-content/oxpulse-img.php?k=$1', $rules);
+    }
+
+    /**
+     * The derivation follows a custom WP_CONTENT_URL / CDN cache base,
+     * not a hardcoded '/wp-content/'.
+     */
+    public function test_endpoint_path_derived_for_custom_content_base(): void
+    {
+        $gen = new HtaccessGenerator();
+        $rules = $gen->generate(
+            cacheBaseUrl: 'https://cdn.example.com/assets/cache/oxpulse',
+            endpointRelPath: 'oxpulse-img.php',
+        );
+
+        $this->assertStringContainsString('/assets/oxpulse-img.php?k=$1', $rules);
+    }
 }
