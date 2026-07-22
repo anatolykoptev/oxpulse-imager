@@ -74,6 +74,49 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             ];
         }
     }
+    if (!function_exists('apply_filters')) {
+        function apply_filters($tag, $value, ...$args) {
+            $filters = $GLOBALS['__oxpulse_filters'] ?? [];
+            $callbacks = [];
+            foreach ($filters as $entry) {
+                if ($entry['hook'] === $tag) {
+                    $callbacks[] = $entry;
+                }
+            }
+            usort($callbacks, static fn($a, $b) => $a['priority'] <=> $b['priority']);
+            foreach ($callbacks as $entry) {
+                $value = call_user_func($entry['callback'], $value, ...$args);
+            }
+            return $value;
+        }
+    }
+    if (!function_exists('do_action')) {
+        function do_action($tag, ...$args) {
+            $GLOBALS['__oxpulse_did_action'][$tag] = ($GLOBALS['__oxpulse_did_action'][$tag] ?? 0) + 1;
+            $actions = $GLOBALS['__oxpulse_actions'] ?? [];
+            $callbacks = [];
+            foreach ($actions as $entry) {
+                if ($entry['hook'] === $tag) {
+                    $callbacks[] = $entry;
+                }
+            }
+            usort($callbacks, static fn($a, $b) => $a['priority'] <=> $b['priority']);
+            foreach ($callbacks as $entry) {
+                call_user_func($entry['callback'], ...$args);
+            }
+        }
+    }
+    if (!function_exists('did_action')) {
+        function did_action($tag) {
+            return $GLOBALS['__oxpulse_did_action'][$tag] ?? 0;
+        }
+    }
+    if (!function_exists('__return_false')) {
+        function __return_false() { return false; }
+    }
+    if (!function_exists('__return_true')) {
+        function __return_true() { return true; }
+    }
     if (!function_exists('add_option')) {
         function add_option($option, $value = '', $deprecated = '', $autoload = true) {
             $GLOBALS['__oxpulse_options'][$option] = $value;

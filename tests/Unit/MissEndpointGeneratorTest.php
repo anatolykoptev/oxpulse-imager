@@ -372,4 +372,35 @@ class MissEndpointGeneratorTest extends TestCase
         $out = shell_exec('php ' . escapeshellarg($scratch) . ' 2>&1');
         $this->assertSame('LOADED', $out, 'Baked src-loader must load a plugin class with NO vendor autoloader available.');
     }
+
+    // --- #43 Phase 2: generated endpoint must NOT need a CapabilityTester ---
+
+    /**
+     * The generated oxpulse-img.php constructs LocalBackend for
+     * verify() only (never generate()). After Phase 2, LocalBackend
+     * gains an OPTIONAL CapabilityTester constructor param. The
+     * generated endpoint must still construct LocalBackend WITHOUT
+     * a CapabilityTester — it has no WP option access, no need for
+     * fallback decisions, and only verifies keys + serves files.
+     */
+    public function test_generated_endpoint_constructs_local_backend_without_capability_tester(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: '/uploads',
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            srcDir: '/plugin/src',
+        );
+        $content = file_get_contents($path);
+
+        // The endpoint constructs LocalBackend with only the signing
+        // config — no CapabilityTester argument.
+        $this->assertStringContainsString('new LocalBackend(', $content);
+        $this->assertStringNotContainsString('CapabilityTester', $content);
+        $this->assertStringNotContainsString('capability', strtolower($content));
+    }
 }

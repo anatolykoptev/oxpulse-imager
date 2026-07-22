@@ -27,16 +27,18 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
     {
         $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_actions'] = [];
+        $GLOBALS['__oxpulse_filters'] = [];
+        $GLOBALS['__oxpulse_did_action'] = [];
         $GLOBALS['__oxpulse_is_admin'] = false;
-        ServiceRegistrar::$recheckCallCount = 0;
     }
 
     protected function tearDown(): void
     {
         unset($GLOBALS['__oxpulse_options']);
         unset($GLOBALS['__oxpulse_actions']);
+        unset($GLOBALS['__oxpulse_filters']);
+        unset($GLOBALS['__oxpulse_did_action']);
         unset($GLOBALS['__oxpulse_is_admin']);
-        ServiceRegistrar::$recheckCallCount = 0;
     }
 
     // ─── recheckRewriteCapability() direct behavior ─────────────────────
@@ -54,7 +56,11 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
         ServiceRegistrar::recheckRewriteCapability($tester);
 
         $this->assertTrue($probe->wasCalled, 'Probe must fire when endpoint is empty');
-        $this->assertSame(1, ServiceRegistrar::$recheckCallCount);
+        $this->assertGreaterThan(
+            0,
+            did_action('oxpulse_recheck_rewrite_capability'),
+            'recheckRewriteCapability must fire the marker action when endpoint is empty',
+        );
         $this->assertSame(
             'yes',
             get_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY),
@@ -75,7 +81,11 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
         ServiceRegistrar::recheckRewriteCapability($tester);
 
         $this->assertFalse($probe->wasCalled, 'Probe must NOT fire when endpoint is configured');
-        $this->assertSame(0, ServiceRegistrar::$recheckCallCount);
+        $this->assertSame(
+            0,
+            did_action('oxpulse_recheck_rewrite_capability'),
+            'recheck must NOT fire the marker action when endpoint is configured',
+        );
     }
 
     /**
@@ -91,7 +101,7 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
         ServiceRegistrar::recheckRewriteCapability($tester);
 
         $this->assertFalse($probe->wasCalled);
-        $this->assertSame(0, ServiceRegistrar::$recheckCallCount);
+        $this->assertSame(0, did_action('oxpulse_recheck_rewrite_capability'));
     }
 
     // ─── activation hook triggers recheck when LocalBackend active ───────
@@ -110,7 +120,7 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
 
         $this->assertGreaterThan(
             0,
-            ServiceRegistrar::$recheckCallCount,
+            did_action('oxpulse_recheck_rewrite_capability'),
             'Activation with LocalBackend active (endpoint empty) must trigger recheck',
         );
     }
@@ -127,7 +137,7 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
 
         $this->assertSame(
             0,
-            ServiceRegistrar::$recheckCallCount,
+            did_action('oxpulse_recheck_rewrite_capability'),
             'Activation with an imgproxy endpoint must NOT trigger recheck',
         );
     }
@@ -157,7 +167,7 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
 
         $this->assertGreaterThan(
             0,
-            ServiceRegistrar::$recheckCallCount,
+            did_action('oxpulse_recheck_rewrite_capability'),
             'Settings-save (OPTION_ENDPOINT change) with LocalBackend active must trigger recheck',
         );
     }
@@ -178,7 +188,7 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
 
         $this->assertSame(
             0,
-            ServiceRegistrar::$recheckCallCount,
+            did_action('oxpulse_recheck_rewrite_capability'),
             'A non-endpoint option change must NOT trigger recheck',
         );
     }
@@ -198,7 +208,7 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
 
         $this->invokePrivate('maybeReprobeOnVersionUpdate');
 
-        $this->assertGreaterThan(0, ServiceRegistrar::$recheckCallCount);
+        $this->assertGreaterThan(0, did_action('oxpulse_recheck_rewrite_capability'));
         $this->assertSame(
             OXPULSE_IMAGER_VERSION,
             get_option(OptionSettingsRepository::OPTION_PROBE_VERSION),
@@ -218,7 +228,7 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
 
         $this->invokePrivate('maybeReprobeOnVersionUpdate');
 
-        $this->assertSame(0, ServiceRegistrar::$recheckCallCount);
+        $this->assertSame(0, did_action('oxpulse_recheck_rewrite_capability'));
     }
 
     /**
@@ -235,7 +245,7 @@ class ServiceRegistrarRewriteCapabilityTest extends TestCase
 
         $this->assertSame(
             0,
-            ServiceRegistrar::$recheckCallCount,
+            did_action('oxpulse_recheck_rewrite_capability'),
             'Version-gated re-probe must NOT fire on the front-end',
         );
     }

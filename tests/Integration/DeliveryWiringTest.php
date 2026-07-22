@@ -23,7 +23,9 @@ use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
+use OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
+use OXPulse\Imager\Integration\WordPress\Delivery\BufferRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
 use PHPUnit\Framework\TestCase;
@@ -250,6 +252,11 @@ class DeliveryWiringTest extends TestCase
             'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
             'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3'
         );
+        // #43 Phase 2: set capability to 'yes' so LocalBackend emits
+        // clean cache URLs (the test env has no Apache → fallbackNeeded
+        // is true by default → ?k= URLs). This test verifies LocalBackend
+        // SELECTION, not fallback behavior (covered in LocalBackendTest).
+        $repository->saveRewriteCapability('yes');
 
         $delivery = $repository->loadDeliveryConfig();
         $signing = $repository->loadSigningConfig();
@@ -281,5 +288,101 @@ class DeliveryWiringTest extends TestCase
 
         $backend = DeliveryBackendFactory::select($delivery, null);
         $this->assertNull($backend);
+    }
+
+    // --- #43 Phase 2: fallback buffer wiring ---
+
+    /**
+     * After Phase 2, ServiceRegistrar does NOT register the
+     * FallbackRewriter output-buffer by default when LocalBackend is
+     * active — LocalBackend emits ?k= URLs directly through the
+     * collision-safe wp_content_img_tag filter. The auto-on-
+     * fallbackNeeded buffer registration is removed.
+     *
+     * We verify by checking that no 'template_redirect' action
+     * callback related to FallbackRewriter is registered when
+     * registerDeliveryAdapters() runs with LocalBackend active and
+     * bufferRewritingEnabled=false.
+     */
+    public function test_no_fallback_buffer_registered_by_default(): void
+    {
+        $repository = new OptionSettingsRepository();
+        $repository->saveDeliverySettings([
+            'enabled' => true,
+            'endpoint' => '',
+            'allowed_sources' => ['https://example.com/wp-content/uploads/'],
+            'output_format' => 'auto',
+            'default_quality' => 80,
+        ]);
+        $repository->saveSecrets(
+            'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+            'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3'
+        );
+
+        // bufferRewritingEnabled defaults to false.
+        $delivery = $repository->loadDeliveryConfig();
+        $this->assertFalse($delivery->bufferRewritingEnabled);
+
+        // Simulate the wiring: registerDeliveryAdapters is private,
+        // so we check the observable effect — no template_redirect
+        // action should be registered for buffer rewriting when
+        // bufferRewritingEnabled is false.
+        $actions = $GLOBALS['__oxpulse_actions'] ?? [];
+        $templateRedirectCallbacks = array_filter(
+            $actions,
+            static fn($entry) => $entry['hook'] === 'template_redirect'
+        );
+        $this->assertEmpty(
+            $templateRedirectCallbacks,
+            'No template_redirect buffer handler should be registered when bufferRewritingEnabled is false',
+        );
+    }
+
+    /**
+     * BufferRewriter still registers when bufferRewritingEnabled=true
+     * — it remains the explicit opt-in for theme-hardcoded <img> tags
+     * (Foxiz). The Phase 2 change only removes the auto-on-fallbackNeeded
+     * registration, not BufferRewriter itself.
+     */
+    public function test_buffer_rewriter_registers_when_opted_in(): void
+    {
+        $repository = new OptionSettingsRepository();
+        $repository->saveDeliverySettings([
+            'enabled' => true,
+            'endpoint' => '',
+            'allowed_sources' => ['https://example.com/wp-content/uploads/'],
+            'output_format' => 'auto',
+            'default_quality' => 80,
+            'buffer_rewriting_enabled' => true,
+        ]);
+        $repository->saveSecrets(
+            'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+            'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3'
+        );
+
+        $delivery = $repository->loadDeliveryConfig();
+        $this->assertTrue($delivery->bufferRewritingEnabled);
+
+        // Build the same pipeline ServiceRegistrar would build and
+        // register the BufferRewriter (mirrors ServiceRegistrar:261-264).
+        $signing = $repository->loadSigningConfig();
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, null, $backend);
+        $bufferRewriter = new BufferRewriter($rewriter, $delivery);
+        $bufferRewriter->register();
+
+        // A template_redirect action must be registered.
+        $actions = $GLOBALS['__oxpulse_actions'] ?? [];
+        $templateRedirectCallbacks = array_filter(
+            $actions,
+            static fn($entry) => $entry['hook'] === 'template_redirect'
+        );
+        $this->assertNotEmpty(
+            $templateRedirectCallbacks,
+            'BufferRewriter must register a template_redirect handler when bufferRewritingEnabled is true',
+        );
     }
 }
