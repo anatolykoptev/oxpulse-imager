@@ -13,8 +13,8 @@
  *
  * Modeled on WebP-Express "Realizer" Variant-1 + Converter for Media
  * passthru patterns. The capability-test (CapabilityTester) determines
- * whether these rules can be trusted at runtime; if not, the
- * FallbackRewriter output-buffer path is used instead.
+ * whether these rules can be trusted at runtime; if not, LocalBackend
+ * emits ?k= endpoint URLs directly (no .htaccess rewrite needed).
  *
  * @package OXPulse\Imager\Infrastructure\Local
  * @copyright Copyright (c) 2026 Anatoly Koptev

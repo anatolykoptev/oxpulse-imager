@@ -254,6 +254,45 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return !empty($GLOBALS['__oxpulse_is_admin']);
         }
     }
+    // #43 Phase 3: guard-battery stubs. Each reads a $GLOBALS toggle
+    // so tests can flip them on/off to exercise every skip branch of
+    // BufferRewriter::register()/rewrite(). Defaults match production
+    // (all false → buffer allowed to start).
+    if (!function_exists('wp_doing_ajax')) {
+        function wp_doing_ajax() {
+            return !empty($GLOBALS['__oxpulse_doing_ajax']);
+        }
+    }
+    if (!function_exists('wp_doing_cron')) {
+        function wp_doing_cron() {
+            return !empty($GLOBALS['__oxpulse_doing_cron']);
+        }
+    }
+    if (!function_exists('is_feed')) {
+        function is_feed() {
+            return !empty($GLOBALS['__oxpulse_is_feed']);
+        }
+    }
+    if (!function_exists('is_embed')) {
+        function is_embed() {
+            return !empty($GLOBALS['__oxpulse_is_embed']);
+        }
+    }
+    if (!function_exists('is_preview')) {
+        function is_preview() {
+            return !empty($GLOBALS['__oxpulse_is_preview']);
+        }
+    }
+    if (!function_exists('is_customize_preview')) {
+        function is_customize_preview() {
+            return !empty($GLOBALS['__oxpulse_is_customize_preview']);
+        }
+    }
+    if (!function_exists('is_amp_endpoint')) {
+        function is_amp_endpoint() {
+            return !empty($GLOBALS['__oxpulse_is_amp_endpoint']);
+        }
+    }
     if (!function_exists('current_user_can')) {
         function current_user_can($capability) {
             return !empty($GLOBALS['__oxpulse_current_user_can'][$capability])

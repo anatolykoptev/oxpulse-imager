@@ -46,7 +46,13 @@ final class DeliveryBackendFactory
             return null;
         }
 
-        if ($delivery->endpoint !== '') {
+        // #43 Phase 3: use the shared isLocalBackendActive() predicate
+        // (same idiom as ServiceRegistrar::recheckRewriteCapability and
+        // LocalDeliveryInstaller::install) instead of a raw endpoint
+        // emptiness check. The predicate is the single source of truth
+        // for "is LocalBackend the active backend?" — keeping all call
+        // sites aligned.
+        if (!$delivery->isLocalBackendActive()) {
             return new ImgproxyBackend($delivery, $signing);
         }
 

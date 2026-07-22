@@ -550,6 +550,72 @@ class MissEndpointHandlerTest extends TestCase
         $this->assertNull($response->body);
         $this->assertNull($response->filePath);
     }
+
+    // --- #43 Phase 3: endpoint-header lock (regression) ---
+    //
+    // Locks the three cache-header invariants for the ?k= endpoint in
+    // one place so a future refactor can't silently drop any of them:
+    //   1. Vary: Accept on BOTH webp and original responses (so caches
+    //      keep the two variants apart — without Vary, a CDN would
+    //      serve the first-fetched variant to all clients).
+    //   2. WebP response: Cache-Control: public, max-age=31536000,
+    //      immutable (the cache key is content-stable → safe to cache
+    //      for a year).
+    //   3. Original response: Cache-Control: public, max-age=3600 and
+    //      NOT immutable (the original is mutable — re-uploadable at
+    //      the same URL — so a long/immutable CDN cache would serve
+    //      stale images).
+
+    public function test_endpoint_header_lock_webp_response(): void
+    {
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'webp', 'image/webp');
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/webp', $response->contentType);
+        // Vary: Accept present.
+        $this->assertArrayHasKey('Vary', $response->headers);
+        $this->assertSame('Accept', $response->headers['Vary']);
+        // Cache-Control: public, max-age=31536000, immutable.
+        $this->assertArrayHasKey('Cache-Control', $response->headers);
+        $this->assertSame(
+            'public, max-age=31536000, immutable',
+            $response->headers['Cache-Control'],
+            'WebP response must be cached for 1 year with immutable.',
+        );
+    }
+
+    public function test_endpoint_header_lock_original_response(): void
+    {
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        // Non-webp Accept → serveOriginal path.
+        $response = $handler->handle($key, 'webp', 'text/html,application/xhtml+xml');
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/jpeg', $response->contentType);
+        // Vary: Accept present (same as webp — caches must vary on Accept).
+        $this->assertArrayHasKey('Vary', $response->headers);
+        $this->assertSame('Accept', $response->headers['Vary']);
+        // Cache-Control: public, max-age=3600, NO immutable.
+        $this->assertArrayHasKey('Cache-Control', $response->headers);
+        $cc = $response->headers['Cache-Control'];
+        $this->assertStringNotContainsString(
+            'immutable',
+            $cc,
+            'Original response must NOT be marked immutable (mutable source).',
+        );
+        $this->assertMatchesRegularExpression('/max-age=(\d+)/', $cc);
+        preg_match('/max-age=(\d+)/', $cc, $m);
+        $this->assertLessThanOrEqual(
+            3600,
+            (int) $m[1],
+            'Original response max-age must be <= 3600 (short cache for mutable source).',
+        );
+    }
 }
 
 /** Stub transformer that returns fixed bytes (bypasses ext checks). */

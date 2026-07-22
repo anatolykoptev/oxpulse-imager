@@ -293,14 +293,17 @@ class DeliveryWiringTest extends TestCase
     // --- #43 Phase 2: fallback buffer wiring ---
 
     /**
-     * After Phase 2, ServiceRegistrar does NOT register the
-     * FallbackRewriter output-buffer by default when LocalBackend is
+     * After Phase 2, ServiceRegistrar does NOT register an
+     * output-buffer fallback by default when LocalBackend is
      * active — LocalBackend emits ?k= URLs directly through the
      * collision-safe wp_content_img_tag filter. The auto-on-
      * fallbackNeeded buffer registration is removed.
      *
+     * #43 Phase 3: FallbackRewriter is removed entirely. The
+     * idempotency guard in UrlRewriter handles cache-URL detection.
+     *
      * We verify by checking that no 'template_redirect' action
-     * callback related to FallbackRewriter is registered when
+     * callback related to buffer rewriting is registered when
      * registerDeliveryAdapters() runs with LocalBackend active and
      * bufferRewritingEnabled=false.
      */

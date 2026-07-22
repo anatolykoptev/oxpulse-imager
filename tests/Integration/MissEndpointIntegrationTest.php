@@ -23,8 +23,9 @@
  *  4. Fail-safe: transformer returns null (smooth-gradient PNG where WebP
  *     is not smaller) → serves ORIGINAL with SHORT cache (max-age=3600,
  *     NO immutable — the #32 fix).
- *  5. Fallback round-trip: a FallbackRewriter-emitted ?k=<full-key> URL →
- *     handler verify() passes → same happy path.
+ *  5. ?k=<full-key> endpoint round-trip: the handler accepts a ?k= key
+ *     (full payload.sig with internal dot) → verify() passes → same
+ *     happy path.
  *
  * @package OXPulse\Imager
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -38,7 +39,6 @@ namespace OXPulse\Imager\Tests\Integration;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Infrastructure\Image\WebpTransformer;
-use OXPulse\Imager\Infrastructure\Local\FallbackRewriter;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use OXPulse\Imager\Infrastructure\Local\MissEndpointHandler;
 use OXPulse\Imager\Infrastructure\Local\PathGuard;
@@ -334,34 +334,27 @@ class MissEndpointIntegrationTest extends TestCase
         $this->assertFalse(file_exists($cacheFile), 'No WebP cache file must be written when transform returns null.');
     }
 
-    // --- 5. Fallback round-trip: ?k=<full-key> URL → verify passes ---
+    // --- 5. ?k=<full-key> endpoint round-trip → verify passes ---
+    //
+    // #43 Phase 3: FallbackRewriter is removed. The ?k= endpoint is now
+    // the ONLY LocalBackend delivery path (LocalBackend emits ?k= URLs
+    // directly). This test verifies the handler accepts a ?k= key (the
+    // full payload.sig key, with its internal dot) and produces the same
+    // happy-path result as a direct cache-path request.
 
-    public function test_fallback_rewriter_key_round_trips_through_handler(): void
+    public function test_endpoint_key_round_trips_through_handler(): void
     {
-        // Build the cache URL via LocalBackend (the normal path).
+        // Build the key via LocalBackend (the normal path).
         $key = $this->buildKey($this->jpegSourceUrl);
         $sourceHash = LocalBackend::sourceHash($this->jpegSourceUrl);
 
-        // Simulate FallbackRewriter: it takes a cache URL and emits
-        // /wp-content/oxpulse-img.php?k=<key>. The handler receives the
-        // key via ?k= and must verify it the same way.
-        $rewriter = new FallbackRewriter('https://example.test', '/wp-content/oxpulse-img.php');
-        $cacheUrl = 'https://example.test/wp-content/cache/oxpulse/' . $sourceHash . '/' . $key . '.webp';
-        $rewritten = $rewriter->rewrite('<img src="' . $cacheUrl . '" />');
+        // The key is the full payload.sig (with internal dot). The
+        // handler receives it via ?k= and must verify it.
+        $this->assertStringContainsString('.', $key, 'Key must contain the internal payload.sig dot.');
 
-        // Extract the ?k= value from the rewritten URL.
-        $this->assertStringContainsString('?k=', $rewritten);
-        preg_match('/\?k=([A-Za-z0-9_.-]+)/', $rewritten, $m);
-        $this->assertNotEmpty($m, 'FallbackRewriter must emit a ?k= query param.');
-        $fallbackKey = $m[1];
-
-        // The fallback key must be the FULL key (payload.sig), not
-        // truncated at the first dot.
-        $this->assertSame($key, $fallbackKey, 'FallbackRewriter must preserve the full key (payload.sig).');
-
-        // The handler must verify the fallback key and produce the same
+        // The handler must verify the key and produce the same
         // happy-path result as the direct cache-path request.
-        $response = $this->handler->handle($fallbackKey, 'webp', 'image/webp');
+        $response = $this->handler->handle($key, 'webp', 'image/webp');
 
         $this->assertSame(200, $response->status);
         $this->assertSame('image/webp', $response->contentType);
@@ -369,8 +362,8 @@ class MissEndpointIntegrationTest extends TestCase
         $this->assertSame('RIFF', substr($response->body, 0, 4));
         $this->assertSame('WEBP', substr($response->body, 8, 4));
 
-        // Cache file written under the same path as the direct request.
-        $cacheFile = $this->cacheDir . '/' . $sourceHash . '/' . $fallbackKey . '.webp';
+        // Cache file written under the expected path.
+        $cacheFile = $this->cacheDir . '/' . $sourceHash . '/' . $key . '.webp';
         $this->assertFileExists($cacheFile);
     }
 
