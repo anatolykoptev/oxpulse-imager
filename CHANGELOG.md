@@ -59,6 +59,50 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.1](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.0...v0.1.1) (2026-07-22)
+
+
+### Added
+
+* admin capability notice + nginx snippet + re-test endpoint + co-install notice ([#43](https://github.com/anatolykoptev/oxpulse-imager/issues/43) phase 5) ([#57](https://github.com/anatolykoptev/oxpulse-imager/issues/57)) ([69941cc](https://github.com/anatolykoptev/oxpulse-imager/commit/69941cc45bcdc0b738da5b68e7900ed0e8f0cd14))
+* capability probe + CapabilityTester live detection ([#43](https://github.com/anatolykoptev/oxpulse-imager/issues/43) phase 1) ([#52](https://github.com/anatolykoptev/oxpulse-imager/issues/52)) ([fac31e1](https://github.com/anatolykoptev/oxpulse-imager/commit/fac31e107cfa454e96db3277552484629b745538))
+* coexistence hardening — idempotency + buffer guard battery + endpoint-header lock ([#43](https://github.com/anatolykoptev/oxpulse-imager/issues/43) phase 3) ([#54](https://github.com/anatolykoptev/oxpulse-imager/issues/54)) ([64d4ba5](https://github.com/anatolykoptev/oxpulse-imager/commit/64d4ba54c536efad85ba2522677988b0b7de45d4))
+* **i18n:** full Russian translation + JS i18n pipeline ([ac15950](https://github.com/anatolykoptev/oxpulse-imager/commit/ac159502845062f34cea37944fb26772b9651513))
+* LocalBackend emits ?k= fallback URLs when rewrite unavailable ([#43](https://github.com/anatolykoptev/oxpulse-imager/issues/43) phase 2) ([#53](https://github.com/anatolykoptev/oxpulse-imager/issues/53)) ([6371929](https://github.com/anatolykoptev/oxpulse-imager/commit/6371929b947718bb1057e2abfe2a3269f2b67753))
+* Phase 6 LocalBackend — standard-hosting local delivery (MVP) ([#27](https://github.com/anatolykoptev/oxpulse-imager/issues/27)) ([424ca8b](https://github.com/anatolykoptev/oxpulse-imager/commit/424ca8b8fd54d85020eff05fc28b5229f328dfec))
+* purge caching-plugin page caches on delivery settings change ([#43](https://github.com/anatolykoptev/oxpulse-imager/issues/43) phase 4) ([#56](https://github.com/anatolykoptev/oxpulse-imager/issues/56)) ([f291360](https://github.com/anatolykoptev/oxpulse-imager/commit/f291360a0c045ce3130eb3884a74e9fa517f067f))
+
+
+### Fixed
+
+* **admin:** grant manage_oxpulse_imager capability to administrators + add Settings link ([c904a76](https://github.com/anatolykoptev/oxpulse-imager/commit/c904a768d783f6d0fcab63df1c5bde41851bf5be))
+* bug-hunt hardening ([#30](https://github.com/anatolykoptev/oxpulse-imager/issues/30)-[#36](https://github.com/anatolykoptev/oxpulse-imager/issues/36)) — endpoint key perms/atomicity, GD bomb fail-closed, path escaping, original cache-control, signing-config guard ([#37](https://github.com/anatolykoptev/oxpulse-imager/issues/37)) ([3ab9ea8](https://github.com/anatolykoptev/oxpulse-imager/commit/3ab9ea867dd321ccbe0329a09cdb5703e5a740be))
+* **content-disposition:** strip source extension in auto mode to prevent double extension ([a06faa4](https://github.com/anatolykoptev/oxpulse-imager/commit/a06faa4cc014420709f807bbe60f31360c4edbe1))
+* emit absolute imgproxy URLs (resolve relative endpoint against site host) ([#25](https://github.com/anatolykoptev/oxpulse-imager/issues/25)) ([6f69d5b](https://github.com/anatolykoptev/oxpulse-imager/commit/6f69d5bd38ced7e0fbb6a231b7681f2ad92167f7))
+* **i18n:** JS JSON filename must use script handle, not domain ([6c77c60](https://github.com/anatolykoptev/oxpulse-imager/commit/6c77c60ab15ad35b3259a750b81948da25cc82bf))
+* **i18n:** pass filesystem path to wp_set_script_translations ([9b08500](https://github.com/anatolykoptev/oxpulse-imager/commit/9b08500ddb2cabb480ab0b2beb478d8b20ac4f71))
+* **i18n:** wp_set_script_translations path must point at languages/ dir ([d698078](https://github.com/anatolykoptev/oxpulse-imager/commit/d698078dd40d31d43527bad3aa625766fff0248a))
+* **intermediate:** rewrite image_get_intermediate_size URL to fix 403 on theme crop sizes ([388834b](https://github.com/anatolykoptev/oxpulse-imager/commit/388834b98aceb7710b79fcb0228a6a7d86321017))
+* LocalBackend .htaccess routes cache-miss on Apache ([#40](https://github.com/anatolykoptev/oxpulse-imager/issues/40)) ([#41](https://github.com/anatolykoptev/oxpulse-imager/issues/41)) ([6181744](https://github.com/anatolykoptev/oxpulse-imager/commit/6181744d721a640441e86495e8727ce6599ae149))
+* LocalBackend endpoint bakes a src-path autoloader, not vendor ([#45](https://github.com/anatolykoptev/oxpulse-imager/issues/45)) ([#46](https://github.com/anatolykoptev/oxpulse-imager/issues/46)) ([8896c28](https://github.com/anatolykoptev/oxpulse-imager/commit/8896c282bf73d8f3a3f72164c3985dc584375941))
+* LocalBackend serves original to non-webp clients instead of 404 ([#42](https://github.com/anatolykoptev/oxpulse-imager/issues/42)) ([#44](https://github.com/anatolykoptev/oxpulse-imager/issues/44)) ([e7f5189](https://github.com/anatolykoptev/oxpulse-imager/commit/e7f51893111cfcd42cdba0ae1d14d47627c37ee7))
+* **local:** prepend leading slash in local:// path (imgproxy expects local:///path) ([04e35e1](https://github.com/anatolykoptev/oxpulse-imager/commit/04e35e1683e742aa7b60dfccbb4be3aed9172fe9))
+* **local:** return path RELATIVE to localBasePath for imgproxy local:// ([af3fee3](https://github.com/anatolykoptev/oxpulse-imager/commit/af3fee3ed3532ac848b8fcee097ef7eff52e7fa0))
+* **local:** use imgproxy ENCODED source format (base64url of local:///path) ([dc6463a](https://github.com/anatolykoptev/oxpulse-imager/commit/dc6463ab77e94ab09ce58a4d227f2083a5b6c616))
+* Phase 6 [#29](https://github.com/anatolykoptev/oxpulse-imager/issues/29) followups — sourceMode guard + endpoint integration test + wp_remote_* ([#38](https://github.com/anatolykoptev/oxpulse-imager/issues/38)) ([d047634](https://github.com/anatolykoptev/oxpulse-imager/commit/d047634e8104e5cd63bde60c6d6a9fdbcba2de6c))
+* release version-sync — PluginTest self-consistency + readme Stable tag sync step ([#60](https://github.com/anatolykoptev/oxpulse-imager/issues/60)) ([ca7a05e](https://github.com/anatolykoptev/oxpulse-imager/commit/ca7a05ee1113b94027a6d5b4af434a3664918d5b))
+* wordpress.org plugin-check clean — i18n, escaping, sanitize, justified ignores ([#39](https://github.com/anatolykoptev/oxpulse-imager/issues/39)) ([9647e4d](https://github.com/anatolykoptev/oxpulse-imager/commit/9647e4d24f53978bc535066513d9d9592f43c119))
+
+
+### Documentation
+
+* **roadmap:** Phase 6 LocalBackend design (standard-hosting local delivery) ([#26](https://github.com/anatolykoptev/oxpulse-imager/issues/26)) ([01a0a7d](https://github.com/anatolykoptev/oxpulse-imager/commit/01a0a7d0d1c39968a3d04f5b11cbe2abe2491562))
+
+
+### Reverts
+
+* no major version bump — stay on 0.1.0 ([49cf03c](https://github.com/anatolykoptev/oxpulse-imager/commit/49cf03cd46168dd139384afa1a184e66cc3368f1))
+
 ## 0.1.0
 
 Initial public release.
