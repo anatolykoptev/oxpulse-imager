@@ -74,12 +74,21 @@ class WebpTransformer
         // decoder runs. getimagesize() reads only the header (cheap, safe);
         // the actual decode happens inside encode() below. Returning null
         // here makes the caller fail-safe to the original bytes.
+        //
+        // FIX #34: fail-closed when dimensions are UNKNOWN. If
+        // getimagesize() can't read the header (corrupt file, exotic
+        // format, truncated upload), the cap can't be enforced — a
+        // crafted "tiny file, huge canvas" image that defeats
+        // getimagesize would OOM the FPM worker during decode. Returning
+        // null (serve original) is the safe choice: the caller streams
+        // the original bytes without invoking the decoder.
         $dims = $this->imageDimensions($sourcePath);
-        if ($dims !== null) {
-            [$w, $h] = $dims;
-            if ($w > 0 && $h > 0 && ($w * $h) > (self::MAX_MEGAPIXELS * 1_000_000)) {
-                return null;
-            }
+        if ($dims === null) {
+            return null;
+        }
+        [$w, $h] = $dims;
+        if ($w <= 0 || $h <= 0 || ($w * $h) > (self::MAX_MEGAPIXELS * 1_000_000)) {
+            return null;
         }
 
         $originalSize = filesize($sourcePath);

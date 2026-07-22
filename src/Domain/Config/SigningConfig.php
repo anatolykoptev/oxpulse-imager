@@ -19,7 +19,22 @@ final readonly class SigningConfig
     public function __construct(
         public string $key,
         public string $salt
-    ) {}
+    ) {
+        // FIX #35: defense-in-depth at the crypto boundary. An empty
+        // HMAC key signs everything trivially → silent no-security.
+        // fromHex() already rejects empty (isValidHex requires non-
+        // empty), but the constructor is the lowest-level seam — reject
+        // empty key/salt here too so direct construction can't bypass
+        // the guard. The normal path (loadSigningConfig) returns null
+        // when secrets are missing, so this only hardens direct
+        // construction (e.g. the baked endpoint constants path).
+        if ($key === '') {
+            throw new \InvalidArgumentException('Signing key must not be empty.');
+        }
+        if ($salt === '') {
+            throw new \InvalidArgumentException('Signing salt must not be empty.');
+        }
+    }
 
     /**
      * Create from hex-encoded key and salt.

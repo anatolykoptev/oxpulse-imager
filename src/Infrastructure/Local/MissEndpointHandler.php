@@ -281,6 +281,13 @@ final class MissEndpointHandler
 
     /**
      * Fail-safe: serve the original file with its original content-type.
+     *
+     * FIX #32: the original is MUTABLE (can be re-uploaded at the same
+     * URL), so it must NOT be marked immutable and must use a SHORT
+     * cache — otherwise a CDN caches a stale image for a year. The
+     * signed cache-file path (webpResponse) keeps immutable because its
+     * key is content-stable (a different source produces a different
+     * signed key → a different cache file).
      */
     private function serveOriginal(string $sourcePath): MissEndpointResponse
     {
@@ -290,7 +297,7 @@ final class MissEndpointHandler
             status: 200,
             contentType: $mime,
             headers: [
-                'Cache-Control' => 'public, max-age=31536000, immutable',
+                'Cache-Control' => 'public, max-age=3600',
                 'Vary' => 'Accept',
             ],
             body: null,

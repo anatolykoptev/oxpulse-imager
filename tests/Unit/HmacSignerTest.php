@@ -108,4 +108,39 @@ class HmacSignerTest extends TestCase
         $this->assertSame('secret', $config->key);
         $this->assertSame('hello', $config->salt);
     }
+
+    // --- FIX #35: SigningConfig accepts empty key/salt ---
+    //
+    // The constructor accepted empty key/salt → silent no-security (an
+    // empty HMAC key signs everything trivially). fromHex already
+    // rejects empty (isValidHex requires non-empty), but the constructor
+    // is the crypto boundary — defense-in-depth: reject empty key/salt
+    // there too. The normal path uses loadSigningConfig which returns
+    // null when secrets are missing, so this only hardens direct
+    // construction.
+
+    public function test_direct_constructor_rejects_empty_key(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new SigningConfig('', 'non-empty-salt');
+    }
+
+    public function test_direct_constructor_rejects_empty_salt(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new SigningConfig('non-empty-key', '');
+    }
+
+    public function test_direct_constructor_rejects_both_empty(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new SigningConfig('', '');
+    }
+
+    public function test_direct_constructor_accepts_non_empty_key_and_salt(): void
+    {
+        $config = new SigningConfig('non-empty-key', 'non-empty-salt');
+        $this->assertSame('non-empty-key', $config->key);
+        $this->assertSame('non-empty-salt', $config->salt);
+    }
 }

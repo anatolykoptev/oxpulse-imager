@@ -51,6 +51,22 @@ final class MissEndpointGenerator
         $keyB64 = base64_encode($signingKey);
         $saltB64 = base64_encode($signingSalt);
 
+        // Escape every baked value via var_export() so ANY path (incl.
+        // ones containing apostrophes — legit on some hosts) round-trips
+        // safely inside a single-quoted PHP string literal. FIX #33:
+        // raw interpolation broke the endpoint with a parse error when a
+        // path contained an apostrophe. The base64 key/salt literals are
+        // also var_exported for consistency (the base64 alphabet has no
+        // apostrophes, so this is a no-op there but keeps the defense-
+        // in-depth base64 layer intact — the raw binary secret never
+        // appears in the file source).
+        $keyConst   = var_export($keyB64, true);
+        $saltConst  = var_export($saltB64, true);
+        $basedirLit = var_export($uploadsBasedir, true);
+        $baseurlLit = var_export($uploadsBaseurl, true);
+        $cacheLit   = var_export($cacheDir, true);
+        $loaderLit  = var_export($autoloaderPath, true);
+
         $php = <<<PHP
 <?php
 /**
@@ -66,13 +82,13 @@ final class MissEndpointGenerator
 declare(strict_types=1);
 
 // Baked configuration (base64-encoded secrets, decoded at runtime).
-define('OXPULSE_SIGNING_KEY', base64_decode('{$keyB64}'));
-define('OXPULSE_SIGNING_SALT', base64_decode('{$saltB64}'));
-define('OXPULSE_UPLOADS_BASEDIR', '{$uploadsBasedir}');
-define('OXPULSE_UPLOADS_BASEURL', '{$uploadsBaseurl}');
-define('OXPULSE_CACHE_DIR', '{$cacheDir}');
+define('OXPULSE_SIGNING_KEY', base64_decode({$keyConst}));
+define('OXPULSE_SIGNING_SALT', base64_decode({$saltConst}));
+define('OXPULSE_UPLOADS_BASEDIR', {$basedirLit});
+define('OXPULSE_UPLOADS_BASEURL', {$baseurlLit});
+define('OXPULSE_CACHE_DIR', {$cacheLit});
 
-require_once '{$autoloaderPath}';
+require_once {$loaderLit};
 
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Infrastructure\Image\WebpTransformer;
@@ -133,7 +149,47 @@ exit;
 
 PHP;
 
-        file_put_contents($outputFile, $php);
+        // Atomic write: temp file in the same directory → chmod 0600 →
+        // rename into place. FIX #30: a plain file_put_contents whose
+        // return was unchecked silently "succeeded" on a failed write
+        // (perms/disk-full), leaving the OLD signing key active on disk
+        // while UrlRewriter signed with the NEW key → every image 400s.
+        // The temp+rename ensures a partial/failed write NEVER replaces
+        // a working endpoint. FIX #31: chmod 0600 so the baked signing
+        // key is not world-readable on shared hosting (a co-tenant
+        // reading it could forge signatures).
+        $dir = dirname($outputFile);
+        $temp = $dir . '/.oxpulse-img-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.tmp';
+
+        $written = @file_put_contents($temp, $php);
+        if ($written === false) {
+            @unlink($temp);
+            throw new \RuntimeException(
+                'Failed to write miss-endpoint file: file_put_contents returned false'
+                . ' (target: ' . $outputFile . '). Check directory permissions / disk space.'
+            );
+        }
+
+        // Restrict to owner-only BEFORE the rename lands the baked key
+        // at its final path. If chmod can't restrict (some hosts), log
+        // a warning but proceed — the file is still PHP (not served as
+        // text), and the base64 secret layer is defense-in-depth.
+        if (!@chmod($temp, 0600)) {
+            error_log(
+                'oxpulse-imager: WARNING — could not chmod 0600 the generated'
+                . ' miss-endpoint file (' . $outputFile . '). The baked signing'
+                . ' key may be readable by co-tenants on shared hosting.'
+            );
+        }
+
+        if (!@rename($temp, $outputFile)) {
+            @unlink($temp);
+            throw new \RuntimeException(
+                'Failed to install miss-endpoint file: rename(' . $temp . ' -> '
+                . $outputFile . ') failed. Check directory permissions / disk space.'
+            );
+        }
+
         return $outputFile;
     }
 }
