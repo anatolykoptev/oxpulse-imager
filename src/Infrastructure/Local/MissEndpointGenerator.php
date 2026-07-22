@@ -141,7 +141,10 @@ use OXPulse\Imager\Infrastructure\Local\PathGuard;
 
 if (\$key === '' && isset(\$_SERVER['REQUEST_URI'])) {
     // Apache rewrite: the requested path is the cache file path.
-    \$basename = basename(parse_url(\$_SERVER['REQUEST_URI'], PHP_URL_PATH));
+    // #63 review: parse_url returns null for a path-less URI →
+    // basename(null) is a PHP 8.3+ deprecation (and can corrupt the
+    // binary body under bad display_errors). Guard with ?? ''.
+    \$basename = basename(parse_url(\$_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '');
     \$dotPos = strrpos(\$basename, '.');
     if (\$dotPos !== false) {
         \$key = substr(\$basename, 0, \$dotPos);

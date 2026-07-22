@@ -48,18 +48,66 @@ jobs:
         run: composer install --prefer-dist --no-interaction --no-progress
 
       - name: Verify AVIF encode capability
-        # #47: the real-encode test (test_real_jpeg_to_avif_smaller_and_valid)
-        # ASSERTS supportsAvif() is true and FAILS (not skips) when it's
-        # false. This probe catches a CI environment regression where
-        # Imagick is present but the libheif delegate is missing —
-        # without this gate the test would fail with a confusing message
-        # instead of a clear "CI must provision AVIF" error.
+        # #63 review: supportsAvif() now does a REAL 2x2 encode probe
+        # (not queryFormats read-check), so this gate is honest — if the
+        # runner has NO avif writer at all (neither Imagick-write nor
+        # GD-imageavif), the build FAILS loudly (no synthetic green).
+        # The diagnostic below prints the full capability matrix so the
+        # log shows exactly which writer is available (or none). Do NOT
+        # weaken the real-encode test to skip — a missing writer is the
+        # correct signal to provision an apt av1 delegate.
         run: |
           php -r '
             require __DIR__ . "/vendor/autoload.php";
+
+            // Diagnostic: print the full AVIF capability matrix.
+            echo "=== AVIF capability matrix ===" . PHP_EOL;
+
+            // 1. Imagick read-side (queryFormats — "format known", NOT "encode works").
+            $imagickRead = "no";
+            if (extension_loaded("imagick")) {
+              try {
+                $imagickRead = \Imagick::queryFormats("AVIF") !== [] ? "YES" : "no";
+              } catch (\Throwable $e) { $imagickRead = "no (threw)"; }
+            }
+            echo "imagick-read  (queryFormats AVIF): {$imagickRead}" . PHP_EOL;
+
+            // 2. Imagick write-side (real 2x2 getImageBlob in try/catch).
+            $imagickWrite = "no";
+            if (extension_loaded("imagick")) {
+              try {
+                $img = new \Imagick();
+                $img->newImage(2, 2, new \ImagickPixel("white"));
+                $img->setImageFormat("AVIF");
+                $blob = $img->getImageBlob();
+                $img->clear();
+                $imagickWrite = $blob !== "" ? "YES" : "no (empty blob)";
+              } catch (\Throwable $e) { $imagickWrite = "no (threw: " . get_class($e) . ")"; }
+            }
+            echo "imagick-write (real 2x2 encode):   {$imagickWrite}" . PHP_EOL;
+
+            // 3. GD imageavif (function_exists + a real 2x2 encode).
+            $gdAvif = "no";
+            if (function_exists("imageavif")) {
+              try {
+                $im = imagecreatetruecolor(2, 2);
+                ob_start();
+                $ok = imageavif($im, null, 50);
+                $bytes = ob_get_clean();
+                imagedestroy($im);
+                if ($ok === false || $bytes === false || $bytes === "") {
+                  $gdAvif = "no (empty/false output)";
+                } else {
+                  $gdAvif = "YES";
+                }
+              } catch (\Throwable $e) { $gdAvif = "no (threw: " . get_class($e) . ")"; }
+            }
+            echo "gd-imageavif (function_exists+encode): {$gdAvif}" . PHP_EOL;
+            echo "===============================" . PHP_EOL;
+
             $t = new OXPulse\Imager\Infrastructure\Image\ImageTransformer();
             if (!$t->supportsAvif()) {
-              echo "::error::supportsAvif() is false — CI Imagick build lacks the AVIF (libheif) delegate. The real-encode test will FAIL (by design — no synthetic green). Fix the setup-php extensions." . PHP_EOL;
+              echo "::error::supportsAvif() is false — no AVIF writer on the runner (see matrix above). The real-encode test will FAIL (by design — no synthetic green). Provision an apt av1 delegate or a GD build with imageavif." . PHP_EOL;
               exit(1);
             }
             echo "✓ supportsAvif() = true — AVIF encode tests will run." . PHP_EOL;

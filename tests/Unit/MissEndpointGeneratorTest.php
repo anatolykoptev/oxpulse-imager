@@ -433,6 +433,11 @@ class MissEndpointGeneratorTest extends TestCase
         // Must use parse_url + basename for REQUEST_URI.
         $this->assertStringContainsString('REQUEST_URI', $content);
         $this->assertStringContainsString('basename', $content);
+        // #63 review: parse_url null guard — parse_url returns null for
+        // a path-less URI → basename(null) is a PHP 8.3+ deprecation.
+        // The generated endpoint must guard with ?? '' on both the
+        // REQUEST_URI access and the parse_url result.
+        $this->assertStringContainsString('parse_url($_SERVER[\'REQUEST_URI\'] ?? \'\', PHP_URL_PATH) ?? \'\'', $content);
     }
 
     public function test_generated_endpoint_bakes_avif_quality_constant(): void

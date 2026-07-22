@@ -83,6 +83,7 @@ class ImageTransformerTest extends TestCase
 
         $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
+            protected function canReallyEncode(string $format): bool { return true; }
             protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 // Return bytes >= original size to trigger the size-guard.
@@ -105,6 +106,7 @@ class ImageTransformerTest extends TestCase
             private string $bytes;
             public function __construct(string $bytes) { $this->bytes = $bytes; }
             protected function hasImagick(): bool { return true; }
+            protected function canReallyEncode(string $format): bool { return true; }
             protected function imageDimensions(string $sourcePath): ?array
             {
                 // Valid dims under the cap — the size-guard logic below
@@ -132,6 +134,7 @@ class ImageTransformerTest extends TestCase
 
         $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
+            protected function canReallyEncode(string $format): bool { return true; }
             protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 // Exactly equal to original size.
@@ -150,8 +153,7 @@ class ImageTransformerTest extends TestCase
         file_put_contents($sourcePath, str_repeat('x', 100));
 
         $transformer = new class extends ImageTransformer {
-            protected function hasImagick(): bool { return false; }
-            protected function hasGdWebp(): bool { return false; }
+            protected function canReallyEncode(string $format): bool { return false; }
             protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 throw new \LogicException('encode must not be called when no ext is available');
@@ -170,6 +172,7 @@ class ImageTransformerTest extends TestCase
 
         $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
+            protected function canReallyEncode(string $format): bool { return true; }
             protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 return null; // encode failure (e.g. corrupt source)
@@ -207,6 +210,7 @@ class ImageTransformerTest extends TestCase
 
         $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
+            protected function canReallyEncode(string $format): bool { return true; }
             protected function imageDimensions(string $sourcePath): ?array
             {
                 // 10000 x 10000 = 100MP > 40MP cap → must be rejected.
@@ -241,6 +245,7 @@ class ImageTransformerTest extends TestCase
 
         $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
+            protected function canReallyEncode(string $format): bool { return true; }
             protected function imageDimensions(string $sourcePath): ?array
             {
                 // getimagesize() can't read the header → dims unknown.
@@ -269,6 +274,7 @@ class ImageTransformerTest extends TestCase
             private string $bytes;
             public function __construct(string $bytes) { $this->bytes = $bytes; }
             protected function hasImagick(): bool { return true; }
+            protected function canReallyEncode(string $format): bool { return true; }
             protected function imageDimensions(string $sourcePath): ?array
             {
                 // 5000 x 5000 = 25MP < 40MP cap → allowed.
@@ -425,26 +431,27 @@ class ImageTransformerTest extends TestCase
     }
 
     /**
-     * supportsAvif() must be FALSE when Imagick lacks the AVIF delegate
-     * and GD lacks imageavif. Stubbed to simulate a host without AVIF.
+     * supportsAvif() must be FALSE when no engine can really encode
+     * AVIF. Stubbed to simulate a host without an AVIF writer (the
+     * real-encode probe is stubbed so the test is host-independent).
      */
     public function test_supports_avif_false_when_no_avif_engine(): void
     {
         $transformer = new class extends ImageTransformer {
-            protected function hasImagick(): bool { return false; }
-            protected function hasImagickAvif(): bool { return false; }
-            protected function hasGdAvif(): bool { return false; }
+            protected function canReallyEncode(string $format): bool { return false; }
         };
         $this->assertFalse($transformer->supportsAvif());
     }
 
     /**
-     * supportsAvif() must be TRUE when Imagick has the AVIF delegate.
+     * supportsAvif() must be TRUE when the host can really encode AVIF
+     * (the real-encode probe succeeds). Stubbed so the test is
+     * host-independent — the real-encode test below covers the live path.
      */
     public function test_supports_avif_true_when_imagick_has_avif(): void
     {
         $transformer = new class extends ImageTransformer {
-            protected function hasImagickAvif(): bool { return true; }
+            protected function canReallyEncode(string $format): bool { return true; }
         };
         $this->assertTrue($transformer->supportsAvif());
     }
@@ -463,7 +470,7 @@ class ImageTransformerTest extends TestCase
             private string $bytes;
             public function __construct(string $bytes) { $this->bytes = $bytes; }
             protected function hasImagick(): bool { return true; }
-            protected function hasImagickAvif(): bool { return true; }
+            protected function canReallyEncode(string $format): bool { return true; }
             protected function imageDimensions(string $sourcePath): ?array
             {
                 return [100, 100];
@@ -537,7 +544,7 @@ class ImageTransformerTest extends TestCase
 
         $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
-            protected function hasImagickAvif(): bool { return true; }
+            protected function canReallyEncode(string $format): bool { return true; }
             protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 if ($format === 'avif') {
@@ -562,10 +569,7 @@ class ImageTransformerTest extends TestCase
         file_put_contents($sourcePath, str_repeat('x', 200));
 
         $transformer = new class extends ImageTransformer {
-            protected function hasImagick(): bool { return false; }
-            protected function hasImagickAvif(): bool { return false; }
-            protected function hasGdAvif(): bool { return false; }
-            protected function hasGdWebp(): bool { return false; }
+            protected function canReallyEncode(string $format): bool { return false; }
             protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 throw new \LogicException('encode must not be called when no AVIF engine is available.');
