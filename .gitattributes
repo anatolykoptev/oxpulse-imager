@@ -26,3 +26,7 @@
 /SECURITY.md export-ignore
 /.release-please-manifest.json export-ignore
 /release-please-config.json export-ignore
+/.gitleaksignore export-ignore
+/README.md export-ignore
+/postcss.config.js export-ignore
+/tailwind.config.js export-ignore

@@ -113,6 +113,20 @@ jobs:
           fi
           echo "✓ PHP constant match: $CONST_VERSION"
 
+      # `secrets` is not available in a step-level `if:` (it rejects the
+      # whole workflow), so read it via `env` into a step output here and
+      # gate the SVN publish + ZIP build on that.
+      - name: Detect wordpress.org SVN credentials
+        id: svn
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+        run: |
+          if [ -n "${SVN_USERNAME}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # wordpress.org SVN publish — SKIPPED until the plugin is approved on
       # wordpress.org and the SVN_USERNAME/SVN_PASSWORD secrets are set. Until
       # then this job still runs every gate (tests, plugin-check, version
@@ -121,7 +135,7 @@ jobs:
       # two secrets — this step then runs automatically. Set dry-run: true for
       # the very first SVN run to verify access without committing.
       - name: Deploy to SVN (wordpress.org)
-        if: ${{ secrets.SVN_USERNAME != '' }}
+        if: steps.svn.outputs.present == 'true'
         uses: 10up/action-wordpress-plugin-deploy@stable
         with:
           generate-zip: true
@@ -135,7 +149,7 @@ jobs:
       # `git archive`, which honors .gitattributes export-ignore (the same file
       # the 10up action uses). Unzips to an `oxpulse-imager/` folder.
       - name: Build distribution ZIP
-        if: ${{ secrets.SVN_USERNAME == '' }}
+        if: steps.svn.outputs.present == 'false'
         run: git archive --format=zip --prefix=oxpulse-imager/ -o oxpulse-imager.zip HEAD
 
       - name: Attach ZIP to the GitHub Release
