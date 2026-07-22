@@ -4,7 +4,7 @@
  * Plugin URI:        https://github.com/anatolykoptev/oxpulse-imager
  * Description:       Optional bring-your-own imgproxy image delivery for WordPress. Generates signed, deterministic imgproxy URLs for approved local origins while preserving the original URL whenever configuration, source policy, signing, or delivery cannot safely proceed. Disabled by default; no SaaS, no FFI, no telemetry.
  * x-release-please-start-version
- * Version:           0.1.1
+ * Version:           0.1.2
  * x-release-please-end
  * Requires at least: 6.7
  * Requires PHP:      8.3
@@ -24,7 +24,7 @@ declare(strict_types=1);
 
 defined('ABSPATH') || exit;
 
-define('OXPULSE_IMAGER_VERSION', '0.1.1'); // x-release-please-version
+define('OXPULSE_IMAGER_VERSION', '0.1.2'); // x-release-please-version
 define('OXPULSE_IMAGER_FILE', __FILE__);
 define('OXPULSE_IMAGER_DIR', plugin_dir_path(__FILE__));
 define('OXPULSE_IMAGER_URL', plugin_dir_url(__FILE__));

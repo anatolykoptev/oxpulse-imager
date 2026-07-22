@@ -59,6 +59,13 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.2](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.1...v0.1.2) (2026-07-22)
+
+
+### Added
+
+* AVIF in LocalBackend — server-side Accept negotiation AVIF&gt;WebP&gt;original ([#47](https://github.com/anatolykoptev/oxpulse-imager/issues/47)) ([54dbef6](https://github.com/anatolykoptev/oxpulse-imager/commit/54dbef684ebbfed51193f8fcac0a90734f215113))
+
 ## [0.1.1](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.0...v0.1.1) (2026-07-22)
 
 
