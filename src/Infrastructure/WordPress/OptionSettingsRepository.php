@@ -65,6 +65,12 @@ final class OptionSettingsRepository
     public const OPTION_REWRITE_CAPABILITY_CHECKED_AT = 'oxpulse_imager_rewrite_capability_checked_at';
     public const OPTION_PROBE_VERSION = 'oxpulse_imager_probe_version';
 
+    // #43 Phase 5: dismissed admin-notice keys. A notice is dismissed
+    // per-key, keyed on the capability state at dismiss time so a
+    // capability flip (e.g. 'no'→'unknown' after an env change)
+    // re-surfaces the notice. Stored as [noticeKey => stateAtDismiss].
+    public const OPTION_ADMIN_NOTICE_DISMISSED = 'oxpulse_imager_admin_notice_dismissed';
+
     /**
      * Delivery-relevant option keys whose change requires re-installing
      * local delivery. Single source of truth for the settings-save
@@ -514,5 +520,53 @@ final class OptionSettingsRepository
     public function saveProbeVersion(string $version): void
     {
         update_option(self::OPTION_PROBE_VERSION, $version);
+    }
+
+    /**
+     * #43 Phase 5: Whether a given admin-notice key is currently
+     * dismissed. A notice is dismissed only when the stored dismiss
+     * state for that key MATCHES the current rewrite-capability state
+     * — so a capability flip (e.g. 'no'→'unknown') re-surfaces the
+     * notice even if the operator previously dismissed it.
+     *
+     * @param string $noticeKey  Stable notice identifier.
+     * @param string $capability Current capability state ('yes'|'no'|'unknown').
+     * @return bool
+     */
+    public function isNoticeDismissed(string $noticeKey, string $capability): bool
+    {
+        $dismissed = $this->loadDismissedNotices();
+        return isset($dismissed[$noticeKey]) && $dismissed[$noticeKey] === $capability;
+    }
+
+    /**
+     * #43 Phase 5: Mark a notice key as dismissed for the current
+     * capability state.
+     */
+    public function dismissNotice(string $noticeKey, string $capability): void
+    {
+        $dismissed = $this->loadDismissedNotices();
+        $dismissed[$noticeKey] = $capability;
+        update_option(self::OPTION_ADMIN_NOTICE_DISMISSED, $dismissed);
+    }
+
+    /**
+     * #43 Phase 5: Load the dismissed-notices map ([noticeKey => state]).
+     *
+     * @return array<string,string>
+     */
+    public function loadDismissedNotices(): array
+    {
+        $value = get_option(self::OPTION_ADMIN_NOTICE_DISMISSED, []);
+        if (!is_array($value)) {
+            return [];
+        }
+        $out = [];
+        foreach ($value as $key => $state) {
+            if (is_string($key) && is_string($state)) {
+                $out[$key] = $state;
+            }
+        }
+        return $out;
     }
 }

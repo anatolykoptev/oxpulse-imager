@@ -536,6 +536,84 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
         }
     }
 
+    // #43 Phase 5: admin-notice + capability REST shims.
+    if (!function_exists('wp_kses')) {
+        function wp_kses($string, $allowedHtml, $allowedProtocols = []) {
+            // Minimal stub: strip tags except those in the allow map,
+            // and escape attributes. Sufficient for unit-testing notice
+            // output structure without a full WP kses stack.
+            return self_stub_kses($string, $allowedHtml);
+        }
+    }
+    if (!function_exists('wp_kses_post')) {
+        function wp_kses_post($string) {
+            return self_stub_kses($string, [
+                'a'       => ['href' => true, 'class' => true, 'target' => true, 'rel' => true],
+                'p'       => ['class' => true],
+                'pre'     => ['class' => true],
+                'code'    => ['class' => true],
+                'button'  => ['type' => true, 'class' => true, 'data-*' => true],
+                'span'    => ['class' => true],
+                'div'     => ['class' => true],
+                'strong'  => [],
+                'em'      => [],
+                'br'      => [],
+                'svg'     => ['class' => true, 'aria-hidden' => true],
+                'path'    => ['d' => true],
+            ]);
+        }
+    }
+    if (!function_exists('self_stub_kses')) {
+        function self_stub_kses($string, array $allowedHtml) {
+            // Strip every tag not in the allow map; keep inner text.
+            // Not a security boundary in the test harness — only used
+            // to assert the notice passes through wp_kses_post().
+            $pattern = '#<(/?)([a-zA-Z0-9]+)([^>]*)>#';
+            return (string) preg_replace_callback($pattern, static function ($m) use ($allowedHtml) {
+                $tag = strtolower($m[2]);
+                if (!isset($allowedHtml[$tag])) {
+                    return '';
+                }
+                return $m[0];
+            }, (string) $string);
+        }
+    }
+    if (!function_exists('esc_url_raw')) {
+        function esc_url_raw($url) { return filter_var($url, FILTER_SANITIZE_URL) ?: ''; }
+    }
+    if (!function_exists('sanitize_text_field')) {
+        function sanitize_text_field($value) {
+            return is_string($value) ? trim(strip_tags($value)) : $value;
+        }
+    }
+    if (!function_exists('is_plugin_active')) {
+        function is_plugin_active($plugin) {
+            return !empty($GLOBALS['__oxpulse_active_plugins'][$plugin]);
+        }
+    }
+    if (!function_exists('wp_send_json_success')) {
+        function wp_send_json_success($data = null) {
+            $GLOBALS['__oxpulse_json_sent'][] = ['status' => 'success', 'data' => $data];
+            throw new \RuntimeException('json_sent:success');
+        }
+    }
+    if (!function_exists('wp_send_json_error')) {
+        function wp_send_json_error($data = null) {
+            $GLOBALS['__oxpulse_json_sent'][] = ['status' => 'error', 'data' => $data];
+            throw new \RuntimeException('json_sent:error');
+        }
+    }
+    if (!function_exists('check_ajax_referer')) {
+        function check_ajax_referer($action = -1, $queryArg = 'nonce', $die = true) {
+            return empty($GLOBALS['__oxpulse_referer_fail']);
+        }
+    }
+    if (!function_exists('wp_print_inline_script_tag')) {
+        function wp_print_inline_script_tag($javascript, $attrs = []) {
+            echo '<script>' . $javascript . '</script>';
+        }
+    }
+
     // Helper for stub HTTP responses. Tests register responses in
     // $GLOBALS['__oxpulse_http_responses'] keyed by URL. If a custom
     // header-based key is registered, that takes precedence.

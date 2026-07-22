@@ -29,6 +29,8 @@ use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminBarDiagnostics;
+use OXPulse\Imager\Integration\WordPress\Admin\AdminNotice;
+use OXPulse\Imager\Integration\WordPress\Admin\CapabilityRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\DiagnosticsRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\HealthRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\OptionsRestController;
@@ -335,6 +337,18 @@ final class ServiceRegistrar
         // REST: GET/DELETE /oxpulse/v1/diagnostics — recent log entries.
         $diagnosticsRest = new DiagnosticsRestController(self::diagnosticLogger());
         $diagnosticsRest->register();
+
+        // #43 Phase 5: REST: POST /oxpulse/v1/capability/reprobe + /dismiss
+        // — the admin "Re-test capability" + notice-dismiss buttons.
+        $capabilityRest = new CapabilityRestController();
+        $capabilityRest->register();
+
+        // #43 Phase 5: admin notice — tells the operator when the host
+        // is on the ?k= PHP fallback (nginx / AllowOverride None /
+        // LiteSpeed / probe inconclusive) with the nginx snippet +
+        // perf quantification + Re-test button + co-install notice.
+        $adminNotice = new AdminNotice($repository);
+        $adminNotice->register();
     }
 
     /**
