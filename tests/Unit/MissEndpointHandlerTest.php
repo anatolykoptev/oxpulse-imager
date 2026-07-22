@@ -428,6 +428,128 @@ class MissEndpointHandlerTest extends TestCase
         $this->assertNotNull($response->body);
         $this->assertSame('public, max-age=31536000, immutable', $response->headers['Cache-Control']);
     }
+
+    // --- #42: Option A — non-webp client gets the ORIGINAL, no .webp
+    // cache file written ---
+    //
+    // The <img src> in the HTML is a `.webp` URL served to ALL clients.
+    // A non-webp client (crawler, og:image bot, RSS, old browser)
+    // requesting that URL must get the ORIGINAL image (original
+    // content-type, short non-immutable cache, Vary: Accept) and MUST
+    // NOT produce a `.webp` cache file (pure passthrough — no transform
+    // for non-webp). The Accept gate in handle() returns serveOriginal
+    // BEFORE the cache-hit/miss/transform path, so no cache file is
+    // written. Reverting the gate (step 3) makes this test RED: a
+    // non-webp client would fall through to the transform+cache path,
+    // write a `.webp` file, and return `image/webp`.
+
+    public function test_non_webp_accept_serves_original_no_cache_file_vary(): void
+    {
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'webp', 'text/html,application/xhtml+xml');
+
+        // Original image, not webp.
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/jpeg', $response->contentType);
+        $this->assertNotNull($response->filePath);
+        // Short, non-immutable cache (the original is mutable).
+        $cc = $response->headers['Cache-Control'];
+        $this->assertStringNotContainsString('immutable', $cc);
+        preg_match('/max-age=(\d+)/', $cc, $m);
+        $this->assertLessThanOrEqual(3600, (int) $m[1]);
+        // Vary: Accept so caches keep webp + original variants apart.
+        $this->assertArrayHasKey('Vary', $response->headers);
+        $this->assertSame('Accept', $response->headers['Vary']);
+        // NO .webp cache file written for the non-webp branch.
+        $sourceHash = LocalBackend::sourceHash(self::SOURCE);
+        $cacheSubdir = $this->cacheDir . '/' . $sourceHash;
+        if (is_dir($cacheSubdir)) {
+            $files = glob($cacheSubdir . '/*') ?: [];
+            $this->assertNotContains(
+                $cacheSubdir . '/' . $key . '.webp',
+                $files,
+                'Non-webp branch must NOT write a .webp cache file (pure passthrough).',
+            );
+        }
+    }
+
+    public function test_webp_accept_still_transforms_and_caches(): void
+    {
+        // Existing behavior preserved: webp-capable client gets
+        // transformed + cached WebP exactly as today.
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'webp', 'image/webp,*/*;q=0.8');
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/webp', $response->contentType);
+        $this->assertSame('webp-bytes-from-stub', $response->body);
+        $sourceHash = LocalBackend::sourceHash(self::SOURCE);
+        $this->assertFileExists($this->cacheDir . '/' . $sourceHash . '/' . $key . '.webp');
+    }
+
+    // --- #42 (c): security checks (key-verify, format allowlist,
+    // path-guard) run BEFORE the Accept gate, so they reject for BOTH
+    // Accept variants. A non-webp client must not bypass security. ---
+
+    public function test_tampered_key_rejected_with_400_non_webp_accept(): void
+    {
+        $handler = $this->handler();
+        $key = $this->validKey();
+        $parts = explode('.', $key);
+        $tampered = $parts[0] . '.' . ($parts[1] === 'A' ? 'B' : 'A');
+
+        $response = $handler->handle($tampered, 'webp', 'text/html');
+
+        $this->assertSame(400, $response->status);
+        $this->assertNull($response->body);
+        $this->assertNull($response->filePath);
+    }
+
+    public function test_malformed_key_rejected_with_400_non_webp_accept(): void
+    {
+        $handler = $this->handler();
+
+        $response = $handler->handle('garbage', 'webp', 'text/html');
+
+        $this->assertSame(400, $response->status);
+    }
+
+    public function test_traversal_source_rejected_non_webp_accept(): void
+    {
+        $reflection = new \ReflectionMethod($this->backend, 'buildKey');
+        $reflection->setAccessible(true);
+
+        $req = new TransformRequest(
+            sourceUrl: 'https://example.com/wp-content/uploads/../../etc/passwd',
+            width: 800, height: 0, resize: 'fit', format: 'webp', quality: 80,
+            context: 'content', dpr: 0, blur: 0, watermark: null,
+            formatQuality: [], sourceMode: 'http',
+        );
+        $key = $reflection->invoke($this->backend, $req, 'webp');
+
+        $handler = $this->handler();
+        $response = $handler->handle($key, 'webp', 'text/html');
+
+        $this->assertNotSame(200, $response->status);
+        $this->assertNull($response->body);
+        $this->assertNull($response->filePath);
+    }
+
+    public function test_arbitrary_format_rejected_with_400_non_webp_accept(): void
+    {
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'foo', 'text/html');
+
+        $this->assertSame(400, $response->status);
+        $this->assertNull($response->body);
+        $this->assertNull($response->filePath);
+    }
 }
 
 /** Stub transformer that returns fixed bytes (bypasses ext checks). */
