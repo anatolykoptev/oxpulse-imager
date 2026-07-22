@@ -45,6 +45,7 @@ use OXPulse\Imager\Integration\WordPress\Delivery\ImageDownsizeRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\IntermediateSizeRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
 use OXPulse\Imager\Integration\WordPress\Compatibility\RankMathCompatibility;
+use OXPulse\Imager\Integration\WordPress\Performance\CachePurger;
 use OXPulse\Imager\Integration\WordPress\Performance\OptimizationDetectiveIntegration;
 use OXPulse\Imager\Infrastructure\Local\CacheInvalidator;
 use OXPulse\Imager\Plugin;
@@ -646,8 +647,16 @@ final class ServiceRegistrar
         $recheckCapability = static function (): void {
             self::recheckRewriteCapability();
         };
+        // #43 Phase 4 (plan B.3 / D.4 #5): purge cache-plugin page
+        // caches when delivery-relevant options change. Cached pages
+        // have BAKED the old image URLs (clean vs ?k=); the purge
+        // forces regeneration with the new URLs. Each purge is guarded
+        // + try/caught inside CachePurger — never fatals.
+        $purgeCaches = static function (): void {
+            (new CachePurger())->purge();
+        };
 
-        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability): void {
+        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability, $purgeCaches): void {
             $watched = [
                 OptionSettingsRepository::OPTION_ENDPOINT,
                 OptionSettingsRepository::OPTION_KEY,
@@ -659,6 +668,20 @@ final class ServiceRegistrar
             }
             if ($option === OptionSettingsRepository::OPTION_ENDPOINT) {
                 $recheckCapability();
+            }
+            // Purge page caches on delivery-relevant option changes
+            // (the watched set + OPTION_REWRITE_CAPABILITY, whose flip
+            // changes the URL format). Mirrors the capability-recheck
+            // gating — no broad updated_option listener.
+            $purgeWatched = [
+                OptionSettingsRepository::OPTION_ENDPOINT,
+                OptionSettingsRepository::OPTION_KEY,
+                OptionSettingsRepository::OPTION_SALT,
+                OptionSettingsRepository::OPTION_ENABLED,
+                OptionSettingsRepository::OPTION_REWRITE_CAPABILITY,
+            ];
+            if (in_array($option, $purgeWatched, true)) {
+                $purgeCaches();
             }
         });
     }

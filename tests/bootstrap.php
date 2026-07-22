@@ -111,6 +111,22 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return $GLOBALS['__oxpulse_did_action'][$tag] ?? 0;
         }
     }
+    if (!function_exists('has_action')) {
+        function has_action($hook, $callback = false) {
+            $actions = $GLOBALS['__oxpulse_actions'] ?? [];
+            foreach ($actions as $entry) {
+                if ($entry['hook'] === $hook) {
+                    if ($callback === false) {
+                        return $entry['priority'];
+                    }
+                    if ($entry['callback'] === $callback) {
+                        return $entry['priority'];
+                    }
+                }
+            }
+            return false;
+        }
+    }
     if (!function_exists('__return_false')) {
         function __return_false() { return false; }
     }
