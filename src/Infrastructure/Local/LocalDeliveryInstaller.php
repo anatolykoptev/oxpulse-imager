@@ -99,13 +99,13 @@ final class LocalDeliveryInstaller
     {
         $endpointFile = $this->wpContentDir . '/oxpulse-img.php';
         if (is_file($endpointFile)) {
-            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- endpoint removal; wp_delete_file has FTP-fallback side effects that change behavior.
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- plugin-owned cache scratch; direct unlink avoids the wp_delete_file filter, no WP_Filesystem needed.
             @unlink($endpointFile);
         }
 
         $htaccess = $this->cacheDir . '/.htaccess';
         if (is_file($htaccess)) {
-            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- htaccess removal; wp_delete_file has FTP-fallback side effects that change behavior.
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- plugin-owned cache scratch; direct unlink avoids the wp_delete_file filter, no WP_Filesystem needed.
             @unlink($htaccess);
         }
     }

@@ -137,16 +137,16 @@ class LocalRewriteProbe
             }
             $path = $probeDir . '/' . $entry;
             if (is_link($path)) {
-                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- probe cleanup; wp_delete_file has FTP-fallback side effects that change behavior.
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- plugin-owned cache scratch; direct unlink avoids the wp_delete_file filter, no WP_Filesystem needed.
                 @unlink($path);
             } elseif (is_dir($path)) {
                 $this->cleanup($path);
             } else {
-                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- probe cleanup; wp_delete_file has FTP-fallback side effects that change behavior.
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- plugin-owned cache scratch; direct unlink avoids the wp_delete_file filter, no WP_Filesystem needed.
                 @unlink($path);
             }
         }
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- probe cleanup; WP_Filesystem lacks recursive rmdir semantics.
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- recursive purge of plugin-owned scratch; initializing WP_Filesystem needs host credentials that can fail — direct rmdir is reliable.
         @rmdir($probeDir);
     }
 }

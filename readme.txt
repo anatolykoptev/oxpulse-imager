@@ -1,7 +1,7 @@
 === OXPulse Imager ===
 Contributors: anatolykoptev
 Tags: images, imgproxy, performance, avif, webp
-Requires at least: 6.2
+Requires at least: 6.7
 Tested up to: 7.0
 Requires PHP: 8.3
 Stable tag: 0.1.0

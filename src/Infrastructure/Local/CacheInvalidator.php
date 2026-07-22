@@ -110,7 +110,7 @@ final class CacheInvalidator
             if (is_dir($path)) {
                 $this->rmrf($path);
             } else {
-                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- cache purge; wp_delete_file has FTP-fallback side effects that change behavior.
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- plugin-owned cache scratch; direct unlink avoids the wp_delete_file filter, no WP_Filesystem needed.
                 @unlink($path);
             }
             $count++;
@@ -174,10 +174,10 @@ final class CacheInvalidator
             \RecursiveIteratorIterator::CHILD_FIRST
         );
         foreach ($it as $file) {
-            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir,WordPress.WP.AlternativeFunctions.unlink_unlink -- recursive cache purge; WP_Filesystem lacks recursive rmdir semantics and would change behavior.
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir,WordPress.WP.AlternativeFunctions.unlink_unlink -- recursive purge of plugin-owned scratch; initializing WP_Filesystem needs host credentials that can fail — direct rmdir is reliable.
             $file->isDir() ? rmdir($file->getPathname()) : @unlink($file->getPathname());
         }
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- recursive cache purge; WP_Filesystem lacks recursive rmdir semantics.
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- recursive purge of plugin-owned scratch; initializing WP_Filesystem needs host credentials that can fail — direct rmdir is reliable.
         rmdir($dir);
     }
 }

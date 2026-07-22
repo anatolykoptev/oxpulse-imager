@@ -252,8 +252,7 @@ location ~* ^{$cachePath}/.*\.(php|phtml)$ { deny all; }
 location ~* ^{$cachePath}/([0-9a-f]+)/(.+)\.(webp|avif)$ {
     add_header Vary Accept;
     try_files \$uri {$endpointPath}?k=\$2;
-}
-";
+}";
     }
 
     /**

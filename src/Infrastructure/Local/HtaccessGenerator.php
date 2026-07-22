@@ -111,7 +111,6 @@ final class HtaccessGenerator
   # Matched dir-relative (see the class docblock); the endpoint
   # re-derives sourceHash + format from the signed payload.
   RewriteRule ([^/]+)\.webp\$ {$endpointUrlPath}?k=\$1 [L,QSA]
-</IfModule>
-";
+</IfModule>";
     }
 }

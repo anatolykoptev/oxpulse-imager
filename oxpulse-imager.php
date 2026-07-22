@@ -6,7 +6,7 @@
  * x-release-please-start-version
  * Version:           0.1.0
  * x-release-please-end
- * Requires at least: 6.2
+ * Requires at least: 6.7
  * Requires PHP:      8.3
  * Author:            Anatoly Koptev
  * Author URI:        https://anatolykoptev.com

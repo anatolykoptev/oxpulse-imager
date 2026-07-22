@@ -173,7 +173,6 @@ if (\$response->body !== null) {
     readfile(\$response->filePath);
 }
 exit;
-
 ";
 
         // Atomic write: temp file in the same directory → chmod 0600 →
