@@ -102,4 +102,40 @@ class OptionSettingsRepositoryCapabilityTest extends TestCase
         update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, 'garbage');
         $this->assertSame('unknown', $this->repo->loadRewriteCapability());
     }
+
+    // ─── #43 Phase 1 review: nullable variant (MINOR 1) ──────────────────
+
+    /**
+     * loadRewriteCapabilityOrNull() returns null on miss (NOT 'unknown')
+     * so CapabilityTester can distinguish "never probed" from a stored
+     * definitive result.
+     */
+    public function test_load_or_null_returns_null_on_miss(): void
+    {
+        $this->assertNull($this->repo->loadRewriteCapabilityOrNull());
+    }
+
+    public function test_load_or_null_returns_null_on_invalid_value(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, 'garbage');
+        $this->assertNull($this->repo->loadRewriteCapabilityOrNull());
+    }
+
+    public function test_load_or_null_returns_yes(): void
+    {
+        $this->repo->saveRewriteCapability('yes');
+        $this->assertSame('yes', $this->repo->loadRewriteCapabilityOrNull());
+    }
+
+    public function test_load_or_null_returns_no(): void
+    {
+        $this->repo->saveRewriteCapability('no');
+        $this->assertSame('no', $this->repo->loadRewriteCapabilityOrNull());
+    }
+
+    public function test_load_or_null_returns_unknown_when_stored(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, 'unknown');
+        $this->assertSame('unknown', $this->repo->loadRewriteCapabilityOrNull());
+    }
 }

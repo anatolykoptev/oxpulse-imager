@@ -428,11 +428,32 @@ final class OptionSettingsRepository
      */
     public function loadRewriteCapability(): string
     {
-        $value = get_option(self::OPTION_REWRITE_CAPABILITY, 'unknown');
+        $value = $this->loadRewriteCapabilityOrNull();
+        return $value ?? 'unknown';
+    }
+
+    /**
+     * #43 Phase 1 review: Nullable variant of loadRewriteCapability().
+     *
+     * Returns null when the option is missing or holds an invalid value
+     * (distinguishes "never probed" from a stored 'unknown'), and the
+     * stored tri-state value otherwise ('yes' | 'no' | 'unknown').
+     *
+     * CapabilityTester::rewriteAvailable() uses this so the front-end
+     * read path can tell "no cached value → use the static heuristic"
+     * apart from a definitive cached 'yes'/'no' (and from a transient
+     * 'unknown' that also falls back to the heuristic).
+     */
+    public function loadRewriteCapabilityOrNull(): ?string
+    {
+        $value = get_option(self::OPTION_REWRITE_CAPABILITY, null);
+        if ($value === null) {
+            return null;
+        }
         if (in_array($value, ['yes', 'no', 'unknown'], true)) {
             return $value;
         }
-        return 'unknown';
+        return null;
     }
 
     /**

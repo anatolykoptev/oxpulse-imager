@@ -124,6 +124,12 @@ function oxpulse_imager_activate(): void {
     // configures secrets without an imgproxy endpoint.
     if (class_exists(\OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::class)) {
         \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::installLocalDelivery();
+        // #43 Phase 1 review (BLOCKER wire): probe rewrite capability
+        // at activation when LocalBackend is active (endpoint empty).
+        // recheckRewriteCapability() is a no-op when an imgproxy
+        // endpoint is configured. The 3s HTTP round-trip is acceptable
+        // in the activation context — never on the front-end read path.
+        \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::recheckRewriteCapability();
     }
 }
 

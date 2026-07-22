@@ -7,24 +7,38 @@
  * falls back to the FallbackRewriter output-buffer path (rewrites
  * cache URLs to oxpulse-img.php?k=<key> in the HTML output).
  *
- * #43 Phase 1: the stub allowOverrideEnabled() is replaced by a live
- * HTTP self-probe (LocalRewriteProbe). The probe writes a temporary
- * .htaccess with a test rewrite rule + fetches a probe URL. If the
- * rewrite fires, mod_rewrite + AllowOverride are both active. This is
- * the WebP-Express htaccess-capability-tester approach.
+ * #43 Phase 1 review (BLOCKER): the front-end-reachable path —
+ * rewriteAvailable() / fallbackNeeded() — performs ZERO blocking I/O.
+ * It is called on EVERY front-end request from
+ * ServiceRegistrar::registerDeliveryAdapters() when LocalBackend is
+ * active, so it must never issue a wp_remote_get (up to 3s) or write
+ * to the filesystem. The decision hierarchy is now read-only + cheap:
  *
- * Detection flow:
- *   1. isApache() false (nginx / LiteSpeed-LSAPI without apache in
- *      SERVER_SOFTWARE) → short-circuit false, NO HTTP round-trip.
- *   2. modRewriteLoaded() false (mod_php SAPI, module definitely absent)
- *      → false, NO probe. null (php-fpm, can't tell) → defer to probe.
- *   3. Read the cached option (tri-state 'yes'|'no'|'unknown'). On hit
- *      → return (cached === 'yes'). On miss → run the probe, store the
- *      result + timestamp, return (result === 'yes').
+ *   1. Read the cached capability option (via the repository accessor).
+ *      A definitive 'yes' → true; 'no' → false.
+ *   2. No definitive cached value (option unset OR 'unknown') → fall
+ *      back to a CHEAP STATIC HEURISTIC (no probe):
+ *        isApache() && modRewriteLoaded() === true  → true
+ *        otherwise                                  → false
+ *      Conservative — an unverified host defaults to the working
+ *      `?k=` fallback, not to clean URLs that might 404.
  *
- * 'unknown' (transport error, non-200, unexpected body) is treated as
- * NOT available → fallbackNeeded true (conservative — prefer fallback
- * so serving still works, mirroring the existing docblock philosophy).
+ * The live probe (LocalRewriteProbe) runs ONLY at WRITE-TIME via
+ * recheck(), which is wired to fire in admin/activation context
+ * (plugin activation + settings-save when LocalBackend becomes active
+ * + once-per-version re-probe on plugin update). recheck() persists
+ * ONLY a definitive 'yes' or 'no'; a probe 'unknown' (transport error,
+ * non-200, loopback HTTP blocked) does NOT overwrite a prior definitive
+ * value and does NOT persist a fallback-forcing 'unknown' (#43 MAJOR).
+ *
+ * Static detection helpers:
+ *   - isApache() false (nginx / LiteSpeed-LSAPI without apache in
+ *     SERVER_SOFTWARE) → heuristic false.
+ *   - modRewriteLoaded() false (mod_php SAPI, module definitely absent)
+ *     → heuristic false. null (php-fpm, can't tell) → heuristic false
+ *     (conservative — only a definitive true from mod_php is trusted
+ *     without a probe; FPM defers to the cached probe result, and on
+ *     cache miss stays conservative until a write-time recheck succeeds).
  *
  * For unit testing, inject a stub LocalRewriteProbe and/or subclass and
  * override isApache() / modRewriteLoaded().
@@ -43,51 +57,61 @@ use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 class CapabilityTester
 {
     private ?LocalRewriteProbe $probe;
+    private OptionSettingsRepository $repository;
 
     /**
      * @param LocalRewriteProbe|null $probe Inject a stub for tests; null
      *   lazily constructs a real probe (used in production, not in tests).
+     *   The probe is ONLY touched by recheck() — never by the read path.
+     * @param OptionSettingsRepository|null $repository Inject for tests;
+     *   null lazily constructs the canonical repository so all capability
+     *   option reads/writes route through it (no direct get_option /
+     *   update_option / delete_option in this class).
      */
-    public function __construct(?LocalRewriteProbe $probe = null)
-    {
+    public function __construct(
+        ?LocalRewriteProbe $probe = null,
+        ?OptionSettingsRepository $repository = null,
+    ) {
         $this->probe = $probe;
+        $this->repository = $repository ?? new OptionSettingsRepository();
     }
 
     /**
      * Whether mod_rewrite + AllowOverride are available for the cache dir.
      *
-     * Reads the cached probe result first (no HTTP round-trip on cache
-     * hit). On cache miss, invokes the live probe and stores the result.
+     * FRONT-END-SAFE: performs ZERO blocking I/O. No wp_remote_get, no
+     * filesystem writes, no probe invocation. Reads only the cached
+     * capability option (cheap) and falls back to a static heuristic.
+     *
+     * Decision hierarchy:
+     *   1. Cached definitive 'yes' → true; 'no' → false.
+     *   2. No definitive cached value (unset OR 'unknown') →
+     *      isApache() && modRewriteLoaded() === true (conservative).
      *
      * @return bool
      */
     public function rewriteAvailable(): bool
     {
-        // Fast static pre-filter: non-Apache → false, no probe.
-        if (!$this->isApache()) {
+        // 1. Read the cached definitive value (read-only, cheap).
+        $cached = $this->repository->loadRewriteCapabilityOrNull();
+        if ($cached === 'yes') {
+            return true;
+        }
+        if ($cached === 'no') {
             return false;
         }
 
-        // mod_php without mod_rewrite → false, no probe.
-        // null (php-fpm, can't tell) → defer to cache/probe.
-        $modRewrite = $this->modRewriteLoaded();
-        if ($modRewrite === false) {
-            return false;
-        }
-
-        // Read the cached option first.
-        $cached = $this->loadCachedCapability();
-        if ($cached !== null) {
-            return $cached === 'yes';
-        }
-
-        // Cache miss → probe + store.
-        $result = $this->runProbe();
-        return $result === 'yes';
+        // 2. No definitive cached value (unset OR 'unknown') → cheap
+        //    static heuristic. NO probe, NO I/O. Conservative: only a
+        //    definitive modRewriteLoaded() === true is trusted; FPM
+        //    (null) and non-Apache default to fallback.
+        return $this->isApache() && $this->modRewriteLoaded() === true;
     }
 
     /**
      * Whether the fallback (output-buffer URL rewrite) should be used.
+     *
+     * FRONT-END-SAFE: delegates to rewriteAvailable() (zero I/O).
      *
      * @return bool True when .htaccess rewrite is NOT available.
      */
@@ -98,26 +122,47 @@ class CapabilityTester
 
     /**
      * Delete the cached probe result so the next rewriteAvailable()
-     * call re-probes. Safe to call on non-Apache (no-op side effect).
+     * call falls back to the static heuristic (and so a later recheck
+     * can store a fresh definitive value). Safe to call on non-Apache.
      */
     public function invalidateCache(): void
     {
-        delete_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY);
-        delete_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY_CHECKED_AT);
+        $this->repository->invalidateRewriteCapability();
     }
 
     /**
      * Force a fresh probe (ignore the cache), store the result +
      * timestamp, and return the tri-state string.
      *
-     * For the future "Re-test capability" admin button (Phase 5).
-     * Does NOT wire any UI now.
+     * WRITE-TIME ONLY: this is the sole entry point that invokes the
+     * live probe. Wired to fire in admin/activation context (plugin
+     * activation, settings-save when LocalBackend becomes active,
+     * once-per-version re-probe on plugin update) — never from the
+     * front-end read path.
+     *
+     * #43 MAJOR: persists ONLY a definitive 'yes' or 'no'. A probe
+     * 'unknown' (transport error, non-200, loopback HTTP blocked —
+     * common on real WP hosts) does NOT overwrite a prior definitive
+     * value and does NOT write a permanent 'unknown' that would force
+     * fallback forever. Net effect: a mod_php+mod_rewrite host whose
+     * loopback is blocked still gets clean URLs via the static
+     * heuristic, and a later successful re-probe can upgrade to a
+     * definitive 'yes'.
      *
      * @return string 'yes' | 'no' | 'unknown'
      */
     public function recheck(): string
     {
-        return $this->runProbe();
+        $probe = $this->probe ?? $this->buildDefaultProbe();
+        $result = $probe->probe();
+
+        // Persist only definitive results. 'unknown' never overwrites
+        // a prior 'yes'/'no' and never persists a fallback-forcing value.
+        if ($result === 'yes' || $result === 'no') {
+            $this->repository->saveRewriteCapability($result);
+        }
+
+        return $result;
     }
 
     /**
@@ -149,8 +194,9 @@ class CapabilityTester
      *   - false : apache_get_modules() exists and does NOT contain
      *             mod_rewrite (mod_php SAPI, module definitively absent).
      *   - null  : apache_get_modules() is undefined (php-fpm SAPI) —
-     *             can't tell statically; the caller defers to the live
-     *             probe, which definitively answers "does rewrite work".
+     *             can't tell statically. The static heuristic treats
+     *             null as NOT trusted (conservative fallback); a
+     *             definitive answer requires a write-time recheck probe.
      *
      * @return bool|null
      */
@@ -163,37 +209,6 @@ class CapabilityTester
             }
         }
         return null;
-    }
-
-    /**
-     * Read the cached capability option. Returns null on cache miss
-     * (option not set or invalid value).
-     */
-    private function loadCachedCapability(): ?string
-    {
-        $value = get_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, null);
-        if ($value === null) {
-            return null;
-        }
-        if (in_array($value, ['yes', 'no', 'unknown'], true)) {
-            return $value;
-        }
-        return null;
-    }
-
-    /**
-     * Run the probe (lazily constructing a real one if none injected),
-     * store the result + timestamp, and return the tri-state string.
-     */
-    private function runProbe(): string
-    {
-        $probe = $this->probe ?? $this->buildDefaultProbe();
-        $result = $probe->probe();
-
-        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, $result);
-        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY_CHECKED_AT, time());
-
-        return $result;
     }
 
     /**

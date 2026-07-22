@@ -178,6 +178,54 @@ class LocalRewriteProbeTest extends TestCase
         );
     }
 
+    // ─── #43 Phase 1 review (MINOR 2): cleanup symlink containment ───────
+
+    /**
+     * A pre-planted `.probe` symlink pointing OUTSIDE the cache dir
+     * must NOT cause cleanup to delete the target. The containment
+     * guard refuses to touch a probe dir whose realpath is not under
+     * the cache dir's realpath.
+     */
+    public function test_cleanup_refuses_symlink_pointing_outside_cache_dir(): void
+    {
+        // Victim dir OUTSIDE the cache dir, with a sentinel file that
+        // must survive the probe's cleanup.
+        $victimDir = sys_get_temp_dir() . '/oxpulse-probe-victim-' . uniqid('', true);
+        @mkdir($victimDir, 0755, true);
+        $sentinel = $victimDir . '/sentinel.txt';
+        file_put_contents($sentinel, 'must-survive');
+        $this->assertFileExists($sentinel);
+
+        try {
+            // Plant `.probe` as a symlink to the victim dir.
+            $probeLink = $this->cacheDir . '/.probe';
+            @symlink($victimDir, $probeLink);
+            $this->assertTrue(is_link($probeLink) || is_dir($probeLink));
+
+            $requester = new FakeHttpRequester(status: 200, body: '1');
+            $probe = new LocalRewriteProbe(
+                $this->cacheDir,
+                'https://example.test/wp-content/cache/oxpulse/.probe',
+                $requester,
+            );
+
+            $probe->probe();
+
+            // The sentinel file inside the victim (symlink target) must
+            // survive — cleanup refused because realpath(.probe) is not
+            // under realpath(cacheDir).
+            $this->assertFileExists(
+                $sentinel,
+                'cleanup must NOT delete files outside the cache dir via a .probe symlink',
+            );
+        } finally {
+            @unlink($probeLink ?? '');
+            if (is_dir($victimDir)) {
+                self::removeTree($victimDir);
+            }
+        }
+    }
+
     private static function removeTree(string $path): void
     {
         if (!is_dir($path)) {

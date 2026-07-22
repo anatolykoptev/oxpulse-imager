@@ -102,12 +102,30 @@ class LocalRewriteProbe
      *
      * Does not follow symlinks: a symlinked entry is unlinked, not
      * recursed into, so cleanup stays within the cache dir.
+     *
+     * #43 Phase 1 review (MINOR 2): containment guard — before any
+     * deletion, assert realpath($probeDir) is non-false AND starts with
+     * realpath($this->cacheDir) + DIRECTORY_SEPARATOR. A pre-planted
+     * `.probe` symlink (or a cacheDir that does not resolve under
+     * itself) cannot cause deletion outside the cache dir. If the guard
+     * fails, cleanup refuses to touch the dir.
      */
     private function cleanup(string $probeDir): void
     {
         if (!is_dir($probeDir)) {
             return;
         }
+
+        $cacheReal = realpath($this->cacheDir);
+        $probeReal = realpath($probeDir);
+        if ($cacheReal === false || $probeReal === false) {
+            return;
+        }
+        $prefix = $cacheReal . DIRECTORY_SEPARATOR;
+        if (!str_starts_with($probeReal . DIRECTORY_SEPARATOR, $prefix)) {
+            return;
+        }
+
         $entries = @scandir($probeDir);
         if ($entries === false) {
             return;

@@ -2,7 +2,7 @@
 /**
  * Default HttpRequester backed by wp_remote_get().
  *
- * Wraps the WordPress HTTP API with a 3s timeout and Accept: */*.
+ * Wraps the WordPress HTTP API with a 3s timeout and a wildcard Accept.
  * sslverify follows WordPress defaults (true under HTTPS, configurable
  * via the sslverify arg). Used as the default requester when
  * CapabilityTester lazily constructs a LocalRewriteProbe.
