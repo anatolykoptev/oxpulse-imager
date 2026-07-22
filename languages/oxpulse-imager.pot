@@ -71,7 +71,7 @@ msgstr ""
 msgid "WordPress HTTP API not available."
 msgstr ""
 
-#: src/Infrastructure/WordPress/ServiceRegistrar.php:312
+#: src/Infrastructure/WordPress/ServiceRegistrar.php:314
 msgid "Settings"
 msgstr ""
 
@@ -176,6 +176,51 @@ msgstr ""
 msgid "OXPulse Imager diagnostics — click to view details"
 msgstr ""
 
+#: src/Integration/WordPress/Admin/AdminNotice.php:267
+msgid "The PHP fallback runs PHP for every image (~50-200ms TTFB per image) versus ~5-20ms for static file serving. On an image-heavy page this compounds and can push Largest Contentful Paint past Google's 2.5s \"good\" threshold when an image is the LCP element — the difference between meeting and missing Core Web Vitals, not merely cosmetic."
+msgstr ""
+
+#. translators: %s: list of detected competing plugin names.
+#: src/Integration/WordPress/Admin/AdminNotice.php:315
+msgid "Another image-optimization plugin is active (%s). Running two delivery layers can double-rewrite images — pick one to avoid conflicts."
+msgstr ""
+
+#: src/Integration/WordPress/Admin/AdminNotice.php:336
+msgid "OXPulse Imager is serving optimized images via a PHP fallback. For best performance, add this nginx rule to your server block and reload nginx:"
+msgstr ""
+
+#: src/Integration/WordPress/Admin/AdminNotice.php:345, src/Integration/WordPress/Admin/AdminNotice.php:381, src/Integration/WordPress/Admin/AdminNotice.php:407, src/Integration/WordPress/Admin/AdminNotice.php:433, src/Integration/WordPress/Admin/SettingsPage.php:40, src/Integration/WordPress/Admin/SettingsPage.php:41
+msgid "OXPulse Imager"
+msgstr ""
+
+#: src/Integration/WordPress/Admin/AdminNotice.php:352, src/Integration/WordPress/Admin/AdminNotice.php:387, src/Integration/WordPress/Admin/AdminNotice.php:413, src/Integration/WordPress/Admin/AdminNotice.php:439
+msgid "Testing…"
+msgstr ""
+
+#: src/Integration/WordPress/Admin/AdminNotice.php:353, src/Integration/WordPress/Admin/AdminNotice.php:388, src/Integration/WordPress/Admin/AdminNotice.php:414, src/Integration/WordPress/Admin/AdminNotice.php:440
+msgid "Re-test capability"
+msgstr ""
+
+#: src/Integration/WordPress/Admin/AdminNotice.php:369
+msgid "OXPulse Imager could not verify whether .htaccess rewrite is available. The probe result is authoritative — click \"Re-test capability\" to retry."
+msgstr ""
+
+#: src/Integration/WordPress/Admin/AdminNotice.php:363
+msgid "OXPulse Imager images work via the PHP fallback. For faster static delivery, ask your host to enable AllowOverride All for the cache directory (wp-content/cache/oxpulse/) — or it becomes automatic once the rewrite probe can run."
+msgstr ""
+
+#: src/Integration/WordPress/Admin/AdminNotice.php:397
+msgid "OXPulse Imager detected LiteSpeed. The rewrite-capability probe result is authoritative — if images are served via the PHP fallback, click \"Re-test capability\" to retry."
+msgstr ""
+
+#: src/Integration/WordPress/Admin/AdminNotice.php:423
+msgid "OXPulse Imager could not verify whether clean cache URLs can be served. The probe result is authoritative — click \"Re-test capability\" to retry."
+msgstr ""
+
+#: src/Integration/WordPress/Admin/CapabilityRestController.php:134
+msgid "No notice key provided."
+msgstr ""
+
 #: src/Integration/WordPress/Admin/HealthRestController.php:140
 msgid "No sample image URL available. Configure allowed sources first."
 msgstr ""
@@ -219,10 +264,6 @@ msgstr ""
 
 #: src/Integration/WordPress/Admin/PrewarmRestController.php:238
 msgid "Job not found. It may have expired (jobs are kept for 1 hour)."
-msgstr ""
-
-#: src/Integration/WordPress/Admin/SettingsPage.php:40, src/Integration/WordPress/Admin/SettingsPage.php:41
-msgid "OXPulse Imager"
 msgstr ""
 
 #: src/Integration/WordPress/Admin/SettingsPage.php:59
