@@ -178,44 +178,44 @@ msgstr ""
 msgid "OXPulse Imager diagnostics — click to view details"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:266
+#: src/Integration/WordPress/Admin/AdminNotice.php:265
 msgid "The PHP fallback runs PHP for every image (~50-200ms TTFB per image) versus ~5-20ms for static file serving. On an image-heavy page this compounds and can push Largest Contentful Paint past Google's 2.5s \"good\" threshold when an image is the LCP element — the difference between meeting and missing Core Web Vitals, not merely cosmetic."
 msgstr ""
 
 #. translators: %s: list of detected competing plugin names.
-#: src/Integration/WordPress/Admin/AdminNotice.php:314
+#: src/Integration/WordPress/Admin/AdminNotice.php:313
 msgid "Another image-optimization plugin is active (%s). Running two delivery layers can double-rewrite images — pick one to avoid conflicts."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:335
+#: src/Integration/WordPress/Admin/AdminNotice.php:334
 msgid "OXPulse Imager is serving optimized images via a PHP fallback. For best performance, add this nginx rule to your server block and reload nginx:"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:344, src/Integration/WordPress/Admin/AdminNotice.php:380, src/Integration/WordPress/Admin/AdminNotice.php:406, src/Integration/WordPress/Admin/AdminNotice.php:432, src/Integration/WordPress/Admin/SettingsPage.php:40, src/Integration/WordPress/Admin/SettingsPage.php:41
+#: src/Integration/WordPress/Admin/AdminNotice.php:343, src/Integration/WordPress/Admin/AdminNotice.php:379, src/Integration/WordPress/Admin/AdminNotice.php:405, src/Integration/WordPress/Admin/AdminNotice.php:431, src/Integration/WordPress/Admin/SettingsPage.php:40, src/Integration/WordPress/Admin/SettingsPage.php:41
 msgid "OXPulse Imager"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:351, src/Integration/WordPress/Admin/AdminNotice.php:386, src/Integration/WordPress/Admin/AdminNotice.php:412, src/Integration/WordPress/Admin/AdminNotice.php:438
+#: src/Integration/WordPress/Admin/AdminNotice.php:350, src/Integration/WordPress/Admin/AdminNotice.php:385, src/Integration/WordPress/Admin/AdminNotice.php:411, src/Integration/WordPress/Admin/AdminNotice.php:437
 msgid "Testing…"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:352, src/Integration/WordPress/Admin/AdminNotice.php:387, src/Integration/WordPress/Admin/AdminNotice.php:413, src/Integration/WordPress/Admin/AdminNotice.php:439
+#: src/Integration/WordPress/Admin/AdminNotice.php:351, src/Integration/WordPress/Admin/AdminNotice.php:386, src/Integration/WordPress/Admin/AdminNotice.php:412, src/Integration/WordPress/Admin/AdminNotice.php:438
 msgid "Re-test capability"
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:368
+#: src/Integration/WordPress/Admin/AdminNotice.php:367
 msgid "OXPulse Imager could not verify whether .htaccess rewrite is available. The probe result is authoritative — click \"Re-test capability\" to retry."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:362
+#: src/Integration/WordPress/Admin/AdminNotice.php:361
 msgid "OXPulse Imager images work via the PHP fallback. For faster static delivery, ask your host to enable AllowOverride All for the cache directory (wp-content/cache/oxpulse/) — or it becomes automatic once the rewrite probe can run."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:396
+#: src/Integration/WordPress/Admin/AdminNotice.php:395
 msgid "OXPulse Imager detected LiteSpeed. The rewrite-capability probe result is authoritative — if images are served via the PHP fallback, click \"Re-test capability\" to retry."
 msgstr ""
 
-#: src/Integration/WordPress/Admin/AdminNotice.php:422
+#: src/Integration/WordPress/Admin/AdminNotice.php:421
 msgid "OXPulse Imager could not verify whether clean cache URLs can be served. The probe result is authoritative — click \"Re-test capability\" to retry."
 msgstr ""
 
@@ -286,7 +286,7 @@ msgid "Success: %s"
 msgstr ""
 
 #. translators: %s: the warning message.
-#: src/Integration/WordPress/Cli/AbstractCommand.php:71
+#: src/Integration/WordPress/Cli/AbstractCommand.php:72
 msgid "Warning: %s"
 msgstr ""
 
