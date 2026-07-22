@@ -67,16 +67,8 @@ msgstr ""
 msgid "OK"
 msgstr ""
 
-#: src/Infrastructure/Http/WordPressHealthClient.php:25, src/Infrastructure/Http/WordPressHealthClient.php:40
+#: src/Infrastructure/Http/WordPressHealthClient.php:25, src/Infrastructure/Http/WordPressHealthClient.php:40, src/Infrastructure/Http/WordPressPrewarmClient.php:45
 msgid "WordPress HTTP API not available."
-msgstr ""
-
-#: src/Infrastructure/Http/WordPressPrewarmClient.php:45
-msgid "cURL extension not available."
-msgstr ""
-
-#: src/Infrastructure/Http/WordPressPrewarmClient.php:126
-msgid "Unknown error."
 msgstr ""
 
 #: src/Infrastructure/WordPress/ServiceRegistrar.php:331

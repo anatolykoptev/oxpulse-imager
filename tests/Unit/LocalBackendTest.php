@@ -276,4 +276,76 @@ class LocalBackendTest extends TestCase
 
         $this->assertInstanceOf(LocalBackend::class, $backend);
     }
+
+    /**
+     * #29.2: LocalBackend is incompatible with sourceMode='local'.
+     *
+     * When sourceMode='local', SourcePolicy produces a SourceDecision
+     * with fsPath !== null, and UrlRewriter uses that bare filesystem
+     * path as the TransformRequest source. LocalBackend signs a key
+     * whose payload 'source' is a bare fs path (no scheme+host). At
+     * miss-endpoint time, PathGuard::resolve() requires scheme+host
+     * from payload['source'] → null → 404 on every image; URL-
+     * normalized invalidation can't match either.
+     *
+     * The safe fix: LocalBackend requires http source mode. When
+     * sourceMode='local' + no imgproxy endpoint, the factory returns
+     * null (no backend) → UrlRewriter preserves the original URL.
+     */
+    public function test_factory_returns_null_when_source_mode_local_and_no_endpoint(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: '',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+            sourceMode: 'local',
+            localBasePath: '/tmp/wp-content/uploads',
+        );
+        $signing = SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX);
+
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+
+        // No LocalBackend — preserve original (no rewrite).
+        $this->assertNull($backend);
+    }
+
+    /**
+     * #29.2: imgproxy + sourceMode='local' is a valid combo (imgproxy
+     * reads via local:// transport). The factory must still select
+     * ImgproxyBackend in that case — the guard only blocks LocalBackend.
+     */
+    public function test_factory_selects_imgproxy_when_source_mode_local_with_endpoint(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.example.com',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+            sourceMode: 'local',
+            localBasePath: '/tmp/wp-content/uploads',
+        );
+        $signing = SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX);
+
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+
+        $this->assertInstanceOf(ImgproxyBackend::class, $backend);
+    }
+
+    /**
+     * #29.2: the guard must not regress the default (http) path —
+     * sourceMode='http' + no endpoint still selects LocalBackend.
+     */
+    public function test_factory_selects_local_when_source_mode_http_and_no_endpoint(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: '',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+            sourceMode: 'http',
+        );
+        $signing = SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX);
+
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+
+        $this->assertInstanceOf(LocalBackend::class, $backend);
+    }
 }
