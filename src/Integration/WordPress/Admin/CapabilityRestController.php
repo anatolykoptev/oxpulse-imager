@@ -136,8 +136,14 @@ final class CapabilityRestController
             );
         }
 
-        $capability = $this->repository->loadRewriteCapability();
-        $this->repository->dismissNotice($noticeKey, $capability);
+        // Resolve the dismiss state via the SAME helper the render gate
+        // uses (AdminNotice::noticeDismissState) so the two ends agree:
+        // co-install keys → capability-independent NOTICE_STATE_ACTIVE
+        // (otherwise the notice could never be dismissed — #57 review
+        // MAJOR); capability keys → the live capability (a flip
+        // re-surfaces).
+        $state = AdminNotice::noticeDismissState($noticeKey, $this->repository);
+        $this->repository->dismissNotice($noticeKey, $state);
 
         return rest_ensure_response(['dismissed' => true]);
     }

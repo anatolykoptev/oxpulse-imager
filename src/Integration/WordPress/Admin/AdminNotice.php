@@ -66,6 +66,24 @@ final class AdminNotice
         'optimole-wp/optimole-wp.php'                         => 'Optimole',
     ];
 
+    /**
+     * Notice-key prefix for co-install notices. The dismiss state for
+     * these keys is capability-INDEPENDENT (the notice is about a
+     * competing plugin being present, not about the rewrite
+     * capability), so it is stored against the fixed
+     * NOTICE_STATE_ACTIVE marker. Capability-notice keys
+     * ('capability_*') keep their dismissal keyed on the live
+     * capability state so a capability flip re-surfaces them.
+     */
+    public const COINSTALL_KEY_PREFIX = 'coinstall_';
+
+    /**
+     * Fixed dismiss-state marker for capability-independent notices
+     * (co-install). Referenced by BOTH the render gate and the dismiss
+     * handler via noticeDismissState() so the two ends cannot drift.
+     */
+    public const NOTICE_STATE_ACTIVE = 'active';
+
     private OptionSettingsRepository $repository;
 
     /**
@@ -82,6 +100,30 @@ final class AdminNotice
     public function register(): void
     {
         add_action('admin_notices', [$this, 'render']);
+    }
+
+    /**
+     * Resolve the dismiss-state value a notice key must be stored
+     * against (and checked against) so the dismiss side and the render
+     * gate agree. Used by BOTH render() (the gate) and
+     * CapabilityRestController::handleDismiss() (the store) — the
+     * single source of truth that prevents the co-install "never
+     * dismissable" bug (#57 review MAJOR).
+     *
+     *  - Co-install keys (COINSTALL_KEY_PREFIX) → NOTICE_STATE_ACTIVE
+     *    (capability-independent; stays dismissed while the same
+     *    plugin set persists, re-notifies on a set change via a new
+     *    key).
+     *  - Capability keys → the live rewrite capability
+     *    ('yes'|'no'|'unknown'), so a capability flip re-surfaces the
+     *    notice.
+     */
+    public static function noticeDismissState(string $noticeKey, OptionSettingsRepository $repository): string
+    {
+        if (str_starts_with($noticeKey, self::COINSTALL_KEY_PREFIX)) {
+            return self::NOTICE_STATE_ACTIVE;
+        }
+        return $repository->loadRewriteCapability();
     }
 
     /**
@@ -117,7 +159,7 @@ final class AdminNotice
         $env = $this->detectEnvironment();
         $notice = $this->buildCapabilityNotice($capability ?? 'unknown', $env);
         if ($notice !== null) {
-            $stateForDismiss = $capability ?? 'unknown';
+            $stateForDismiss = self::noticeDismissState($notice['key'], $this->repository);
             if (!$this->repository->isNoticeDismissed($notice['key'], $stateForDismiss)) {
                 echo wp_kses_post($notice['html']);
                 $this->emitInlineScript();
@@ -261,8 +303,10 @@ NGINX;
             return null;
         }
         $setHash = md5(implode(',', array_keys($active)));
-        $key = 'coinstall_' . $setHash;
-        $labels = implode(', ', array_map('esc_html', $active));
+        $key = self::COINSTALL_KEY_PREFIX . $setHash;
+        // Labels are escaped together with $body at the esc_html() below;
+        // an inner array_map('esc_html', …) here would double-escape.
+        $labels = implode(', ', $active);
         $dismissUrl = rest_url('oxpulse/v1/capability/dismiss');
         $nonce = function_exists('wp_create_nonce') ? wp_create_nonce('wp_rest') : '';
 
@@ -304,7 +348,8 @@ NGINX;
             . '<p>' . $perf . '</p>'
             . '<p><button type="button" class="button button-secondary oxpulse-retest-btn" '
             . 'data-oxpulse-retest-url="' . esc_url($restUrl) . '" '
-            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '">'
+            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '" '
+            . 'data-oxpulse-testing-label="' . esc_attr__('Testing…', 'oxpulse-imager') . '">'
             . esc_html__('Re-test capability', 'oxpulse-imager')
             . '</button></p>'
             . '</div>';
@@ -338,7 +383,8 @@ NGINX;
             . '<p>' . $perf . '</p>'
             . '<p><button type="button" class="button button-secondary oxpulse-retest-btn" '
             . 'data-oxpulse-retest-url="' . esc_url($restUrl) . '" '
-            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '">'
+            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '" '
+            . 'data-oxpulse-testing-label="' . esc_attr__('Testing…', 'oxpulse-imager') . '">'
             . esc_html__('Re-test capability', 'oxpulse-imager')
             . '</button></p>'
             . '</div>';
@@ -363,7 +409,8 @@ NGINX;
             . '<p>' . $perf . '</p>'
             . '<p><button type="button" class="button button-secondary oxpulse-retest-btn" '
             . 'data-oxpulse-retest-url="' . esc_url($restUrl) . '" '
-            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '">'
+            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '" '
+            . 'data-oxpulse-testing-label="' . esc_attr__('Testing…', 'oxpulse-imager') . '">'
             . esc_html__('Re-test capability', 'oxpulse-imager')
             . '</button></p>'
             . '</div>';
@@ -388,7 +435,8 @@ NGINX;
             . '<p>' . $perf . '</p>'
             . '<p><button type="button" class="button button-secondary oxpulse-retest-btn" '
             . 'data-oxpulse-retest-url="' . esc_url($restUrl) . '" '
-            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '">'
+            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '" '
+            . 'data-oxpulse-testing-label="' . esc_attr__('Testing…', 'oxpulse-imager') . '">'
             . esc_html__('Re-test capability', 'oxpulse-imager')
             . '</button></p>'
             . '</div>';
@@ -407,9 +455,10 @@ NGINX;
             return;
         }
         // Co-install dismissal is keyed per plugin set; the stored
-        // state is the constant 'active' so a set change (new key)
-        // re-notifies automatically.
-        if (!$this->repository->isNoticeDismissed($notice['key'], 'active')) {
+        // state is the capability-independent NOTICE_STATE_ACTIVE
+        // marker (resolved via noticeDismissState()) so a set change
+        // (new key) re-notifies automatically.
+        if (!$this->repository->isNoticeDismissed($notice['key'], self::noticeDismissState($notice['key'], $this->repository))) {
             echo wp_kses_post($notice['html']);
             $this->emitInlineScript();
         }
@@ -445,7 +494,7 @@ NGINX;
     if (btn) {
       btn.disabled = true;
       var orig = btn.textContent;
-      btn.textContent = 'Testing…';
+      btn.textContent = btn.getAttribute('data-oxpulse-testing-label') || 'Testing…';
       post(btn.getAttribute('data-oxpulse-retest-url'),
             btn.getAttribute('data-oxpulse-nonce'))
         .then(function(){ window.location.reload(); })

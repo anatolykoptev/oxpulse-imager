@@ -26,7 +26,9 @@ namespace OXPulse\Imager\Tests\Unit;
 
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminNotice;
+use OXPulse\Imager\Integration\WordPress\Admin\CapabilityRestController;
 use PHPUnit\Framework\TestCase;
+use WP_REST_Request;
 
 class AdminNoticeTest extends TestCase
 {
@@ -301,7 +303,11 @@ class AdminNoticeTest extends TestCase
         $notice = new AdminNotice();
         $built = $notice->buildCoInstallNotice();
         $repo = new OptionSettingsRepository();
-        $repo->dismissNotice($built['key'], 'active');
+        // Route through the REAL dismiss resolution (the same helper
+        // handleDismiss() + the render gate use), NOT a hand-written
+        // 'active' literal — otherwise the test masks a state-key
+        // mismatch between the two ends (#57 review MAJOR).
+        $repo->dismissNotice($built['key'], AdminNotice::noticeDismissState($built['key'], $repo));
 
         // A second competitor added → new key → re-notify.
         $GLOBALS['__oxpulse_active_plugins'] = [
@@ -310,7 +316,50 @@ class AdminNoticeTest extends TestCase
         ];
         $built2 = $notice->buildCoInstallNotice();
         $this->assertNotSame($built['key'], $built2['key'], 'different plugin set must produce a different key');
-        $this->assertFalse($repo->isNoticeDismissed($built2['key'], 'active'));
+        $this->assertFalse($repo->isNoticeDismissed($built2['key'], AdminNotice::noticeDismissState($built2['key'], $repo)));
+    }
+
+    /**
+     * #57 review MAJOR regression lock: dismissing a co-install notice
+     * via the REAL handleDismiss() REST path must suppress it on the
+     * next render(). Pre-fix, handleDismiss() stored the live
+     * capability ('no'|'unknown'|…) while the render gate checked the
+     * literal 'active' → the stored state never matched → the notice
+     * re-rendered forever, un-silenceable. This test drives the actual
+     * production dismiss path (no hand-written dismiss state) and
+     * asserts the notice stays hidden. Goes RED on the pre-fix code.
+     */
+    public function test_co_install_notice_dismissed_via_real_handle_dismiss_stays_hidden(): void
+    {
+        // imgproxy backend → LocalBackend NOT active → render() only
+        // emits the co-install notice (clean isolation from the
+        // capability notice).
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://imgproxy.example.com');
+        $GLOBALS['__oxpulse_active_plugins'] = [
+            'webp-converter-for-media/webp-converter-for-media.php' => true,
+        ];
+
+        // Build the notice to obtain its key, then dismiss it via the
+        // REAL handleDismiss() path (the same code the dismiss button
+        // hits in production).
+        $notice = new AdminNotice();
+        $built = $notice->buildCoInstallNotice();
+        $this->assertNotNull($built);
+
+        $controller = new CapabilityRestController();
+        $request = new WP_REST_Request(['noticeKey' => $built['key']]);
+        $response = $controller->handleDismiss($request);
+        $this->assertFalse($response instanceof \WP_Error, 'handleDismiss must succeed for a co-install key');
+
+        // After the real dismiss, render() must NOT re-emit the
+        // co-install notice. Pre-fix this asserted-against the still-
+        // rendering notice (stored capability != 'active' gate).
+        $out = $this->captureRender();
+        $this->assertStringNotContainsString(
+            'Converter for Media',
+            $out,
+            'co-install notice dismissed via real handleDismiss() must NOT re-render'
+        );
     }
 
     public function test_co_install_notice_renders_even_when_capability_yes(): void
