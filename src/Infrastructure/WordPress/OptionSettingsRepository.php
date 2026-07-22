@@ -59,6 +59,12 @@ final class OptionSettingsRepository
     // Size-based quality tiers (Ф8): map of maxWidth => quality.
     public const OPTION_SIZE_QUALITY_TIERS = 'oxpulse_imager_size_quality_tiers';
 
+    // #43 Phase 1: rewrite-capability probe result (tri-state) + timestamp +
+    // probe-version guard (re-probe once per plugin version on update).
+    public const OPTION_REWRITE_CAPABILITY = 'oxpulse_imager_rewrite_capability';
+    public const OPTION_REWRITE_CAPABILITY_CHECKED_AT = 'oxpulse_imager_rewrite_capability_checked_at';
+    public const OPTION_PROBE_VERSION = 'oxpulse_imager_probe_version';
+
     public function loadDeliveryConfig(): DeliveryConfig
     {
         return new DeliveryConfig(
@@ -410,5 +416,66 @@ final class OptionSettingsRepository
         } catch (\InvalidArgumentException $e) {
             return null;
         }
+    }
+
+    /**
+     * #43 Phase 1: Load the cached rewrite-capability probe result.
+     *
+     * Pure storage — never auto-runs a probe. Returns the tri-state
+     * string 'yes' | 'no' | 'unknown'. Defaults to 'unknown' when the
+     * option is missing or holds an invalid value (conservative — treat
+     * never-probed / garbage as unavailable so fallbackNeeded is true).
+     */
+    public function loadRewriteCapability(): string
+    {
+        $value = get_option(self::OPTION_REWRITE_CAPABILITY, 'unknown');
+        if (in_array($value, ['yes', 'no', 'unknown'], true)) {
+            return $value;
+        }
+        return 'unknown';
+    }
+
+    /**
+     * #43 Phase 1: Store the probe result + stamp the checked-at timestamp.
+     */
+    public function saveRewriteCapability(string $state): void
+    {
+        update_option(self::OPTION_REWRITE_CAPABILITY, $state);
+        update_option(self::OPTION_REWRITE_CAPABILITY_CHECKED_AT, time());
+    }
+
+    /**
+     * #43 Phase 1: Load the checked-at timestamp (0 when never probed).
+     */
+    public function loadRewriteCapabilityCheckedAt(): int
+    {
+        return (int) get_option(self::OPTION_REWRITE_CAPABILITY_CHECKED_AT, 0);
+    }
+
+    /**
+     * #43 Phase 1: Delete the cached capability + timestamp so the next
+     * CapabilityTester::rewriteAvailable() call re-probes.
+     */
+    public function invalidateRewriteCapability(): void
+    {
+        delete_option(self::OPTION_REWRITE_CAPABILITY);
+        delete_option(self::OPTION_REWRITE_CAPABILITY_CHECKED_AT);
+    }
+
+    /**
+     * #43 Phase 1: Load the probe-version guard ('' when never set).
+     * Used to re-probe once per plugin version on update.
+     */
+    public function loadProbeVersion(): string
+    {
+        return (string) get_option(self::OPTION_PROBE_VERSION, '');
+    }
+
+    /**
+     * #43 Phase 1: Store the probe-version guard.
+     */
+    public function saveProbeVersion(string $version): void
+    {
+        update_option(self::OPTION_PROBE_VERSION, $version);
     }
 }

@@ -7,12 +7,27 @@
  * falls back to the FallbackRewriter output-buffer path (rewrites
  * cache URLs to oxpulse-img.php?k=<key> in the HTML output).
  *
- * The live probe writes a temporary .htaccess with a test rewrite rule
- * + fetches a probe URL. If the rewrite fires, mod_rewrite + AllowOverride
- * are both active. This is the WebP-Express htaccess-capability-tester
- * approach.
+ * #43 Phase 1: the stub allowOverrideEnabled() is replaced by a live
+ * HTTP self-probe (LocalRewriteProbe). The probe writes a temporary
+ * .htaccess with a test rewrite rule + fetches a probe URL. If the
+ * rewrite fires, mod_rewrite + AllowOverride are both active. This is
+ * the WebP-Express htaccess-capability-tester approach.
  *
- * For unit testing, subclass and override rewriteAvailable().
+ * Detection flow:
+ *   1. isApache() false (nginx / LiteSpeed-LSAPI without apache in
+ *      SERVER_SOFTWARE) → short-circuit false, NO HTTP round-trip.
+ *   2. modRewriteLoaded() false (mod_php SAPI, module definitely absent)
+ *      → false, NO probe. null (php-fpm, can't tell) → defer to probe.
+ *   3. Read the cached option (tri-state 'yes'|'no'|'unknown'). On hit
+ *      → return (cached === 'yes'). On miss → run the probe, store the
+ *      result + timestamp, return (result === 'yes').
+ *
+ * 'unknown' (transport error, non-200, unexpected body) is treated as
+ * NOT available → fallbackNeeded true (conservative — prefer fallback
+ * so serving still works, mirroring the existing docblock philosophy).
+ *
+ * For unit testing, inject a stub LocalRewriteProbe and/or subclass and
+ * override isApache() / modRewriteLoaded().
  *
  * @package OXPulse\Imager\Infrastructure\Local
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -23,44 +38,52 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\Local;
 
+use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
+
 class CapabilityTester
 {
+    private ?LocalRewriteProbe $probe;
+
+    /**
+     * @param LocalRewriteProbe|null $probe Inject a stub for tests; null
+     *   lazily constructs a real probe (used in production, not in tests).
+     */
+    public function __construct(?LocalRewriteProbe $probe = null)
+    {
+        $this->probe = $probe;
+    }
+
     /**
      * Whether mod_rewrite + AllowOverride are available for the cache dir.
      *
-     * Real detection (FIX #3): the previous implementation was hardcoded
-     * `return false`, forcing the output-buffer fallback even on Apache
-     * hosts where .htaccess rewrite works. This probes the runtime:
-     *
-     *   - Server is Apache (apache_get_modules exists OR PHP SAPI is
-     *     mod_php/* OR apache_get_version() responds).
-     *   - mod_rewrite is loaded (apache_get_modules() contains 'mod_rewrite'
-     *     OR a function_exists probe on apache_request_headers works).
-     *   - AllowOverride is not None (a light probe: write a temp .htaccess
-     *     with a SetEnv directive and check it takes effect via
-     *     getenv(); when AllowOverride is off the env var stays unset).
-     *
-     * All three must pass for rewrite to be trusted. Any failure (nginx,
-     * CGI/FPM, mod_php without mod_rewrite, AllowOverride None) → false
-     * (conservative — prefer the fallback so serving still works).
-     *
-     * The detection methods are `protected` so unit tests can stub them
-     * without depending on a live Apache environment.
+     * Reads the cached probe result first (no HTTP round-trip on cache
+     * hit). On cache miss, invokes the live probe and stores the result.
      *
      * @return bool
      */
     public function rewriteAvailable(): bool
     {
+        // Fast static pre-filter: non-Apache → false, no probe.
         if (!$this->isApache()) {
             return false;
         }
-        if (!$this->modRewriteLoaded()) {
+
+        // mod_php without mod_rewrite → false, no probe.
+        // null (php-fpm, can't tell) → defer to cache/probe.
+        $modRewrite = $this->modRewriteLoaded();
+        if ($modRewrite === false) {
             return false;
         }
-        if (!$this->allowOverrideEnabled()) {
-            return false;
+
+        // Read the cached option first.
+        $cached = $this->loadCachedCapability();
+        if ($cached !== null) {
+            return $cached === 'yes';
         }
-        return true;
+
+        // Cache miss → probe + store.
+        $result = $this->runProbe();
+        return $result === 'yes';
     }
 
     /**
@@ -74,13 +97,37 @@ class CapabilityTester
     }
 
     /**
+     * Delete the cached probe result so the next rewriteAvailable()
+     * call re-probes. Safe to call on non-Apache (no-op side effect).
+     */
+    public function invalidateCache(): void
+    {
+        delete_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY);
+        delete_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY_CHECKED_AT);
+    }
+
+    /**
+     * Force a fresh probe (ignore the cache), store the result +
+     * timestamp, and return the tri-state string.
+     *
+     * For the future "Re-test capability" admin button (Phase 5).
+     * Does NOT wire any UI now.
+     *
+     * @return string 'yes' | 'no' | 'unknown'
+     */
+    public function recheck(): string
+    {
+        return $this->runProbe();
+    }
+
+    /**
      * Detect whether the server is Apache.
      *
      * Uses apache_get_version() when available (mod_php SAPI), and falls
-     * back to inspecting the Server software via $_SERVER when running
-     * under CGI/FPM (where apache_get_version() is undefined). nginx +
-     * php-fpm → false; Apache + mod_php → true; Apache + php-fpm → true
-     * (the .htaccess is still processed by Apache in that config).
+     * back to inspecting $_SERVER['SERVER_SOFTWARE'] under CGI/FPM.
+     * nginx + php-fpm → false; Apache + mod_php → true; Apache + php-fpm
+     * → true (.htaccess is still processed by Apache in that config);
+     * LiteSpeed → true (the probe is authoritative for its quirks).
      */
     protected function isApache(): bool
     {
@@ -97,14 +144,17 @@ class CapabilityTester
     /**
      * Detect whether mod_rewrite is loaded.
      *
-     * apache_get_modules() is only available under the mod_php SAPI.
-     * Under php-fpm it is undefined — we conservatively return false
-     * (the AllowOverride probe below would still need to confirm, but
-     * without mod_rewrite the rewrite rules don't fire regardless of
-     * AllowOverride). Operators on Apache+FPM who know mod_rewrite is
-     * loaded can rely on the live probe in a future integration phase.
+     * Returns:
+     *   - true  : apache_get_modules() exists and contains mod_rewrite.
+     *   - false : apache_get_modules() exists and does NOT contain
+     *             mod_rewrite (mod_php SAPI, module definitively absent).
+     *   - null  : apache_get_modules() is undefined (php-fpm SAPI) —
+     *             can't tell statically; the caller defers to the live
+     *             probe, which definitively answers "does rewrite work".
+     *
+     * @return bool|null
      */
-    protected function modRewriteLoaded(): bool
+    protected function modRewriteLoaded(): ?bool
     {
         if (function_exists('apache_get_modules')) {
             $modules = @apache_get_modules();
@@ -112,28 +162,53 @@ class CapabilityTester
                 return in_array('mod_rewrite', $modules, true);
             }
         }
-        return false;
+        return null;
     }
 
     /**
-     * Detect whether AllowOverride is enabled (not None) for the cache dir.
-     *
-     * The reliable probe writes a temp .htaccess with a SetEnv directive
-     * and checks whether the env var is visible via getenv() on a
-     * subrequest — but that needs an HTTP round-trip which is not
-     * available in the unit-test stub. The default implementation here
-     * returns true when we're on Apache + mod_rewrite (the common case
-     * where AllowOverride is on by default); a live probe can override
-     * this in a future integration phase. Subclasses stub this for tests.
+     * Read the cached capability option. Returns null on cache miss
+     * (option not set or invalid value).
      */
-    protected function allowOverrideEnabled(): bool
+    private function loadCachedCapability(): ?string
     {
-        // Conservative: assume AllowOverride is on when Apache +
-        // mod_rewrite are detected. The real per-directory probe is
-        // deferred (it needs an HTTP request to the cache dir). The
-        // format-allowlist + signed-key invariant means even if this
-        // is wrong, the worst case is a 404 on a cache miss (the
-        // endpoint isn't reached) — not a security issue.
-        return true;
+        $value = get_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, null);
+        if ($value === null) {
+            return null;
+        }
+        if (in_array($value, ['yes', 'no', 'unknown'], true)) {
+            return $value;
+        }
+        return null;
+    }
+
+    /**
+     * Run the probe (lazily constructing a real one if none injected),
+     * store the result + timestamp, and return the tri-state string.
+     */
+    private function runProbe(): string
+    {
+        $probe = $this->probe ?? $this->buildDefaultProbe();
+        $result = $probe->probe();
+
+        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, $result);
+        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY_CHECKED_AT, time());
+
+        return $result;
+    }
+
+    /**
+     * Lazily construct a real LocalRewriteProbe for production use.
+     *
+     * Uses the standard cache dir path + home_url() for the probe URL.
+     * Phase 2 will wire a properly-constructed probe via DI; this
+     * default exists so `new CapabilityTester()` works standalone.
+     */
+    private function buildDefaultProbe(): LocalRewriteProbe
+    {
+        $wpContent = defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : (ABSPATH . '/wp-content');
+        $cacheDir = $wpContent . '/cache/oxpulse';
+        $probeUrl = home_url('/wp-content/cache/oxpulse/.probe');
+
+        return new LocalRewriteProbe($cacheDir, $probeUrl, new WpRemoteHttpRequester());
     }
 }
