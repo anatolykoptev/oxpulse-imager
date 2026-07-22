@@ -70,6 +70,48 @@ final class UrlRewriter
      */
     public function rewrite(string $sourceUrl, int $width = 0, int $height = 0, string $context = 'content'): RewriteResult
     {
+        return $this->rewriteWithFormat(
+            $sourceUrl,
+            $width,
+            $height,
+            $this->delivery->outputFormat,
+            $context
+        );
+    }
+
+    /**
+     * Rewrite a source image URL to an EXPLICIT output format (avif/webp),
+     * overriding the configured outputFormat. Used by PictureElementWrapper
+     * to emit per-format <source> URLs so a modern browser negotiates AVIF
+     * client-side on standard Apache (no Accept-header negotiation needed).
+     *
+     * Identical to rewrite() EXCEPT the format is the explicit $format
+     * argument, not $this->delivery->outputFormat. All guards (already-
+     * rewritten, delivery-disabled, no-endpoint, no-signing, SourcePolicy
+     * authorize, fail-safe try/catch, quality adjustments) are shared via
+     * rewriteWithFormat(). The Content-Disposition filename extension
+     * reflects $format (not the config outputFormat).
+     *
+     * @param string $sourceUrl Original image URL.
+     * @param int $width Target width (0 = auto/no resize).
+     * @param int $height Target height (0 = auto/no resize).
+     * @param string $format Explicit output format ('avif' | 'webp' | 'jpeg' | 'png' | 'auto').
+     * @param string $context Where the rewrite originated ('picture' for <picture> sources).
+     * @return RewriteResult
+     */
+    public function rewriteFormat(string $sourceUrl, int $width, int $height, string $format, string $context = 'picture'): RewriteResult
+    {
+        return $this->rewriteWithFormat($sourceUrl, $width, $height, $format, $context);
+    }
+
+    /**
+     * Shared rewrite body for both rewrite() (config outputFormat) and
+     * rewriteFormat() (explicit format). Behaviour-preserving for the
+     * rewrite() path — all guards, quality adjustments, and the filename
+     * builder run identically, only the format source differs.
+     */
+    private function rewriteWithFormat(string $sourceUrl, int $width, int $height, string $format, string $context): RewriteResult
+    {
         // #43 Phase 3 — idempotency guard (no double-rewrite / recursion).
         // If the source URL is ALREADY one of OUR rewritten forms — a
         // LocalBackend cache URL (wp-content/cache/oxpulse/) or the
@@ -132,7 +174,7 @@ final class UrlRewriter
                 width: $width,
                 height: $height,
                 resize: $this->resolveResizeType($width, $height),
-                format: $this->delivery->outputFormat,
+                format: $format,
                 quality: $quality > 0 ? $quality : 0,
                 context: $context,
                 dpr: 0,
@@ -142,7 +184,7 @@ final class UrlRewriter
                 sourceMode: $sourceMode,
             );
 
-            $filename = $this->buildContentDispositionFilename($sourceUrl);
+            $filename = $this->buildContentDispositionFilename($sourceUrl, $format);
 
             $url = $this->backend()->generate($request, $filename);
             $this->log(LogEntry::rewritten($context, $sourceUrl, $width));
@@ -286,7 +328,7 @@ final class UrlRewriter
                 sourceMode: $sourceMode,
             );
 
-            $filename = $this->buildContentDispositionFilename($sourceUrl);
+            $filename = $this->buildContentDispositionFilename($sourceUrl, $this->delivery->outputFormat);
 
             return RewriteResult::rewritten($this->backend()->generate($request, $filename));
         } catch (\Throwable $e) {
@@ -365,7 +407,7 @@ final class UrlRewriter
      * extension (e.g. "photo.webp.png" when imgproxy negotiates PNG from
      * a WebP source).
      */
-    private function buildContentDispositionFilename(string $sourceUrl): ?string
+    private function buildContentDispositionFilename(string $sourceUrl, string $format): ?string
     {
         $path = parse_url($sourceUrl, PHP_URL_PATH);
         if (!is_string($path) || $path === '') {
@@ -377,7 +419,6 @@ final class UrlRewriter
             return null;
         }
 
-        $format = $this->delivery->outputFormat;
         if ($format === '' || $format === 'auto') {
             // Auto mode: strip the source extension. imgproxy appends the
             // negotiated format extension to the Content-Disposition

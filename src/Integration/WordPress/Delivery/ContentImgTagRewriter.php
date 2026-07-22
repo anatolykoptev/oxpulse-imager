@@ -22,6 +22,7 @@ declare(strict_types=1);
 namespace OXPulse\Imager\Integration\WordPress\Delivery;
 
 use OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder;
+use OXPulse\Imager\Application\Delivery\PictureElementWrapper;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 
@@ -29,16 +30,19 @@ final class ContentImgTagRewriter
 {
     private UrlRewriter $rewriter;
     private ?LqipPlaceholderBuilder $lqipBuilder;
+    private ?PictureElementWrapper $pictureWrapper;
     private DeliveryConfig $delivery;
 
     public function __construct(
         UrlRewriter $rewriter,
         DeliveryConfig $delivery,
-        ?LqipPlaceholderBuilder $lqipBuilder = null
+        ?LqipPlaceholderBuilder $lqipBuilder = null,
+        ?PictureElementWrapper $pictureWrapper = null
     ) {
         $this->rewriter = $rewriter;
         $this->delivery = $delivery;
         $this->lqipBuilder = $lqipBuilder;
+        $this->pictureWrapper = $pictureWrapper;
     }
 
     /**
@@ -96,6 +100,24 @@ final class ContentImgTagRewriter
         // (ours or another plugin's) can skip this tag as already-handled.
         // Only add when we actually rewrote something (the src changed).
         $filteredImage = $this->addOxpulseMarker($filteredImage, $originalSrc);
+
+        // Phase 1: <picture> element wrapping (default OFF). Wraps the
+        // <img> in <picture><source type="image/avif"><source type="image/webp">
+        // so a modern browser negotiates AVIF client-side on standard Apache.
+        // The runtime oxpulse_picture_enabled filter mirrors
+        // oxpulse_buffer_rewrite_enabled — an operator can force-disable at
+        // rewrite time even when pictureEnabled is true. When no wrapper is
+        // injected (pre-Phase-1 callers) or the filter returns false, skip.
+        if ($this->pictureWrapper !== null
+            && apply_filters('oxpulse_picture_enabled', $this->delivery->pictureEnabled)
+        ) {
+            $filteredImage = $this->pictureWrapper->wrap(
+                $filteredImage,
+                $originalSrc,
+                $originalWidth,
+                $originalHeight
+            );
+        }
 
         return $filteredImage;
     }

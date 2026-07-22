@@ -372,4 +372,64 @@ class ContentImgTagRewriterTest extends TestCase
         $secondPass = $rewriter->rewrite($firstPass, 'the_content', 0);
         $this->assertSame($firstPass, $secondPass);
     }
+
+    // --- Phase 1: <picture> element wrapping integration ---
+
+    private function createContentRewriterWithPicture(bool $pictureEnabled): ContentImgTagRewriter
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.example.com',
+            allowedSources: [self::ALLOWED],
+            pictureEnabled: $pictureEnabled,
+        );
+        $rewriter = new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            SigningConfig::fromHex('736563726574', '68656C6C6F')
+        );
+        $pictureWrapper = new \OXPulse\Imager\Application\Delivery\PictureElementWrapper($rewriter, $delivery);
+        return new ContentImgTagRewriter($rewriter, $delivery, null, $pictureWrapper);
+    }
+
+    public function test_picture_wrap_emits_picture_when_enabled(): void
+    {
+        $rewriter = $this->createContentRewriterWithPicture(pictureEnabled: true);
+        $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
+
+        $result = $rewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertStringContainsString('<picture>', $result);
+        $this->assertStringContainsString('</picture>', $result);
+        $this->assertStringContainsString('<source type="image/avif"', $result);
+        $this->assertStringContainsString('<source type="image/webp"', $result);
+        // AVIF source must come before WebP source.
+        $avifPos = strpos($result, '<source type="image/avif"');
+        $webpPos = strpos($result, '<source type="image/webp"');
+        $this->assertNotFalse($avifPos);
+        $this->assertNotFalse($webpPos);
+        $this->assertLessThan($webpPos, $avifPos);
+    }
+
+    public function test_picture_wrap_skipped_when_disabled(): void
+    {
+        $rewriter = $this->createContentRewriterWithPicture(pictureEnabled: false);
+        $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
+
+        $result = $rewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertStringNotContainsString('<picture>', $result);
+    }
+
+    public function test_picture_wrapper_null_skips_wrapping(): void
+    {
+        // When no PictureElementWrapper is injected (the default for all
+        // pre-Phase-1 callers), wrapping is skipped — backward compatible.
+        $rewriter = $this->createContentRewriter();
+        $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
+
+        $result = $rewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertStringNotContainsString('<picture>', $result);
+    }
 }
