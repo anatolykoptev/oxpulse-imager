@@ -38,7 +38,17 @@ class PluginTest extends TestCase
 
     public function test_constants_are_defined(): void
     {
-        $this->assertSame('0.1.0', OXPULSE_IMAGER_VERSION);
+        // Version is release-managed (release-please bumps the plugin
+        // header + this constant together); assert the constant stays in
+        // sync with the header rather than a literal that every release
+        // would break.
+        $pluginFile = (string) file_get_contents(dirname(__DIR__, 2) . '/oxpulse-imager.php');
+        self::assertSame(
+            1,
+            preg_match('/^\s*\*\s*Version:\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$/m', $pluginFile, $versionMatch),
+            'plugin header Version not found'
+        );
+        $this->assertSame($versionMatch[1], OXPULSE_IMAGER_VERSION);
         $this->assertSame('oxpulse_imager_', OXPULSE_IMAGER_OPTION_PREFIX);
         $this->assertSame('manage_oxpulse_imager', OXPULSE_IMAGER_CAPABILITY);
     }

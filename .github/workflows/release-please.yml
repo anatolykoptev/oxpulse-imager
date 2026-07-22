@@ -34,6 +34,32 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # release-please bumps the plugin-header Version + PHP const via
+      # x-release-please markers, but wordpress.org readme.txt has no comment
+      # syntax for such a marker (a stray line breaks the header block), so
+      # sync its Stable tag from the header onto the release PR branch here.
+      # Pushing to the RP branch does not re-trigger this workflow (it runs
+      # on main only), so there is no loop.
+      - name: Sync readme.txt Stable tag with the release PR
+        if: ${{ steps.release.outputs.release_created != 'true' && steps.release.outputs.pr != '' }}
+        run: |
+          set -euo pipefail
+          BRANCH="release-please--branches--main"
+          git fetch origin "$BRANCH"
+          git checkout "$BRANCH"
+          VER=$(grep -oP '^\s*\*\s*Version:\s*\K[0-9]+\.[0-9]+\.[0-9]+' oxpulse-imager.php)
+          sed -i -E "s/^(Stable tag:[[:space:]]*).*/\1${VER}/" readme.txt
+          if ! git diff --quiet readme.txt; then
+            git config user.name "krolik-release-bot[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add readme.txt
+            git commit -m "chore: sync readme Stable tag to ${VER}"
+            git push origin "HEAD:${BRANCH}"
+            echo "synced readme Stable tag -> ${VER}"
+          else
+            echo "readme Stable tag already ${VER}"
+          fi
+
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
