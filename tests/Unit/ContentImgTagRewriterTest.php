@@ -432,4 +432,64 @@ class ContentImgTagRewriterTest extends TestCase
 
         $this->assertStringNotContainsString('<picture>', $result);
     }
+
+    /**
+     * Real-shape integration test: a content <img> WITH a srcset (the
+     * common case — WordPress core auto-adds srcset via
+     * wp_calculate_image_srcset) must still get a <picture> wrapper with
+     * per-format <source> elements. This exercises the FULL rewrite path:
+     * ContentImgTagRewriter::rewrite() rewrites the src AND srcset first,
+     * THEN calls PictureElementWrapper::wrap(). The per-format srcset
+     * must be built from the ORIGINAL srcset (pre-rewrite), not the
+     * already-rewritten one — otherwise every candidate is rejected by
+     * the proxy-loop / already-rewritten guard and no <source> is emitted.
+     */
+    public function test_picture_wrap_with_srcset_bearing_img_emits_picture(): void
+    {
+        $rewriter = $this->createContentRewriterWithPicture(pictureEnabled: true);
+        $tag = '<img src="https://example.com/wp-content/uploads/img.jpg" srcset="https://example.com/wp-content/uploads/img-300.jpg 300w, https://example.com/wp-content/uploads/img-800.jpg 800w" sizes="(max-width: 800px) 100vw, 800px" width="800" height="600" />';
+
+        $result = $rewriter->rewrite($tag, 'the_content', 0);
+
+        // Must be a <picture>, not a plain <img>.
+        $this->assertStringContainsString('<picture>', $result);
+        $this->assertStringContainsString('</picture>', $result);
+
+        // Extract the <source> tags in document order.
+        preg_match_all('/<source\b[^>]*>/i', $result, $sourceMatches);
+        $sources = $sourceMatches[0];
+        $this->assertCount(2, $sources, 'expected exactly 2 <source> elements (avif + webp)');
+
+        // First source = AVIF, second = WebP.
+        $this->assertStringContainsString('type="image/avif"', $sources[0]);
+        $this->assertStringContainsString('type="image/webp"', $sources[1]);
+
+        foreach ($sources as $source) {
+            // srcset must be non-empty.
+            $this->assertMatchesRegularExpression('/srcset="[^"]+"/', $source, 'source srcset must be present and non-empty');
+
+            // Parse the srcset value — must have exactly 2 candidates.
+            preg_match('/\bsrcset="([^"]*)"/', $source, $srcsetMatch);
+            $srcsetValue = $srcsetMatch[1];
+            $candidates = array_filter(explode(', ', $srcsetValue), fn ($c) => trim($c) !== '');
+            $this->assertCount(2, $candidates, 'per-format srcset must have 2 candidates (300w + 800w)');
+
+            // Each candidate must carry the 300w / 800w descriptor and be
+            // a rewritten delivery URL (starts with the imgproxy endpoint,
+            // not a bare original URL). imgproxy URLs embed the original
+            // source in the plain/ segment, so we check the prefix.
+            $descriptors = [];
+            foreach ($candidates as $candidate) {
+                $this->assertStringStartsWith('https://imgproxy.example.com/', trim($candidate), 'candidate must be a rewritten delivery URL');
+                if (preg_match('/\s(\d+w)$/', $candidate, $dMatch)) {
+                    $descriptors[] = $dMatch[1];
+                }
+            }
+            $this->assertContains('300w', $descriptors);
+            $this->assertContains('800w', $descriptors);
+
+            // sizes must be copied onto each <source>.
+            $this->assertStringContainsString('sizes="(max-width: 800px) 100vw, 800px"', $source);
+        }
+    }
 }

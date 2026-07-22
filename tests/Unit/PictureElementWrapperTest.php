@@ -97,7 +97,7 @@ class PictureElementWrapperTest extends TestCase
         $wrapper = $this->createWrapper(pictureEnabled: false);
         $img = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" alt="Test" />';
 
-        $this->assertSame($img, $wrapper->wrap($img, 'https://example.com/wp-content/uploads/photo.jpg', 800, 600));
+        $this->assertSame($img, $wrapper->wrap($img, 'https://example.com/wp-content/uploads/photo.jpg', '', 800, 600));
     }
 
     public function test_both_formats_rewrite_emits_picture_avif_first(): void
@@ -106,7 +106,7 @@ class PictureElementWrapperTest extends TestCase
         $img = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" alt="Test" />';
         $src = 'https://example.com/wp-content/uploads/photo.jpg';
 
-        $result = $wrapper->wrap($img, $src, 800, 600);
+        $result = $wrapper->wrap($img, $src, '', 800, 600);
         $parsed = $this->parsePicture($result);
 
         $this->assertSame(['image/avif', 'image/webp'], $parsed['types']);
@@ -125,7 +125,7 @@ class PictureElementWrapperTest extends TestCase
         $img = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
         $src = 'https://example.com/wp-content/uploads/photo.jpg';
 
-        $result = $wrapper->wrap($img, $src, 800, 600);
+        $result = $wrapper->wrap($img, $src, '', 800, 600);
         $parsed = $this->parsePicture($result);
 
         $this->assertSame(['image/webp'], $parsed['types']);
@@ -138,7 +138,7 @@ class PictureElementWrapperTest extends TestCase
         $img = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
         $src = 'https://example.com/wp-content/uploads/photo.jpg';
 
-        $this->assertSame($img, $wrapper->wrap($img, $src, 800, 600));
+        $this->assertSame($img, $wrapper->wrap($img, $src, '', 800, 600));
     }
 
     public function test_already_inside_picture_returns_unchanged(): void
@@ -146,7 +146,7 @@ class PictureElementWrapperTest extends TestCase
         $wrapper = $this->createWrapper();
         $html = '<picture><source type="image/avif" srcset="x.avif"><img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" /></picture>';
 
-        $this->assertSame($html, $wrapper->wrap($html, 'https://example.com/wp-content/uploads/photo.jpg', 800, 600));
+        $this->assertSame($html, $wrapper->wrap($html, 'https://example.com/wp-content/uploads/photo.jpg', '', 800, 600));
     }
 
     public function test_second_pass_over_marked_img_returns_unchanged(): void
@@ -154,16 +154,17 @@ class PictureElementWrapperTest extends TestCase
         $wrapper = $this->createWrapper();
         $img = '<img data-oxpulse-picture="1" src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
 
-        $this->assertSame($img, $wrapper->wrap($img, 'https://example.com/wp-content/uploads/photo.jpg', 800, 600));
+        $this->assertSame($img, $wrapper->wrap($img, 'https://example.com/wp-content/uploads/photo.jpg', '', 800, 600));
     }
 
     public function test_inner_img_has_srcset_sources_get_per_format_srcset(): void
     {
         $wrapper = $this->createWrapper();
-        $img = '<img src="https://example.com/wp-content/uploads/photo.jpg" srcset="https://example.com/wp-content/uploads/photo-300.jpg 300w, https://example.com/wp-content/uploads/photo-600.jpg 600w" sizes="(max-width: 600px) 100vw, 50vw" width="600" height="400" />';
+        $srcset = 'https://example.com/wp-content/uploads/photo-300.jpg 300w, https://example.com/wp-content/uploads/photo-600.jpg 600w';
+        $img = '<img src="https://example.com/wp-content/uploads/photo.jpg" srcset="' . $srcset . '" sizes="(max-width: 600px) 100vw, 50vw" width="600" height="400" />';
         $src = 'https://example.com/wp-content/uploads/photo.jpg';
 
-        $result = $wrapper->wrap($img, $src, 600, 400);
+        $result = $wrapper->wrap($img, $src, $srcset, 600, 400);
         $parsed = $this->parsePicture($result);
 
         $this->assertSame(['image/avif', 'image/webp'], $parsed['types']);
@@ -184,7 +185,7 @@ class PictureElementWrapperTest extends TestCase
         $img = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
         $src = 'https://example.com/wp-content/uploads/photo.jpg';
 
-        $result = $wrapper->wrap($img, $src, 800, 600);
+        $result = $wrapper->wrap($img, $src, '', 800, 600);
         $parsed = $this->parsePicture($result);
 
         $this->assertSame(['image/avif', 'image/webp'], $parsed['types']);
@@ -203,13 +204,13 @@ class PictureElementWrapperTest extends TestCase
         $wrapper = $this->createWrapper();
         $img = '<img src="" width="800" height="600" />';
 
-        $this->assertSame($img, $wrapper->wrap($img, '', 800, 600));
+        $this->assertSame($img, $wrapper->wrap($img, '', '', 800, 600));
     }
 
     public function test_empty_img_tag_returns_unchanged(): void
     {
         $wrapper = $this->createWrapper();
-        $this->assertSame('', $wrapper->wrap('', 'https://example.com/wp-content/uploads/photo.jpg', 800, 600));
+        $this->assertSame('', $wrapper->wrap('', 'https://example.com/wp-content/uploads/photo.jpg', '', 800, 600));
     }
 
     public function test_urls_are_escaped_in_source_attributes(): void
@@ -218,7 +219,7 @@ class PictureElementWrapperTest extends TestCase
         $img = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
         $src = 'https://example.com/wp-content/uploads/photo.jpg';
 
-        $result = $wrapper->wrap($img, $src, 800, 600);
+        $result = $wrapper->wrap($img, $src, '', 800, 600);
 
         // The source srcset must be a properly quoted attribute value.
         // No unescaped & or " inside the attribute (the test URLs have none,

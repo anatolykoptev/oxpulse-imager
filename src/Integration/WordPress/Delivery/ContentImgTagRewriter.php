@@ -77,6 +77,17 @@ final class ContentImgTagRewriter
         if (preg_match('/\bsrc=["\']([^"\']+)["\']/', $filteredImage, $srcMatch)) {
             $originalSrc = $srcMatch[1];
         }
+        // Capture the ORIGINAL srcset BEFORE rewriteSrcsetAttribute() runs
+        // — PictureElementWrapper::wrap() needs the pre-rewrite srcset to
+        // build per-format <source> srcset candidates, exactly as $originalSrc
+        // is captured before rewriteSrcAttribute() for the single-URL path.
+        // Without this, wrap() would extract the ALREADY-rewritten srcset
+        // (imgproxy / cache URLs) and every candidate would be rejected by
+        // the proxy-loop / already-rewritten guard → no <source> emitted.
+        $originalSrcset = '';
+        if (preg_match('/\bsrcset=["\']([^"\']+)["\']/', $filteredImage, $srcsetMatch)) {
+            $originalSrcset = $srcsetMatch[1];
+        }
         $originalWidth = $this->extractAttribute($filteredImage, 'width');
         $originalHeight = $this->extractAttribute($filteredImage, 'height');
 
@@ -114,6 +125,7 @@ final class ContentImgTagRewriter
             $filteredImage = $this->pictureWrapper->wrap(
                 $filteredImage,
                 $originalSrc,
+                $originalSrcset,
                 $originalWidth,
                 $originalHeight
             );

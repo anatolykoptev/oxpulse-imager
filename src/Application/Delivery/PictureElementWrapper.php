@@ -67,13 +67,20 @@ final class PictureElementWrapper
      * @param string $originalSrc The ORIGINAL src URL (before src
      *        rewriting) — rewriteFormat authorizes against this, not
      *        the already-rewritten imgproxy URL.
+     * @param string $originalSrcset The ORIGINAL srcset value (before
+     *        srcset rewriting) — used to build per-format <source>
+     *        srcset candidates. When empty, the single-URL path is
+     *        used (rewriteFormat on $originalSrc). Must be the
+     *        pre-rewrite srcset; passing the already-rewritten srcset
+     *        would cause every candidate to be rejected by the
+     *        proxy-loop / already-rewritten guard.
      * @param int $width Layout width hint (0 = unknown).
      * @param int $height Layout height hint (0 = unknown).
      * @return string The <img> unchanged when wrapping is disabled or
      *         no format can be rewritten; otherwise
      *         <picture><source type="image/avif" ...><source type="image/webp" ...><img ...></picture>.
      */
-    public function wrap(string $imgTag, string $originalSrc, int $width, int $height): string
+    public function wrap(string $imgTag, string $originalSrc, string $originalSrcset, int $width, int $height): string
     {
         if (!$this->delivery->pictureEnabled) {
             return $imgTag;
@@ -105,7 +112,7 @@ final class PictureElementWrapper
         // actually rewrote (rewritten === true) get a <source> — the
         // fallback-guard: never emit a <source> with a non-rewritten
         // (original) URL.
-        $sources = $this->buildSources($imgTag, $originalSrc, $width, $height);
+        $sources = $this->buildSources($imgTag, $originalSrc, $originalSrcset, $width, $height);
 
         // Fallback-guard: if NO format produced a <source>, return the
         // <img> unchanged — never emit a <picture> whose only working
@@ -125,28 +132,36 @@ final class PictureElementWrapper
      * Build the per-format <source> elements in AVIF-first order.
      *
      * For each format, attempt to rewrite the original src to that
-     * format. When the inner <img> has a srcset, build a per-format
-     * srcset by mapping each candidate through rewriteFormat
-     * (preserving descriptors); only rewritten candidates are included
-     * (a non-rewritten original URL in a format-specific <source>
-     * would serve the wrong mime type). When the inner <img> has no
-     * srcset, the <source> srcset is the single rewritten URL.
+     * format. When the original srcset (pre-rewrite) is non-empty, build
+     * a per-format srcset by mapping each ORIGINAL candidate through
+     * rewriteFormat (preserving descriptors); only rewritten candidates
+     * are included (a non-rewritten original URL in a format-specific
+     * <source> would serve the wrong mime type). When the original
+     * srcset is empty, the <source> srcset is the single rewritten URL.
+     *
+     * The per-format srcset is built from $originalSrcset (the PRE-rewrite
+     * srcset), NOT from the srcset extracted out of $imgTag — by the time
+     * wrap() is called, ContentImgTagRewriter has already rewritten the
+     * <img>'s srcset to delivery URLs (imgproxy / cache), which
+     * rewriteFormat would reject via the proxy-loop / already-rewritten
+     * guard. This mirrors the single-URL path using $originalSrc.
      *
      * The inner <img>'s sizes attribute (when present) is copied onto
      * each <source> so the browser applies the same responsive sizing.
+     * sizes is NOT rewritten by ContentImgTagRewriter, so extracting it
+     * from $imgTag is safe.
      *
      * @return list<string> <source> HTML strings, AVIF-first. Empty
      *         when no format could be rewritten (fallback-guard).
      */
-    private function buildSources(string $imgTag, string $originalSrc, int $width, int $height): array
+    private function buildSources(string $imgTag, string $originalSrc, string $originalSrcset, int $width, int $height): array
     {
-        $innerSrcset = $this->extractAttribute($imgTag, 'srcset');
         $innerSizes = $this->extractAttribute($imgTag, 'sizes');
 
         $sources = [];
         foreach (self::FORMATS as $format => $mimeType) {
-            if ($innerSrcset !== '') {
-                $srcset = $this->buildPerFormatSrcset($innerSrcset, $format);
+            if ($originalSrcset !== '') {
+                $srcset = $this->buildPerFormatSrcset($originalSrcset, $format);
                 if ($srcset === '') {
                     // No candidate rewrote for this format — skip the
                     // <source> entirely (don't emit a <source> with
