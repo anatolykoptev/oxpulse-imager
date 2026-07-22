@@ -48,13 +48,12 @@ class PictureElementWrapperTest extends TestCase
         );
     }
 
-    private function createWrapper(bool $pictureEnabled = true, array $allowedFormats = []): PictureElementWrapper
+    private function createWrapper(array $allowedFormats = []): PictureElementWrapper
     {
         $delivery = new DeliveryConfig(
             enabled: true,
             endpoint: 'https://imgproxy.test',
             allowedSources: [self::ALLOWED],
-            pictureEnabled: $pictureEnabled,
         );
         $rewriter = new UrlRewriter(
             new SourcePolicy(),
@@ -63,7 +62,7 @@ class PictureElementWrapperTest extends TestCase
             null,
             new PictureTestBackend($allowedFormats)
         );
-        return new PictureElementWrapper($rewriter, $delivery);
+        return new PictureElementWrapper($rewriter);
     }
 
     /**
@@ -92,14 +91,6 @@ class PictureElementWrapperTest extends TestCase
         return ['sources' => $sources, 'types' => $types, 'img' => $img, 'html' => $html];
     }
 
-    public function test_picture_disabled_returns_img_unchanged(): void
-    {
-        $wrapper = $this->createWrapper(pictureEnabled: false);
-        $img = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" alt="Test" />';
-
-        $this->assertSame($img, $wrapper->wrap($img, 'https://example.com/wp-content/uploads/photo.jpg', '', 800, 600));
-    }
-
     public function test_both_formats_rewrite_emits_picture_avif_first(): void
     {
         $wrapper = $this->createWrapper();
@@ -110,6 +101,12 @@ class PictureElementWrapperTest extends TestCase
         $parsed = $this->parsePicture($result);
 
         $this->assertSame(['image/avif', 'image/webp'], $parsed['types']);
+        // FIX 1: the <picture> open tag must carry style="display:contents"
+        // so its box is removed from the layout tree and the inner <img>
+        // stays the flex/grid layout participant (wrapping <img> in
+        // <picture> otherwise inserts a new box that breaks direct-child
+        // CSS rules in flex/grid image containers).
+        $this->assertStringContainsString('<picture style="display:contents">', $result);
         $this->assertStringContainsString('data-oxpulse-picture="1"', $parsed['img']);
         // Inner img attributes preserved.
         $this->assertStringContainsString('alt="Test"', $parsed['img']);

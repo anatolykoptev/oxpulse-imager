@@ -113,12 +113,16 @@ final class ContentImgTagRewriter
         $filteredImage = $this->addOxpulseMarker($filteredImage, $originalSrc);
 
         // Phase 1: <picture> element wrapping (default OFF). Wraps the
-        // <img> in <picture><source type="image/avif"><source type="image/webp">
+        // <img> in <picture style="display:contents"><source type="image/avif"><source type="image/webp">
         // so a modern browser negotiates AVIF client-side on standard Apache.
-        // The runtime oxpulse_picture_enabled filter mirrors
-        // oxpulse_buffer_rewrite_enabled — an operator can force-disable at
-        // rewrite time even when pictureEnabled is true. When no wrapper is
-        // injected (pre-Phase-1 callers) or the filter returns false, skip.
+        // The runtime oxpulse_picture_enabled filter is the SINGLE honest
+        // gate — it mirrors oxpulse_buffer_rewrite_enabled: an operator can
+        // force-enable OR force-disable at rewrite time, overriding
+        // pictureEnabled in either direction. PictureElementWrapper::wrap()
+        // has no internal enable check, so a force-enable filter takes
+        // effect (a second internal check would make it a silent no-op).
+        // When no wrapper is injected (pre-Phase-1 callers) or the filter
+        // returns false, skip.
         if ($this->pictureWrapper !== null
             && apply_filters('oxpulse_picture_enabled', $this->delivery->pictureEnabled)
         ) {

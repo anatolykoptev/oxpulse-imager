@@ -11,11 +11,17 @@
  *
  * Pure service — no WordPress calls, unit-testable in isolation. The
  * runtime oxpulse_picture_enabled filter is applied by the caller
- * (ContentImgTagRewriter, the WP integration layer), mirroring the
- * oxpulse_buffer_rewrite_enabled filter shape.
+ * (ContentImgTagRewriter, the WP integration layer, where filters
+ * belong), mirroring the oxpulse_buffer_rewrite_enabled filter shape.
+ * wrap() is a pure "wrap this img" operation called only when enabled
+ * — it does NOT re-check pictureEnabled (the single honest gate is the
+ * filter in the caller; a second internal check would make a
+ * force-enable filter a silent no-op).
  *
  * Hard invariants (this plugin's #1 rule is NEVER BREAK SITES):
- * - DEFAULT OFF: wrap() is a no-op when delivery.pictureEnabled is false.
+ * - DEFAULT OFF: the caller gates on apply_filters('oxpulse_picture_enabled',
+ *   $delivery->pictureEnabled) — default false. wrap() itself has no
+ *   enable check (see above).
  * - Fallback-guard: if NEITHER avif NOR webp can be rewritten for the
  *   image, the <img> is returned UNCHANGED — never emit a <picture>
  *   whose only working source is the inner <img>, and never emit a
@@ -40,8 +46,6 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Application\Delivery;
 
-use OXPulse\Imager\Domain\Config\DeliveryConfig;
-
 final class PictureElementWrapper
 {
     private const PICTURE_MARKER = 'data-oxpulse-picture';
@@ -55,8 +59,7 @@ final class PictureElementWrapper
     private const FORMATS = ['avif' => 'image/avif', 'webp' => 'image/webp'];
 
     public function __construct(
-        private UrlRewriter $rewriter,
-        private DeliveryConfig $delivery
+        private UrlRewriter $rewriter
     ) {}
 
     /**
@@ -76,15 +79,14 @@ final class PictureElementWrapper
      *        proxy-loop / already-rewritten guard.
      * @param int $width Layout width hint (0 = unknown).
      * @param int $height Layout height hint (0 = unknown).
-     * @return string The <img> unchanged when wrapping is disabled or
-     *         no format can be rewritten; otherwise
-     *         <picture><source type="image/avif" ...><source type="image/webp" ...><img ...></picture>.
+     * @return string The <img> unchanged when no format can be rewritten
+     *         (fallback-guard) or the input is empty; otherwise
+     *         <picture style="display:contents"><source type="image/avif" ...><source type="image/webp" ...><img ...></picture>.
+     *         The enable gate lives solely in the caller
+     *         (ContentImgTagRewriter, via apply_filters('oxpulse_picture_enabled')).
      */
     public function wrap(string $imgTag, string $originalSrc, string $originalSrcset, int $width, int $height): string
     {
-        if (!$this->delivery->pictureEnabled) {
-            return $imgTag;
-        }
         if ($imgTag === '' || $originalSrc === '') {
             return $imgTag;
         }
@@ -125,7 +127,13 @@ final class PictureElementWrapper
         // the opening <img, mirroring ContentImgTagRewriter::addOxpulseMarker).
         $markedImg = $this->addPictureMarker($imgTag);
 
-        return '<picture>' . implode('', $sources) . $markedImg . '</picture>';
+        // style="display:contents" removes the <picture> box from the
+        // layout tree so the inner <img> stays the flex/grid layout
+        // participant — without this, wrapping <img> in <picture> inserts
+        // a new box that becomes the flex/grid item and direct-child CSS
+        // rules stop matching (visible layout regression on flex/grid
+        // image containers when the flag is enabled).
+        return '<picture style="display:contents">' . implode('', $sources) . $markedImg . '</picture>';
     }
 
     /**
@@ -222,7 +230,14 @@ final class PictureElementWrapper
                 continue;
             }
 
-            $rewritten[] = htmlspecialchars($result->url, ENT_QUOTES, 'UTF-8') . $descriptor;
+            // Escape the ASSEMBLED candidate (url + descriptor) once.
+            // Previously the URL was escaped but the $descriptor (from
+            // the original srcset) was concatenated raw into the srcset
+            // attribute value — not exploitable (the upstream capture
+            // regex strips quotes) but a plugin-check EscapeOutput gap.
+            // The ', ' join between candidates has no special chars and
+            // stays raw.
+            $rewritten[] = htmlspecialchars($result->url . $descriptor, ENT_QUOTES, 'UTF-8');
         }
 
         return implode(', ', $rewritten);

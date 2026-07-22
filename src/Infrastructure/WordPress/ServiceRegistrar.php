@@ -196,7 +196,7 @@ final class ServiceRegistrar
         // gate the actual wrapping at rewrite time inside
         // ContentImgTagRewriter::rewrite(), mirroring the
         // bufferRewritingEnabled / oxpulse_buffer_rewrite_enabled shape.
-        $pictureWrapper = new PictureElementWrapper($rewriter, $delivery);
+        $pictureWrapper = new PictureElementWrapper($rewriter);
 
         $contentRewriter = new ContentImgTagRewriter($rewriter, $delivery, $lqipBuilder, $pictureWrapper);
         $srcsetRewriter = new SrcsetRewriter($rewriter);

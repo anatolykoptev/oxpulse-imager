@@ -388,7 +388,7 @@ class ContentImgTagRewriterTest extends TestCase
             $delivery,
             SigningConfig::fromHex('736563726574', '68656C6C6F')
         );
-        $pictureWrapper = new \OXPulse\Imager\Application\Delivery\PictureElementWrapper($rewriter, $delivery);
+        $pictureWrapper = new \OXPulse\Imager\Application\Delivery\PictureElementWrapper($rewriter);
         return new ContentImgTagRewriter($rewriter, $delivery, null, $pictureWrapper);
     }
 
@@ -399,7 +399,7 @@ class ContentImgTagRewriterTest extends TestCase
 
         $result = $rewriter->rewrite($tag, 'the_content', 0);
 
-        $this->assertStringContainsString('<picture>', $result);
+        $this->assertStringContainsString('<picture', $result);
         $this->assertStringContainsString('</picture>', $result);
         $this->assertStringContainsString('<source type="image/avif"', $result);
         $this->assertStringContainsString('<source type="image/webp"', $result);
@@ -418,7 +418,31 @@ class ContentImgTagRewriterTest extends TestCase
 
         $result = $rewriter->rewrite($tag, 'the_content', 0);
 
-        $this->assertStringNotContainsString('<picture>', $result);
+        $this->assertStringNotContainsString('<picture', $result);
+    }
+
+    /**
+     * FIX 2: the oxpulse_picture_enabled filter is the SINGLE honest
+     * runtime gate. With config pictureEnabled=false BUT the filter
+     * forced true, ContentImgTagRewriter::rewrite() MUST still emit a
+     * <picture> — mirroring oxpulse_buffer_rewrite_enabled. Before the
+     * fix, PictureElementWrapper::wrap() re-checked pictureEnabled and
+     * bailed, making the force-enable filter a silent no-op.
+     */
+    public function test_picture_wrap_force_enabled_via_filter_overrides_disabled_config(): void
+    {
+        $rewriter = $this->createContentRewriterWithPicture(pictureEnabled: false);
+        $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
+
+        $GLOBALS['__oxpulse_filters'] = [];
+        add_filter('oxpulse_picture_enabled', '__return_true');
+        try {
+            $result = $rewriter->rewrite($tag, 'the_content', 0);
+            $this->assertStringContainsString('<picture', $result, 'filter force-enable must emit <picture> even when config pictureEnabled=false');
+            $this->assertStringContainsString('</picture>', $result);
+        } finally {
+            $GLOBALS['__oxpulse_filters'] = [];
+        }
     }
 
     public function test_picture_wrapper_null_skips_wrapping(): void
@@ -430,7 +454,7 @@ class ContentImgTagRewriterTest extends TestCase
 
         $result = $rewriter->rewrite($tag, 'the_content', 0);
 
-        $this->assertStringNotContainsString('<picture>', $result);
+        $this->assertStringNotContainsString('<picture', $result);
     }
 
     /**
@@ -452,7 +476,7 @@ class ContentImgTagRewriterTest extends TestCase
         $result = $rewriter->rewrite($tag, 'the_content', 0);
 
         // Must be a <picture>, not a plain <img>.
-        $this->assertStringContainsString('<picture>', $result);
+        $this->assertStringContainsString('<picture', $result);
         $this->assertStringContainsString('</picture>', $result);
 
         // Extract the <source> tags in document order.
