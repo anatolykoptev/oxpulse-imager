@@ -73,6 +73,15 @@ final class ServiceRegistrar
      */
     private static ?UrlRewriter $rewriter = null;
 
+    /**
+     * #43 Phase 1 review: test seam — counts how many times
+     * recheckRewriteCapability() actually invoked the probe (endpoint
+     * empty + recheck called). Tests reset it in setUp and assert on it
+     * to verify the write-time trigger wiring (activation / settings-save
+     * / version-gated re-probe) without a real HTTP round-trip.
+     */
+    public static int $recheckCallCount = 0;
+
     public static function register(Plugin $plugin): void
     {
         self::registerTextDomain($plugin);
@@ -83,6 +92,7 @@ final class ServiceRegistrar
         self::registerAsyncPrewarmCron($plugin);
         self::registerLocalCacheInvalidation($plugin);
         self::registerLocalDeliverySettingsSync($plugin);
+        self::maybeReprobeOnVersionUpdate();
     }
 
     /**
@@ -529,6 +539,77 @@ final class ServiceRegistrar
     }
 
     /**
+     * #43 Phase 1 review (BLOCKER wire): write-time rewrite-capability
+     * probe trigger. Runs the live LocalRewriteProbe (a 3s HTTP
+     * round-trip + filesystem writes) ONLY in admin/activation context
+     * — never from the front-end read path (rewriteAvailable()).
+     *
+     * Fires when LocalBackend is active (endpoint empty). Called from:
+     *   - plugin activation (oxpulse_imager_activate()),
+     *   - settings-save when OPTION_ENDPOINT becomes empty (the
+     *     updated_option hook in registerLocalDeliverySettingsSync()),
+     *   - once-per-version re-probe (maybeReprobeOnVersionUpdate()).
+     *
+     * Guarded so it does NOT run on every admin page load — only on
+     * activation + the relevant settings-save + the version-mismatch
+     * edge. Mirrors how installLocalDelivery is already triggered.
+     *
+     * Test seam: accepts an injected CapabilityTester (with a stub
+     * probe) so tests can verify the trigger without a real HTTP
+     * round-trip. Production callers pass null → a real tester is built.
+     */
+    public static function recheckRewriteCapability(?CapabilityTester $tester = null): void
+    {
+        $repository = new OptionSettingsRepository();
+        $delivery = $repository->loadDeliveryConfig();
+        $endpoint = OptionSettingsRepository::resolveEndpoint($delivery->endpoint);
+
+        // Only probe when LocalBackend is active (no imgproxy endpoint).
+        if ($endpoint !== '') {
+            return;
+        }
+
+        $tester = $tester ?? new CapabilityTester();
+        $tester->recheck();
+        self::$recheckCallCount++;
+    }
+
+    /**
+     * #43 Phase 1 review (MAJOR): OPTION_PROBE_VERSION-gated re-probe
+     * on plugin update. When the stored probe version does not match
+     * the current plugin version AND LocalBackend is active, re-run the
+     * probe once and stamp the new version. This lets a stale/unknown
+     * result get re-checked after an upgrade (e.g. a host whose
+     * loopback was previously blocked may now succeed).
+     *
+     * Admin-only (the probe is a 3s HTTP round-trip, acceptable in
+     * admin/activation context, never on the front-end). Runs at most
+     * once per plugin version — the version guard prevents repeat
+     * probes on every admin load.
+     */
+    private static function maybeReprobeOnVersionUpdate(): void
+    {
+        if (!is_admin()) {
+            return;
+        }
+        if (!defined('OXPULSE_IMAGER_VERSION')) {
+            return;
+        }
+
+        $repository = new OptionSettingsRepository();
+        $storedVersion = $repository->loadProbeVersion();
+        if ($storedVersion === OXPULSE_IMAGER_VERSION) {
+            return;
+        }
+
+        // Re-probe (writes a definitive result or leaves the prior one
+        // intact on 'unknown'), then stamp the version so this fires
+        // at most once per version.
+        self::recheckRewriteCapability();
+        $repository->saveProbeVersion(OXPULSE_IMAGER_VERSION);
+    }
+
+    /**
      * Build the LocalDeliveryInstaller from the WordPress environment.
      *
      * Returns null when the required paths (WP_CONTENT_DIR, uploads
@@ -580,8 +661,17 @@ final class ServiceRegistrar
         $reinstall = static function (): void {
             self::installLocalDelivery();
         };
+        // #43 Phase 1 review (BLOCKER wire): re-probe rewrite capability
+        // when LocalBackend becomes active (endpoint emptied). The probe
+        // is a 3s HTTP round-trip — acceptable in this settings-save
+        // context, never on the front-end read path. Fires only when
+        // OPTION_ENDPOINT actually changes (updated_option fires on
+        // change, not on every load).
+        $recheckCapability = static function (): void {
+            self::recheckRewriteCapability();
+        };
 
-        add_action('updated_option', static function (string $option) use ($reinstall): void {
+        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability): void {
             $watched = [
                 OptionSettingsRepository::OPTION_ENDPOINT,
                 OptionSettingsRepository::OPTION_KEY,
@@ -590,6 +680,9 @@ final class ServiceRegistrar
             ];
             if (in_array($option, $watched, true)) {
                 $reinstall();
+            }
+            if ($option === OptionSettingsRepository::OPTION_ENDPOINT) {
+                $recheckCapability();
             }
         });
     }

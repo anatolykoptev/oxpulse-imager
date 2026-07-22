@@ -352,6 +352,14 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return [];
         }
     }
+    if (!function_exists('wp_remote_retrieve_body')) {
+        function wp_remote_retrieve_body($response) {
+            if (is_array($response) && isset($response['body'])) {
+                return $response['body'];
+            }
+            return '';
+        }
+    }
     if (!function_exists('is_wp_error')) {
         function is_wp_error($thing) { return $thing instanceof \WP_Error; }
     }
