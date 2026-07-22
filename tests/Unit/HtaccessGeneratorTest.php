@@ -4,7 +4,7 @@
  *
  * Verifies:
  * - The .htaccess generator emits the expected rewrite rules (miss →
- *   oxpulse-img.php, WebP Accept gate).
+ *   oxpulse-img.php; no Accept gate — #42, the gate lives in the endpoint).
  * - The capability tester picks the fallback when mod_rewrite is
  *   unavailable (stubbed).
  *
@@ -36,8 +36,9 @@ class HtaccessGeneratorTest extends TestCase
         $this->assertStringContainsString('%{REQUEST_FILENAME} !-f', $rules);
         // Rewrite to the endpoint.
         $this->assertStringContainsString('oxpulse-img.php', $rules);
-        // WebP Accept gate.
-        $this->assertStringContainsString('%{HTTP_ACCEPT} image/webp', $rules);
+        // #42: the Accept gate was REMOVED from .htaccess — non-webp
+        // clients must reach the endpoint (which serves the original).
+        $this->assertStringNotContainsString('%{HTTP_ACCEPT} image/webp', $rules);
     }
 
     public function test_rules_include_cache_control_headers(): void
@@ -144,5 +145,31 @@ class HtaccessGeneratorTest extends TestCase
         );
 
         $this->assertStringContainsString('/assets/oxpulse-img.php?k=$1', $rules);
+    }
+
+    /**
+     * Regression for #42. The cache-miss rewrite block MUST NOT gate on
+     * `Accept: image/webp`: the <img src> in the HTML is a `.webp` URL
+     * served to ALL clients, so a non-webp client (crawler, og:image
+     * bot, RSS, old browser) requesting that `.webp` URL must still
+     * reach the miss-endpoint, which serves the ORIGINAL image for
+     * non-webp Accept (Option A, WebP-Express fail:'original'-style).
+     * The Accept gate lives in the endpoint, not in .htaccess.
+     *
+     * The `!-f` miss cond and the `?k=$1` forward must remain.
+     */
+    public function test_no_accept_gate_on_cache_miss_rewrite(): void
+    {
+        $gen = new HtaccessGenerator();
+        $rules = $gen->generate(
+            cacheBaseUrl: 'https://example.com/wp-content/cache/oxpulse',
+            endpointRelPath: 'oxpulse-img.php',
+        );
+
+        // The Accept cond was removed so non-webp clients reach the endpoint.
+        $this->assertStringNotContainsString('%{HTTP_ACCEPT} image/webp', $rules);
+        // The miss cond + key forward remain.
+        $this->assertStringContainsString('%{REQUEST_FILENAME} !-f', $rules);
+        $this->assertStringContainsString('?k=$1', $rules);
     }
 }

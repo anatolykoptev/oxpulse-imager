@@ -5,8 +5,9 @@
  * Generates Apache rewrite rules that:
  * - Serve existing cache files directly (static, no PHP).
  * - On cache miss, rewrite to oxpulse-img.php (the self-contained
- *   miss-endpoint).
- * - Gate WebP delivery on Accept: image/webp.
+ *   miss-endpoint) for ALL clients — the Accept gate lives in the
+ *   endpoint, which serves the ORIGINAL image to non-webp clients
+ *   (issue #42, Option A; WebP-Express fail:'original'-style).
  * - Deny PHP execution inside the cache dir (defense-in-depth).
  * - Set immutable Cache-Control on cache files.
  *
@@ -105,9 +106,6 @@ final class HtaccessGenerator
 
   # Only rewrite if the requested cache file does NOT exist.
   RewriteCond %{REQUEST_FILENAME} !-f
-
-  # Only serve WebP to clients that accept it.
-  RewriteCond %{HTTP_ACCEPT} image/webp
 
   # Cache miss: forward the signed key (the trailing "<key>.webp"
   # segment, minus the extension) to the miss-endpoint as ?k=<key>.
