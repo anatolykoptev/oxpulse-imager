@@ -132,7 +132,11 @@ final class HealthCheckService
         }
 
         return HealthResult::failed(
-            sprintf(__('imgproxy did not return AVIF. Check IMGPROXY_AUTO_AVIF configuration. Got Content-Type: %s', 'oxpulse-imager'), $contentType)
+            sprintf(
+                /* translators: %s: the Content-Type header imgproxy returned. */
+                __('imgproxy did not return AVIF. Check IMGPROXY_AUTO_AVIF configuration. Got Content-Type: %s', 'oxpulse-imager'),
+                $contentType
+            )
         );
     }
 }

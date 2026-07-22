@@ -126,6 +126,7 @@ jobs:
             .gitignore
             .gitattributes
             .editorconfig
+            .gitleaksignore
             .release-please-manifest.json
             release-please-config.json
             phpunit.xml.dist

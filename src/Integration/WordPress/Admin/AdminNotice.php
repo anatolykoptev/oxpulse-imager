@@ -211,7 +211,7 @@ final class AdminNotice
      */
     public function detectEnvironment(): string
     {
-        $server = $_SERVER['SERVER_SOFTWARE'] ?? '';
+        $server = sanitize_text_field(wp_unslash($_SERVER['SERVER_SOFTWARE'] ?? ''));
         if (!is_string($server) || $server === '') {
             return 'unknown';
         }
@@ -244,8 +244,7 @@ final class AdminNotice
         }
         $endpointPath = rtrim((string) parse_url(home_url('/wp-content/oxpulse-img.php'), PHP_URL_PATH), '/');
 
-        return <<<NGINX
-# Belt-and-braces: never execute scripts inside the cache dir.
+        return "# Belt-and-braces: never execute scripts inside the cache dir.
 location ~* ^{$cachePath}/.*\.(php|phtml)$ { deny all; }
 
 # Serve existing cache files directly; on miss, route to the endpoint
@@ -254,7 +253,7 @@ location ~* ^{$cachePath}/([0-9a-f]+)/(.+)\.(webp|avif)$ {
     add_header Vary Accept;
     try_files \$uri {$endpointPath}?k=\$2;
 }
-NGINX;
+";
     }
 
     /**
@@ -310,8 +309,8 @@ NGINX;
         $dismissUrl = rest_url('oxpulse/v1/capability/dismiss');
         $nonce = function_exists('wp_create_nonce') ? wp_create_nonce('wp_rest') : '';
 
-        /* translators: %s: list of detected competing plugin names. */
         $body = sprintf(
+            /* translators: %s: list of detected competing plugin names. */
             __('Another image-optimization plugin is active (%s). Running two delivery layers can double-rewrite images — pick one to avoid conflicts.', 'oxpulse-imager'),
             $labels
         );
@@ -514,6 +513,7 @@ NGINX;
 })();
 JS;
 
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- inline JS is a static literal (no user input, no interpolation), not HTML.
         echo '<script>' . $js . '</script>';
     }
 }

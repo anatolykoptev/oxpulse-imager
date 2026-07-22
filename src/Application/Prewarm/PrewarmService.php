@@ -108,7 +108,11 @@ final class PrewarmService
                 $key['sourceUrl'],
                 $key['width'],
                 $imgproxyUrl,
-                sprintf(__('imgproxy returned HTTP %d', 'oxpulse-imager'), $http['status']),
+                sprintf(
+                    /* translators: %d: HTTP status code returned by imgproxy. */
+                    __('imgproxy returned HTTP %d', 'oxpulse-imager'),
+                    $http['status']
+                ),
                 $http['status']
             );
         }

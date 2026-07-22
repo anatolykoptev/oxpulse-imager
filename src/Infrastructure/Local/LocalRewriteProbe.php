@@ -81,6 +81,7 @@ class LocalRewriteProbe
     private function writeProbeFiles(string $probeDir): bool
     {
         if (!is_dir($probeDir)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- probe dir creation; wp_mkdir_p uses FS_CHMOD_DIR which may differ from 0755.
             if (!@mkdir($probeDir, 0755, true)) {
                 return false;
             }
@@ -136,13 +137,16 @@ class LocalRewriteProbe
             }
             $path = $probeDir . '/' . $entry;
             if (is_link($path)) {
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- probe cleanup; wp_delete_file has FTP-fallback side effects that change behavior.
                 @unlink($path);
             } elseif (is_dir($path)) {
                 $this->cleanup($path);
             } else {
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- probe cleanup; wp_delete_file has FTP-fallback side effects that change behavior.
                 @unlink($path);
             }
         }
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- probe cleanup; WP_Filesystem lacks recursive rmdir semantics.
         @rmdir($probeDir);
     }
 }

@@ -49,7 +49,11 @@ abstract class AbstractCommand
             \WP_CLI::success($message);
         } else {
             // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
-            echo sprintf(__('Success: %s', 'oxpulse-imager'), $message) . "\n";
+            echo sprintf(
+                /* translators: %s: the success message. */
+                __('Success: %s', 'oxpulse-imager'),
+                $message
+            ) . "\n";
         }
     }
 
@@ -62,7 +66,11 @@ abstract class AbstractCommand
             \WP_CLI::warning($message);
         } else {
             // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI context, not HTML.
-            echo sprintf(__('Warning: %s', 'oxpulse-imager'), $message) . "\n";
+            echo sprintf(
+                /* translators: %s: the warning message. */
+                __('Warning: %s', 'oxpulse-imager'),
+                $message
+            ) . "\n";
         }
     }
 

@@ -77,7 +77,6 @@ final class ServiceRegistrar
 
     public static function register(Plugin $plugin): void
     {
-        self::registerTextDomain($plugin);
         self::registerHealthGate($plugin);
         self::registerAdminSettings($plugin);
         self::registerCli($plugin);
@@ -111,17 +110,6 @@ final class ServiceRegistrar
     public static function getRewriter(): ?UrlRewriter
     {
         return self::$rewriter;
-    }
-
-    private static function registerTextDomain(Plugin $plugin): void
-    {
-        add_action('init', static function () use ($plugin): void {
-            load_plugin_textdomain(
-                'oxpulse-imager',
-                false,
-                dirname($plugin->basename()) . '/languages'
-            );
-        });
     }
 
     /**

@@ -80,6 +80,7 @@ final class LocalDeliveryInstaller
 
         // Cache dir .htaccess (miss → endpoint routing).
         if (!is_dir($this->cacheDir)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- cache dir creation; wp_mkdir_p uses FS_CHMOD_DIR which may differ from 0755.
             @mkdir($this->cacheDir, 0755, true);
         }
         $htaccessGen = new HtaccessGenerator();
@@ -98,11 +99,13 @@ final class LocalDeliveryInstaller
     {
         $endpointFile = $this->wpContentDir . '/oxpulse-img.php';
         if (is_file($endpointFile)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- endpoint removal; wp_delete_file has FTP-fallback side effects that change behavior.
             @unlink($endpointFile);
         }
 
         $htaccess = $this->cacheDir . '/.htaccess';
         if (is_file($htaccess)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- htaccess removal; wp_delete_file has FTP-fallback side effects that change behavior.
             @unlink($htaccess);
         }
     }

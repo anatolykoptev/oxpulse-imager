@@ -68,15 +68,16 @@ final class MissEndpointGenerator
         // apostrophes, so this is a no-op there but keeps the defense-
         // in-depth base64 layer intact — the raw binary secret never
         // appears in the file source).
+        // phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_var_export -- var_export used for codegen (embed config as PHP literals), not debug.
         $keyConst   = var_export($keyB64, true);
         $saltConst  = var_export($saltB64, true);
         $basedirLit = var_export($uploadsBasedir, true);
         $baseurlLit = var_export($uploadsBaseurl, true);
         $cacheLit   = var_export($cacheDir, true);
         $srcDirLit  = var_export($srcDir, true);
+        // phpcs:enable
 
-        $php = <<<PHP
-<?php
+        $php = "<?php
 /**
  * OXPulse Imager — local delivery miss-endpoint (auto-generated).
  *
@@ -173,7 +174,7 @@ if (\$response->body !== null) {
 }
 exit;
 
-PHP;
+";
 
         // Atomic write: temp file in the same directory → chmod 0600 →
         // rename into place. FIX #30: a plain file_put_contents whose
@@ -189,6 +190,7 @@ PHP;
 
         $written = @file_put_contents($temp, $php);
         if ($written === false) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
             @unlink($temp);
             throw new \RuntimeException(
                 'Failed to write miss-endpoint file: file_put_contents returned false'
@@ -200,7 +202,9 @@ PHP;
         // at its final path. If chmod can't restrict (some hosts), log
         // a warning but proceed — the file is still PHP (not served as
         // text), and the base64 secret layer is defense-in-depth.
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
         if (!@chmod($temp, 0600)) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- self-contained miss-endpoint runs without wp-load; no WP logger available, error_log is the only diagnostic sink.
             error_log(
                 'oxpulse-imager: WARNING — could not chmod 0600 the generated'
                 . ' miss-endpoint file (' . $outputFile . '). The baked signing'
@@ -208,7 +212,9 @@ PHP;
             );
         }
 
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
         if (!@rename($temp, $outputFile)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
             @unlink($temp);
             throw new \RuntimeException(
                 'Failed to install miss-endpoint file: rename(' . $temp . ' -> '
