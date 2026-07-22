@@ -1,6 +1,6 @@
 <?php
 /**
- * WebpTransformer tests.
+ * ImageTransformer tests.
  *
  * Verifies the Phase 6 local transform engine:
  * - Fixture JPEG/PNG -> valid WebP bytes that are smaller than the source.
@@ -23,10 +23,10 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Tests\Unit;
 
-use OXPulse\Imager\Infrastructure\Image\WebpTransformer;
+use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
 use PHPUnit\Framework\TestCase;
 
-class WebpTransformerTest extends TestCase
+class ImageTransformerTest extends TestCase
 {
     private string $fixtureDir;
 
@@ -81,9 +81,9 @@ class WebpTransformerTest extends TestCase
         file_put_contents($sourcePath, 'original-bytes-100-chars-' . str_repeat('x', 80));
         $originalSize = filesize($sourcePath);
 
-        $transformer = new class extends WebpTransformer {
+        $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
-            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 // Return bytes >= original size to trigger the size-guard.
                 return str_repeat('y', filesize($sourcePath) + 10);
@@ -101,7 +101,7 @@ class WebpTransformerTest extends TestCase
         file_put_contents($sourcePath, str_repeat('x', 200));
         $webpBytes = str_repeat('y', 50); // smaller than original
 
-        $transformer = new class ($webpBytes) extends WebpTransformer {
+        $transformer = new class ($webpBytes) extends ImageTransformer {
             private string $bytes;
             public function __construct(string $bytes) { $this->bytes = $bytes; }
             protected function hasImagick(): bool { return true; }
@@ -113,7 +113,7 @@ class WebpTransformerTest extends TestCase
                 // null instead of proceeding to encode).
                 return [100, 100];
             }
-            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 return $this->bytes;
             }
@@ -130,9 +130,9 @@ class WebpTransformerTest extends TestCase
         $content = str_repeat('x', 100);
         file_put_contents($sourcePath, $content);
 
-        $transformer = new class extends WebpTransformer {
+        $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
-            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 // Exactly equal to original size.
                 return str_repeat('z', filesize($sourcePath));
@@ -149,10 +149,10 @@ class WebpTransformerTest extends TestCase
         $sourcePath = $this->fixtureDir . '/source.jpg';
         file_put_contents($sourcePath, str_repeat('x', 100));
 
-        $transformer = new class extends WebpTransformer {
+        $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return false; }
             protected function hasGdWebp(): bool { return false; }
-            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 throw new \LogicException('encode must not be called when no ext is available');
             }
@@ -168,9 +168,9 @@ class WebpTransformerTest extends TestCase
         $sourcePath = $this->fixtureDir . '/source.jpg';
         file_put_contents($sourcePath, str_repeat('x', 100));
 
-        $transformer = new class extends WebpTransformer {
+        $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
-            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 return null; // encode failure (e.g. corrupt source)
             }
@@ -183,7 +183,7 @@ class WebpTransformerTest extends TestCase
 
     public function test_fail_safe_nonexistent_source_returns_null(): void
     {
-        $transformer = new WebpTransformer();
+        $transformer = new ImageTransformer();
 
         $result = $transformer->transform($this->fixtureDir . '/does-not-exist.jpg', 100, 100, 'fit', 80);
 
@@ -205,14 +205,14 @@ class WebpTransformerTest extends TestCase
         $sourcePath = $this->fixtureDir . '/bomb.jpg';
         file_put_contents($sourcePath, str_repeat('x', 100));
 
-        $transformer = new class extends WebpTransformer {
+        $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
             protected function imageDimensions(string $sourcePath): ?array
             {
                 // 10000 x 10000 = 100MP > 40MP cap → must be rejected.
                 return [10000, 10000];
             }
-            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 throw new \LogicException('encode must not be called for an oversized source (decompression bomb).');
             }
@@ -239,14 +239,14 @@ class WebpTransformerTest extends TestCase
         $sourcePath = $this->fixtureDir . '/unreadable-header.jpg';
         file_put_contents($sourcePath, str_repeat('x', 100));
 
-        $transformer = new class extends WebpTransformer {
+        $transformer = new class extends ImageTransformer {
             protected function hasImagick(): bool { return true; }
             protected function imageDimensions(string $sourcePath): ?array
             {
                 // getimagesize() can't read the header → dims unknown.
                 return null;
             }
-            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 throw new \LogicException('encode must not be called when source dimensions are unknown (fail-closed).');
             }
@@ -265,7 +265,7 @@ class WebpTransformerTest extends TestCase
         $sourcePath = $this->fixtureDir . '/ok.jpg';
         file_put_contents($sourcePath, str_repeat('x', 200));
 
-        $transformer = new class (str_repeat('y', 50)) extends WebpTransformer {
+        $transformer = new class (str_repeat('y', 50)) extends ImageTransformer {
             private string $bytes;
             public function __construct(string $bytes) { $this->bytes = $bytes; }
             protected function hasImagick(): bool { return true; }
@@ -274,7 +274,7 @@ class WebpTransformerTest extends TestCase
                 // 5000 x 5000 = 25MP < 40MP cap → allowed.
                 return [5000, 5000];
             }
-            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
             {
                 return $this->bytes;
             }
@@ -296,7 +296,7 @@ class WebpTransformerTest extends TestCase
         $sourcePath = $this->createJpegFixture('photo.jpg', 200);
         $this->assertNotNull($sourcePath, 'Could not create JPEG fixture (GD not available).');
 
-        $transformer = new WebpTransformer();
+        $transformer = new ImageTransformer();
         $originalSize = filesize($sourcePath);
 
         $webp = $transformer->transform($sourcePath, 200, 200, 'fit', 80);
@@ -330,7 +330,7 @@ class WebpTransformerTest extends TestCase
         $sourcePath = $this->createJpegFixture('photo-q100.jpg', 200, 100);
         $this->assertNotNull($sourcePath, 'Could not create JPEG fixture (GD not available).');
 
-        $transformer = new WebpTransformer();
+        $transformer = new ImageTransformer();
         $originalSize = filesize($sourcePath);
 
         $webp = $transformer->transform($sourcePath, 200, 200, 'fit', 80);
@@ -372,7 +372,7 @@ class WebpTransformerTest extends TestCase
         imagepng($img, $path, 9);
         imagedestroy($img);
 
-        $transformer = new WebpTransformer();
+        $transformer = new ImageTransformer();
 
         $webp = $transformer->transform($path, 200, 200, 'fit', 80);
 
@@ -392,7 +392,7 @@ class WebpTransformerTest extends TestCase
         $sourcePath = $this->createJpegFixture('tiny.jpg', 50);
         $this->assertNotNull($sourcePath);
 
-        $transformer = new WebpTransformer();
+        $transformer = new ImageTransformer();
 
         $webp = $transformer->transform($sourcePath, 500, 500, 'fit', 80);
 
@@ -403,5 +403,177 @@ class WebpTransformerTest extends TestCase
         // size-guard + no-upscale logic is exercised. A 50x50 WebP should
         // be small.
         $this->assertLessThan(5000, strlen($webp), 'A 50x50 WebP should be small.');
+    }
+
+    // --- #47: AVIF support ---
+
+    /**
+     * Capability methods must exist and return bool. supportsWebp() is
+     * the existing hasImagick()||hasGdWebp() logic exposed publicly;
+     * supportsAvif() is new — Imagick with AVIF delegate OR GD imageavif.
+     */
+    public function test_supports_webp_returns_bool(): void
+    {
+        $transformer = new ImageTransformer();
+        $this->assertIsBool($transformer->supportsWebp());
+    }
+
+    public function test_supports_avif_returns_bool(): void
+    {
+        $transformer = new ImageTransformer();
+        $this->assertIsBool($transformer->supportsAvif());
+    }
+
+    /**
+     * supportsAvif() must be FALSE when Imagick lacks the AVIF delegate
+     * and GD lacks imageavif. Stubbed to simulate a host without AVIF.
+     */
+    public function test_supports_avif_false_when_no_avif_engine(): void
+    {
+        $transformer = new class extends ImageTransformer {
+            protected function hasImagick(): bool { return false; }
+            protected function hasImagickAvif(): bool { return false; }
+            protected function hasGdAvif(): bool { return false; }
+        };
+        $this->assertFalse($transformer->supportsAvif());
+    }
+
+    /**
+     * supportsAvif() must be TRUE when Imagick has the AVIF delegate.
+     */
+    public function test_supports_avif_true_when_imagick_has_avif(): void
+    {
+        $transformer = new class extends ImageTransformer {
+            protected function hasImagickAvif(): bool { return true; }
+        };
+        $this->assertTrue($transformer->supportsAvif());
+    }
+
+    /**
+     * transform() must accept a $format parameter (default 'webp').
+     * The existing stub-based tests pass no $format → defaults to webp.
+     * This test verifies the parameter is accepted without error.
+     */
+    public function test_transform_accepts_format_parameter(): void
+    {
+        $sourcePath = $this->fixtureDir . '/source.jpg';
+        file_put_contents($sourcePath, str_repeat('x', 200));
+
+        $transformer = new class (str_repeat('y', 50)) extends ImageTransformer {
+            private string $bytes;
+            public function __construct(string $bytes) { $this->bytes = $bytes; }
+            protected function hasImagick(): bool { return true; }
+            protected function hasImagickAvif(): bool { return true; }
+            protected function imageDimensions(string $sourcePath): ?array
+            {
+                return [100, 100];
+            }
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
+            {
+                // Return format-tagged bytes so the test can verify dispatch.
+                return $format . ':' . $this->bytes;
+            }
+        };
+
+        $resultWebp = $transformer->transform($sourcePath, 100, 100, 'fit', 80, 'webp');
+        $this->assertNotNull($resultWebp);
+        $this->assertStringStartsWith('webp:', $resultWebp);
+
+        $resultAvif = $transformer->transform($sourcePath, 100, 100, 'fit', 80, 'avif');
+        $this->assertNotNull($resultAvif);
+        $this->assertStringStartsWith('avif:', $resultAvif);
+    }
+
+    /**
+     * Real AVIF encode: a JPEG fixture → valid AVIF bytes (decodable,
+     * smaller than original). MUST NOT skip — asserts capability present
+     * first, then encodes. The #39 synthetic-green lesson: if
+     * supportsAvif() is false, FAIL the test (do not markTestSkipped).
+     */
+    public function test_real_jpeg_to_avif_smaller_and_valid(): void
+    {
+        $transformer = new ImageTransformer();
+
+        // Assert capability present — NEVER skip to green.
+        $this->assertTrue(
+            $transformer->supportsAvif(),
+            'AVIF encode test requires supportsAvif()=true. CI must provision an AVIF-capable engine (Imagick with heif delegate).'
+        );
+
+        $sourcePath = $this->createJpegFixture('photo-avif.jpg', 200, 100);
+        $this->assertNotNull($sourcePath, 'Could not create JPEG fixture (GD not available).');
+
+        $originalSize = filesize($sourcePath);
+
+        $avif = $transformer->transform($sourcePath, 200, 200, 'fit', 70, 'avif');
+
+        $this->assertNotNull($avif, 'Transform must produce AVIF bytes for a valid JPEG.');
+        $this->assertLessThan(
+            $originalSize,
+            strlen($avif),
+            'AVIF output must be smaller than the original JPEG (size-guard invariant).'
+        );
+        // AVIF magic: ftyp box at offset 4, brand 'avif' or 'avis'.
+        $ftyp = substr($avif, 4, 4);
+        $this->assertTrue(
+            $ftyp === 'avif' || $ftyp === 'avis' || str_contains($avif, 'avif'),
+            'AVIF output must contain the "avif" brand signature. Got ftyp: ' . $ftyp
+        );
+        // getimagesizefromstring should detect image/avif mime.
+        $info = @getimagesizefromstring($avif);
+        if ($info !== false && isset($info['mime'])) {
+            $this->assertSame('image/avif', $info['mime'], 'getimagesizefromstring must detect image/avif mime.');
+        }
+    }
+
+    /**
+     * AVIF size-guard: when AVIF output >= original size, returns null.
+     * Uses a stub to simulate the size-guard (no real encoder needed).
+     */
+    public function test_avif_size_guard_returns_null_when_output_not_smaller(): void
+    {
+        $sourcePath = $this->fixtureDir . '/source-avif.jpg';
+        file_put_contents($sourcePath, 'original-bytes-100-chars-' . str_repeat('x', 80));
+
+        $transformer = new class extends ImageTransformer {
+            protected function hasImagick(): bool { return true; }
+            protected function hasImagickAvif(): bool { return true; }
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
+            {
+                if ($format === 'avif') {
+                    return str_repeat('a', filesize($sourcePath) + 10);
+                }
+                return str_repeat('w', 50);
+            }
+        };
+
+        $result = $transformer->transform($sourcePath, 100, 100, 'fit', 70, 'avif');
+
+        $this->assertNull($result, 'AVIF size-guard must return null when output >= original size.');
+    }
+
+    /**
+     * AVIF fail-safe: no AVIF engine → transform with format=avif
+     * returns null (caller serves original or falls back to webp).
+     */
+    public function test_avif_fail_safe_no_avif_engine_returns_null(): void
+    {
+        $sourcePath = $this->fixtureDir . '/source-noavif.jpg';
+        file_put_contents($sourcePath, str_repeat('x', 200));
+
+        $transformer = new class extends ImageTransformer {
+            protected function hasImagick(): bool { return false; }
+            protected function hasImagickAvif(): bool { return false; }
+            protected function hasGdAvif(): bool { return false; }
+            protected function hasGdWebp(): bool { return false; }
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
+            {
+                throw new \LogicException('encode must not be called when no AVIF engine is available.');
+            }
+        };
+
+        $result = $transformer->transform($sourcePath, 100, 100, 'fit', 70, 'avif');
+
+        $this->assertNull($result, 'No AVIF engine → transform(format=avif) must return null (fail-safe).');
     }
 }

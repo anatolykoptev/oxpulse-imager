@@ -403,4 +403,112 @@ class MissEndpointGeneratorTest extends TestCase
         $this->assertStringNotContainsString('CapabilityTester', $content);
         $this->assertStringNotContainsString('capability', strtolower($content));
     }
+
+    // --- #47: format detection from REQUEST_URI basename ---
+    //
+    // The generated endpoint must compute $format from the ORIGINAL
+    // request path basename, not a hardcoded 'webp'. Clean-URL misses
+    // (.webp/.avif) serve that EXACT format; the bare oxpulse-img.php
+    // path (no image ext) → 'auto' → server-side negotiation.
+
+    public function test_generated_endpoint_detects_format_from_request_uri(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: '/uploads',
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            srcDir: '/plugin/src',
+        );
+        $content = file_get_contents($path);
+
+        // Must contain the format allowlist (webp + avif).
+        $this->assertStringContainsString("'webp'", $content, 'Generated endpoint must detect .webp from REQUEST_URI basename.');
+        $this->assertStringContainsString("'avif'", $content, 'Generated endpoint must detect .avif from REQUEST_URI basename.');
+        // Must default $format to 'auto' (not hardcoded 'webp').
+        $this->assertStringContainsString("'auto'", $content, 'Generated endpoint must default $format to auto for the bare ?k= path.');
+        // Must use parse_url + basename for REQUEST_URI.
+        $this->assertStringContainsString('REQUEST_URI', $content);
+        $this->assertStringContainsString('basename', $content);
+    }
+
+    public function test_generated_endpoint_bakes_avif_quality_constant(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: '/uploads',
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            srcDir: '/plugin/src',
+            avifQuality: 55,
+        );
+        $content = file_get_contents($path);
+
+        $this->assertStringContainsString("define('OXPULSE_AVIF_QUALITY'", $content);
+        $this->assertStringContainsString('55', $content);
+        // The handler constructor must receive the avif quality.
+        $this->assertStringContainsString('avifQuality', $content);
+    }
+
+    public function test_generated_endpoint_avif_quality_defaults_to_zero_when_not_set(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: '/uploads',
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            srcDir: '/plugin/src',
+        );
+        $content = file_get_contents($path);
+
+        // When no avif quality is set, the constant must be 0 (disabled).
+        $this->assertStringContainsString("define('OXPULSE_AVIF_QUALITY'", $content);
+        $this->assertStringContainsString('avifQuality', $content);
+    }
+
+    public function test_generated_endpoint_with_avif_quality_is_valid_php(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: '/uploads',
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            srcDir: '/plugin/src',
+            avifQuality: 60,
+        );
+
+        $output = shell_exec('php -l ' . escapeshellarg($path) . ' 2>&1');
+        $this->assertStringContainsString('No syntax errors', $output, 'Generated endpoint with avif quality must be valid PHP.');
+    }
+
+    public function test_generated_endpoint_uses_image_transformer_class(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: '/uploads',
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            srcDir: '/plugin/src',
+        );
+        $content = file_get_contents($path);
+
+        // After the rename, the generated endpoint must use ImageTransformer.
+        $this->assertStringContainsString('ImageTransformer', $content);
+        $this->assertStringNotContainsString('WebpTransformer', $content);
+    }
 }

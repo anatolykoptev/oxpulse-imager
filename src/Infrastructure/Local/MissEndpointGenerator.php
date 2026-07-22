@@ -45,6 +45,10 @@ final class MissEndpointGenerator
      * @param string $srcDir Absolute path to the plugin src/ directory
      *        (the endpoint bakes a self-contained PSR-4 autoloader
      *        mapping OXPulse\Imager\ → this dir; NO vendor/ dependency).
+     * @param int|null $avifQuality #47: per-format AVIF quality override
+     *        from the admin formatQuality setting. Baked as a constant
+     *        (the endpoint has no WP option access). 0/null = use the
+     *        payload's default quality for avif too.
      * @return string The path written (same as $outputFile).
      */
     public function generate(
@@ -55,6 +59,7 @@ final class MissEndpointGenerator
         string $uploadsBaseurl,
         string $cacheDir,
         string $srcDir,
+        ?int $avifQuality = null,
     ): string {
         $keyB64 = base64_encode($signingKey);
         $saltB64 = base64_encode($signingSalt);
@@ -75,6 +80,7 @@ final class MissEndpointGenerator
         $baseurlLit = var_export($uploadsBaseurl, true);
         $cacheLit   = var_export($cacheDir, true);
         $srcDirLit  = var_export($srcDir, true);
+        $avifQualityInt = $avifQuality ?? 0;
         // phpcs:enable
 
         $php = "<?php
@@ -98,6 +104,8 @@ define('OXPULSE_UPLOADS_BASEDIR', {$basedirLit});
 define('OXPULSE_UPLOADS_BASEURL', {$baseurlLit});
 define('OXPULSE_CACHE_DIR', {$cacheLit});
 define('OXPULSE_SRC_DIR', {$srcDirLit});
+// #47: per-format AVIF quality override (0 = use the payload's default q).
+define('OXPULSE_AVIF_QUALITY', {$avifQualityInt});
 
 // Self-contained PSR-4 autoloader — mirrors Plugin::registerAutoloader().
 // The release ZIP ships no third-party autoloader (the plugin has zero
@@ -118,25 +126,31 @@ spl_autoload_register(static function (string \$class): void {
 });
 
 use OXPulse\Imager\Domain\Config\SigningConfig;
-use OXPulse\Imager\Infrastructure\Image\WebpTransformer;
+use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use OXPulse\Imager\Infrastructure\Local\MissEndpointHandler;
 use OXPulse\Imager\Infrastructure\Local\MissEndpointResponse;
 use OXPulse\Imager\Infrastructure\Local\PathGuard;
 
-// Resolve the cache key: from ?k= (fallback mode) or from the
-// requested cache path basename (<key>.<fmt>).
+// Resolve the cache key + format: from ?k= (the bare endpoint path →
+// 'auto' → server-side negotiation) or from the requested cache path
+// basename (<key>.<fmt> — clean-URL path → explicit format).
 \$key = isset(\$_GET['k']) ? \$_GET['k'] : '';
-\$format = 'webp';
+\$format = 'auto';
 \$accept = \$_SERVER['HTTP_ACCEPT'] ?? '';
 
 if (\$key === '' && isset(\$_SERVER['REQUEST_URI'])) {
     // Apache rewrite: the requested path is the cache file path.
-    \$basename = basename(\$_SERVER['REQUEST_URI']);
+    \$basename = basename(parse_url(\$_SERVER['REQUEST_URI'], PHP_URL_PATH));
     \$dotPos = strrpos(\$basename, '.');
     if (\$dotPos !== false) {
         \$key = substr(\$basename, 0, \$dotPos);
-        \$format = substr(\$basename, \$dotPos + 1);
+        \$ext = strtolower(substr(\$basename, \$dotPos + 1));
+        // Only accept known image formats from the URL; anything else
+        // stays 'auto' (the handler's allowlist rejects unknown exts).
+        if (in_array(\$ext, ['webp', 'avif'], true)) {
+            \$format = \$ext;
+        }
     }
 }
 
@@ -147,7 +161,7 @@ if (\$key === '') {
 
 \$signing = new SigningConfig(OXPULSE_SIGNING_KEY, OXPULSE_SIGNING_SALT);
 \$backend = new LocalBackend(\$signing);
-\$transformer = new WebpTransformer();
+\$transformer = new ImageTransformer();
 \$pathGuard = new PathGuard(OXPULSE_UPLOADS_BASEDIR, OXPULSE_UPLOADS_BASEURL);
 \$handler = new MissEndpointHandler(
     backend: \$backend,
@@ -155,6 +169,7 @@ if (\$key === '') {
     pathGuard: \$pathGuard,
     cacheDir: OXPULSE_CACHE_DIR,
     uploadsBasedir: OXPULSE_UPLOADS_BASEDIR,
+    avifQualityOverride: OXPULSE_AVIF_QUALITY > 0 ? OXPULSE_AVIF_QUALITY : null,
 );
 
 \$response = \$handler->handle(\$key, \$format, \$accept);

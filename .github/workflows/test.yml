@@ -26,7 +26,10 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: mbstring, xml, curl
+          # #47: imagick + gd needed for the AVIF/WebP encode tests.
+          # shivammathur/setup-php's Imagick build includes the AVIF
+          # (libheif) delegate on ubuntu-24.04.
+          extensions: mbstring, xml, curl, imagick, gd
           coverage: xdebug
           tools: composer:v2
 
@@ -43,6 +46,24 @@ jobs:
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Verify AVIF encode capability
+        # #47: the real-encode test (test_real_jpeg_to_avif_smaller_and_valid)
+        # ASSERTS supportsAvif() is true and FAILS (not skips) when it's
+        # false. This probe catches a CI environment regression where
+        # Imagick is present but the libheif delegate is missing —
+        # without this gate the test would fail with a confusing message
+        # instead of a clear "CI must provision AVIF" error.
+        run: |
+          php -r '
+            require __DIR__ . "/vendor/autoload.php";
+            $t = new OXPulse\Imager\Infrastructure\Image\ImageTransformer();
+            if (!$t->supportsAvif()) {
+              echo "::error::supportsAvif() is false — CI Imagick build lacks the AVIF (libheif) delegate. The real-encode test will FAIL (by design — no synthetic green). Fix the setup-php extensions." . PHP_EOL;
+              exit(1);
+            }
+            echo "✓ supportsAvif() = true — AVIF encode tests will run." . PHP_EOL;
+          '
 
       - name: Run unit tests
         run: composer test:unit

@@ -8,13 +8,19 @@
  *   1. Verifies the key's HMAC signature (LocalBackend::verify).
  *   2. Maps the payload's source URL to an absolute file path under the
  *      uploads base via PathGuard (traversal/symlink/null-byte defense).
- *   3. Checks Accept: image/webp — non-supporting clients get the original.
+ *   3. Negotiates the output format (#47): for $format='auto' (the bare
+ *      ?k= endpoint path), picks AVIF > WebP > original from the Accept
+ *      header + encoder capability. For explicit formats (clean-URL
+ *      .webp/.avif path), serves that EXACT format (Apache static path
+ *      stays webp). Non-supporting clients get the original.
  *   4. On cache hit, serves the existing file directly.
- *   5. On miss: flock miss-dedupe → transform (WebpTransformer) →
+ *   5. On miss: flock miss-dedupe → transform (ImageTransformer) →
  *      atomic write (temp → rename) → cache-dir hardening (index.html +
  *      .htaccess no-exec) → return response.
  *   6. Fail-safe: transform null / no Accept / any error → serve the
- *      original file bytes with the original content-type.
+ *      original file bytes with the original content-type. For a
+ *      negotiated-avif null, retries webp before serving original
+ *      (never a broken image).
  *
  * Returns a MissEndpointResponse; the generated endpoint file does the
  * actual header() + readfile/echo I/O.
@@ -28,18 +34,17 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\Local;
 
-use OXPulse\Imager\Infrastructure\Image\WebpTransformer;
+use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
 
 final class MissEndpointHandler
 {
     /**
      * Allowed output format extensions (the format segment of the cache
      * filename is NOT covered by the signature, so it must be
-     * allowlisted). MVP: webp only; avif is added here when the encoder
-     * lands. This is the disk-fill / transcode-DoS boundary: it bounds
-     * the cache to one entry per signed key.
+     * allowlisted). #47: avif added. This is the disk-fill / transcode-DoS
+     * boundary: it bounds the cache to one entry per signed key per format.
      */
-    private const ALLOWED_FORMATS = ['webp'];
+    private const ALLOWED_FORMATS = ['webp', 'avif'];
 
     /**
      * Bounded flock retry: how many times to retry a non-blocking lock
@@ -51,17 +56,19 @@ final class MissEndpointHandler
 
     public function __construct(
         private LocalBackend $backend,
-        private WebpTransformer $transformer,
+        private ImageTransformer $transformer,
         private PathGuard $pathGuard,
         private string $cacheDir,
         private string $uploadsBasedir,
+        private ?int $avifQualityOverride = null,
     ) {}
 
     /**
      * Handle a cache-miss request.
      *
      * @param string $key The cache key (base64url(payload).base64url(hmac)).
-     * @param string $format The requested output format extension (webp).
+     * @param string $format The requested output format: 'auto' (negotiate),
+     *        or an explicit extension ('webp', 'avif') from the clean-URL path.
      * @param string $accept The HTTP Accept header value.
      * @return MissEndpointResponse
      */
@@ -73,12 +80,16 @@ final class MissEndpointHandler
             return new MissEndpointResponse(400, '', [], null, null);
         }
 
-        // 1b. Format allowlist: $format comes from the request basename
-        // and is NOT covered by the signature. Reject anything outside
-        // the allowlist BEFORE any transform or disk write — this bounds
-        // the cache to one entry per signed key and blocks attacker-
-        // named files (<key>.php, <key>.foo). See FIX #2.
-        if (!in_array(strtolower($format), self::ALLOWED_FORMATS, true)) {
+        // 1b. Format allowlist: for EXPLICIT formats (clean-URL path),
+        // $format comes from the request basename and is NOT covered by
+        // the signature. Reject anything outside the allowlist BEFORE any
+        // transform or disk write — this bounds the cache to one entry
+        // per signed key per format and blocks attacker-named files
+        // (<key>.php, <key>.foo). 'auto' bypasses the raw allowlist
+        // check (it never reaches disk as a literal extension —
+        // negotiate() picks from the allowlist only). See FIX #2.
+        $formatLower = strtolower($format);
+        if ($format !== 'auto' && !in_array($formatLower, self::ALLOWED_FORMATS, true)) {
             return new MissEndpointResponse(400, '', [], null, null);
         }
 
@@ -95,9 +106,23 @@ final class MissEndpointHandler
             return new MissEndpointResponse(404, '', [], null, null);
         }
 
-        // 3. Accept gate: if the client doesn't accept webp, serve original.
-        if (!$this->acceptsWebp($accept)) {
-            return $this->serveOriginal($sourcePath);
+        // 3. Format resolution:
+        // - 'auto' (bare ?k= endpoint path) → negotiate AVIF > WebP > original.
+        // - explicit (clean-URL .webp/.avif path) → serve that EXACT format.
+        if ($format === 'auto') {
+            $format = $this->negotiate($accept);
+            if ($format === 'original') {
+                return $this->serveOriginal($sourcePath);
+            }
+        } else {
+            // Explicit format: client must accept the exact format,
+            // else serve original (the URL is format-specific — a
+            // non-accepting client gets the original, not a different
+            // format, so the static file matches the next Apache hit).
+            if (!$this->acceptsFormat($accept, $formatLower)) {
+                return $this->serveOriginal($sourcePath);
+            }
+            $format = $formatLower;
         }
 
         // 4. Cache hit?
@@ -108,7 +133,7 @@ final class MissEndpointHandler
         if (is_file($cacheFile) && is_readable($cacheFile)) {
             $bytes = file_get_contents($cacheFile);
             if ($bytes !== false) {
-                return $this->webpResponse($bytes);
+                return $this->imageResponse($bytes, $format);
             }
         }
 
@@ -125,6 +150,24 @@ final class MissEndpointHandler
             $cacheSubdir,
             $cacheFile,
         );
+    }
+
+    /**
+     * Negotiate the output format from the Accept header + encoder
+     * capability. Order: AVIF > WebP > original. Capability-gated so
+     * we never negotiate a format the host can't encode.
+     *
+     * @return string 'avif', 'webp', or 'original'.
+     */
+    private function negotiate(string $accept): string
+    {
+        if (str_contains($accept, 'image/avif') && $this->transformer->supportsAvif()) {
+            return 'avif';
+        }
+        if (str_contains($accept, 'image/webp') && $this->transformer->supportsWebp()) {
+            return 'webp';
+        }
+        return 'original';
     }
 
     /**
@@ -174,7 +217,7 @@ final class MissEndpointHandler
                 if (is_file($cacheFile) && is_readable($cacheFile)) {
                     $bytes = file_get_contents($cacheFile);
                     if ($bytes !== false) {
-                        return $this->webpResponse($bytes);
+                        return $this->imageResponse($bytes, $format);
                     }
                 }
                 usleep(self::LOCK_RETRY_MICROSECONDS);
@@ -185,7 +228,7 @@ final class MissEndpointHandler
                 if (is_file($cacheFile) && is_readable($cacheFile)) {
                     $bytes = file_get_contents($cacheFile);
                     if ($bytes !== false) {
-                        return $this->webpResponse($bytes);
+                        return $this->imageResponse($bytes, $format);
                     }
                 }
                 // Could not acquire within the budget — fail-safe.
@@ -197,27 +240,62 @@ final class MissEndpointHandler
             if (is_file($cacheFile) && is_readable($cacheFile)) {
                 $bytes = file_get_contents($cacheFile);
                 if ($bytes !== false) {
-                    return $this->webpResponse($bytes);
+                    return $this->imageResponse($bytes, $format);
                 }
             }
 
-            // Transform.
-            $webp = $this->transformer->transform(
+            // Transform. Use the avif quality override when encoding avif
+            // (the payload's q is the webp/default quality — avif looks
+            // good at lower q, so a separate override is baked into the
+            // endpoint from the admin formatQuality setting).
+            $encodeQuality = $quality;
+            if ($format === 'avif' && $this->avifQualityOverride !== null && $this->avifQualityOverride > 0) {
+                $encodeQuality = $this->avifQualityOverride;
+            }
+
+            $encoded = $this->transformer->transform(
                 $sourcePath,
                 $width,
                 $height,
                 $resize,
-                $quality,
+                $encodeQuality,
+                $format,
             );
 
-            if ($webp === null) {
+            if ($encoded === null) {
+                // #47 fail-safe chain: if a negotiated-avif encode returns
+                // null (rare runtime failure despite supportsAvif), retry
+                // as webp (if capable), then serve original. Never a
+                // broken image. Explicit-format requests skip the chain
+                // (the URL is format-specific — no cross-format retry).
+                if ($format === 'avif' && $this->transformer->supportsWebp()) {
+                    $webpFallback = $this->transformer->transform(
+                        $sourcePath,
+                        $width,
+                        $height,
+                        $resize,
+                        $quality,
+                        'webp',
+                    );
+                    if ($webpFallback !== null) {
+                        $temp = $cacheFile . '.tmp.' . getmypid();
+                        if (file_put_contents($temp, $webpFallback) !== false) {
+                            // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
+                            if (@rename($temp, $cacheSubdir . '/' . $key . '.webp')) {
+                                return $this->imageResponse($webpFallback, 'webp');
+                            }
+                            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
+                            @unlink($temp);
+                        }
+                    }
+                }
                 // Fail-safe: serve original.
                 return $this->serveOriginal($sourcePath);
             }
 
             // Atomic write: temp file → rename.
             $temp = $cacheFile . '.tmp.' . getmypid();
-            if (file_put_contents($temp, $webp) === false) {
+            if (file_put_contents($temp, $encoded) === false) {
                 // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- self-contained miss-endpoint runs without wp-load; WP filesystem wrappers unavailable.
                 @unlink($temp);
                 return $this->serveOriginal($sourcePath);
@@ -229,7 +307,7 @@ final class MissEndpointHandler
                 return $this->serveOriginal($sourcePath);
             }
 
-            return $this->webpResponse($webp);
+            return $this->imageResponse($encoded, $format);
         } finally {
             // Release lock + clean up lock file.
             if (is_resource($lockFp)) {
@@ -264,19 +342,23 @@ final class MissEndpointHandler
         }
     }
 
-    private function acceptsWebp(string $accept): bool
+    /**
+     * Check if the client accepts a specific image format.
+     * Generalized from the former acceptsWebp() — works for webp, avif, etc.
+     */
+    private function acceptsFormat(string $accept, string $format): bool
     {
-        return str_contains($accept, 'image/webp');
+        return str_contains($accept, 'image/' . $format);
     }
 
     /**
-     * Build a WebP response with cache headers.
+     * Build an image response with cache headers (format-aware).
      */
-    private function webpResponse(string $bytes): MissEndpointResponse
+    private function imageResponse(string $bytes, string $format): MissEndpointResponse
     {
         return new MissEndpointResponse(
             status: 200,
-            contentType: 'image/webp',
+            contentType: 'image/' . $format,
             headers: [
                 'Cache-Control' => 'public, max-age=31536000, immutable',
                 'Vary' => 'Accept',
@@ -292,7 +374,7 @@ final class MissEndpointHandler
      * FIX #32: the original is MUTABLE (can be re-uploaded at the same
      * URL), so it must NOT be marked immutable and must use a SHORT
      * cache — otherwise a CDN caches a stale image for a year. The
-     * signed cache-file path (webpResponse) keeps immutable because its
+     * signed cache-file path (imageResponse) keeps immutable because its
      * key is content-stable (a different source produces a different
      * signed key → a different cache file).
      */
