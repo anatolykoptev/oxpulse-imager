@@ -368,6 +368,66 @@ class MissEndpointHandlerTest extends TestCase
         $sourceHash = LocalBackend::sourceHash(self::SOURCE);
         $this->assertFileExists($this->cacheDir . '/' . $sourceHash . '/' . $key . '.webp');
     }
+
+    // --- FIX #32: serveOriginal must NOT send immutable on the MUTABLE
+    // original ---
+    //
+    // The fail-safe passthrough streamed the ORIGINAL with
+    // `Cache-Control: public, max-age=31536000, immutable` — but the
+    // original can change (re-upload) at the same URL, so a CDN cached
+    // a stale image forever. The original passthrough must use a SHORT
+    // cache and NOT immutable. The signed cache-file path keeps
+    // immutable (its key is content-stable).
+
+    public function test_serve_original_uses_short_cache_no_immutable(): void
+    {
+        // Non-webp Accept → serveOriginal path.
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'webp', 'text/html');
+
+        $this->assertSame(200, $response->status);
+        $this->assertNotNull($response->filePath);
+        $this->assertArrayHasKey('Cache-Control', $response->headers);
+        $cc = $response->headers['Cache-Control'];
+        $this->assertStringNotContainsString('immutable', $cc, 'serveOriginal must NOT mark the mutable original as immutable.');
+        // Short max-age (<= 3600). The original can be re-uploaded at
+        // the same URL — a long CDN cache would serve stale images.
+        $this->assertMatchesRegularExpression('/max-age=(\d+)/', $cc);
+        preg_match('/max-age=(\d+)/', $cc, $m);
+        $this->assertLessThanOrEqual(3600, (int) $m[1], 'serveOriginal max-age must be short (<= 3600).');
+    }
+
+    public function test_transformer_null_serve_original_uses_short_cache_no_immutable(): void
+    {
+        // Transformer null → fail-safe serveOriginal path.
+        $handler = $this->handler(new NullTransformer());
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'webp', 'image/webp');
+
+        $this->assertSame(200, $response->status);
+        $this->assertNotNull($response->filePath);
+        $cc = $response->headers['Cache-Control'];
+        $this->assertStringNotContainsString('immutable', $cc);
+        preg_match('/max-age=(\d+)/', $cc, $m);
+        $this->assertLessThanOrEqual(3600, (int) $m[1]);
+    }
+
+    public function test_webp_cache_path_keeps_immutable(): void
+    {
+        // Normal webp-serve path → immutable (the cache key is
+        // content-stable, so a long CDN cache is safe).
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'webp', 'image/webp');
+
+        $this->assertSame(200, $response->status);
+        $this->assertNotNull($response->body);
+        $this->assertSame('public, max-age=31536000, immutable', $response->headers['Cache-Control']);
+    }
 }
 
 /** Stub transformer that returns fixed bytes (bypasses ext checks). */

@@ -136,4 +136,148 @@ class MissEndpointGeneratorTest extends TestCase
         $this->assertStringContainsString('$_GET', $content);
         $this->assertStringContainsString("'k'", $content);
     }
+
+    // --- FIX #31: signing key baked WORLD-READABLE in oxpulse-img.php ---
+    //
+    // file_put_contents creates the file 0644 by default; the baked
+    // signing key would then be world-readable on shared hosting → a
+    // co-tenant reads it → forges signatures. After a successful write
+    // the file MUST be chmod'd to 0600 (owner-only).
+
+    public function test_generated_endpoint_file_has_0600_permissions(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: '/uploads',
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            autoloaderPath: '/autoload.php',
+        );
+
+        $perms = fileperms($path) & 0777;
+        $this->assertSame(0600, $perms, 'Generated endpoint must be 0600 (owner-only) so the baked signing key is not world-readable.');
+    }
+
+    // --- FIX #30: silent file_put_contents failure breaks all images on
+    // key rotation ---
+    //
+    // The write return was NOT checked; on a failed write (perms/disk-full)
+    // the generator silently "succeeded" → the on-disk endpoint kept the
+    // OLD signing key while UrlRewriter signed with the NEW key → every
+    // image 400s. A failed write MUST surface as an error (throw), and
+    // MUST NOT return the path as if OK. Atomic write (temp + chmod +
+    // rename) ensures a partial/failed write never replaces a working
+    // endpoint.
+
+    public function test_write_failure_throws_and_does_not_return_path(): void
+    {
+        $generator = new MissEndpointGenerator();
+
+        // Target inside a non-existent directory → file_put_contents
+        // returns false (cannot open stream).
+        $badPath = $this->outputDir . '/no-such-subdir/oxpulse-img.php';
+
+        $this->expectException(\RuntimeException::class);
+        try {
+            $generator->generate(
+                outputFile: $badPath,
+                signingKey: 'key',
+                signingSalt: 'salt',
+                uploadsBasedir: '/uploads',
+                uploadsBaseurl: 'https://example.com/uploads',
+                cacheDir: '/cache',
+                autoloaderPath: '/autoload.php',
+            );
+            $this->fail('generate() must throw on write failure, not return the path.');
+        } catch (\RuntimeException $e) {
+            // Re-throw to satisfy expectException; assert the bad path
+            // was NOT created (no partial endpoint left behind).
+            $this->assertFileDoesNotExist($badPath);
+            throw $e;
+        }
+    }
+
+    public function test_atomic_write_leaves_no_temp_file_on_success(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: '/uploads',
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            autoloaderPath: '/autoload.php',
+        );
+
+        $this->assertFileExists($path);
+        $entries = glob($this->outputDir . '/{*,.*}', GLOB_BRACE);
+        $basenames = array_map('basename', $entries);
+        foreach ($basenames as $name) {
+            $this->assertStringNotContainsString('.tmp', $name, 'No temp file must remain after a successful atomic write.');
+        }
+    }
+
+    // --- FIX #33: unescaped path interpolation breaks the generated
+    // endpoint ---
+    //
+    // MissEndpointGenerator bakes absolute paths (uploads base, cache dir,
+    // autoloader) into single-quoted PHP string literals. If a path
+    // contains an apostrophe (legit on some hosts), the literal breaks →
+    // parse error → endpoint 500s. Paths MUST be emitted via var_export
+    // (or addslashes) so ANY path round-trips safely.
+
+    public function test_path_with_apostrophe_produces_valid_php(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            // Apostrophe in every baked path.
+            uploadsBasedir: "/var/www/someone's-site/wp-content/uploads",
+            uploadsBaseurl: "https://example.com/someone's-site/wp-content/uploads",
+            cacheDir: "/var/www/someone's-site/wp-content/cache/oxpulse",
+            autoloaderPath: "/var/www/someone's-site/wp-content/plugins/oxpulse-imager/vendor/autoload.php",
+        );
+
+        $output = shell_exec('php -l ' . escapeshellarg($path) . ' 2>&1');
+        $this->assertStringContainsString('No syntax errors', $output, 'A baked path with an apostrophe must produce syntactically valid PHP.');
+    }
+
+    public function test_path_with_apostrophe_round_trips_as_constant(): void
+    {
+        $generator = new MissEndpointGenerator();
+        $uploadsBasedir = "/var/www/someone's-site/wp-content/uploads";
+        $path = $generator->generate(
+            outputFile: $this->outputDir . '/oxpulse-img.php',
+            signingKey: 'key',
+            signingSalt: 'salt',
+            uploadsBasedir: $uploadsBasedir,
+            uploadsBaseurl: 'https://example.com/uploads',
+            cacheDir: '/cache',
+            autoloaderPath: '/autoload.php',
+        );
+
+        // The generated file must define the constant to the EXACT
+        // original string (round-trip). Eval the define() in isolation
+        // by extracting the file's define() lines into a scratch script.
+        $content = file_get_contents($path);
+        $this->assertStringContainsString("define('OXPULSE_UPLOADS_BASEDIR'", $content);
+
+        $scratch = $this->outputDir . '/scratch-roundtrip.php';
+        $php = "<?php\n";
+        // Pull just the OXPULSE_UPLOADS_BASEDIR define line.
+        if (preg_match("/define\('OXPULSE_UPLOADS_BASEDIR', [^;]+;/", $content, $m)) {
+            $php .= $m[0] . "\n";
+        }
+        $php .= "echo OXPULSE_UPLOADS_BASEDIR;\n";
+        file_put_contents($scratch, $php);
+
+        $resolved = shell_exec('php ' . escapeshellarg($scratch) . ' 2>&1');
+        $this->assertSame($uploadsBasedir, $resolved, 'Baked path with apostrophe must round-trip to the exact original string.');
+    }
 }

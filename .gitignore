@@ -14,3 +14,11 @@ phpunit.result.cache
 .idea/
 .vscode/
 *.log
+
+# FIX #36: never commit the generated miss-endpoint (bakes the signing
+# key) or the local cache dir. The endpoint is regenerated at activation
+# / settings-save into wp-content/; a dev could generate it in-repo
+# during local testing — gitignore both so the baked key can never be
+# accidentally committed.
+/oxpulse-img.php
+/wp-content/cache/oxpulse/

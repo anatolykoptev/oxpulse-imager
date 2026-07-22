@@ -105,6 +105,14 @@ class WebpTransformerTest extends TestCase
             private string $bytes;
             public function __construct(string $bytes) { $this->bytes = $bytes; }
             protected function hasImagick(): bool { return true; }
+            protected function imageDimensions(string $sourcePath): ?array
+            {
+                // Valid dims under the cap — the size-guard logic below
+                // is what this test exercises, so dims must pass the
+                // fail-closed guard (FIX #34 made unknown dims return
+                // null instead of proceeding to encode).
+                return [100, 100];
+            }
             protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
             {
                 return $this->bytes;
@@ -213,6 +221,40 @@ class WebpTransformerTest extends TestCase
         $result = $transformer->transform($sourcePath, 100, 100, 'fit', 80);
 
         $this->assertNull($result, 'Oversized source (W*H > cap) must be rejected before decode.');
+    }
+
+    /**
+     * FIX #34: GD decompression-bomb cap bypassed when getimagesize()
+     * fails.
+     *
+     * When getimagesize() returns false (can't read header — corrupt
+     * file, exotic format, truncated upload), the 40MP guard was SKIPPED
+     * and decode proceeded → a crafted "tiny file, huge canvas" image
+     * that defeats getimagesize would OOM the FPM worker. Fail-closed:
+     * if dimensions are UNKNOWN, return null (serve original) rather
+     * than decoding blind. The encoder must NOT be reached.
+     */
+    public function test_unknown_dimensions_fail_closed_no_decode(): void
+    {
+        $sourcePath = $this->fixtureDir . '/unreadable-header.jpg';
+        file_put_contents($sourcePath, str_repeat('x', 100));
+
+        $transformer = new class extends WebpTransformer {
+            protected function hasImagick(): bool { return true; }
+            protected function imageDimensions(string $sourcePath): ?array
+            {
+                // getimagesize() can't read the header → dims unknown.
+                return null;
+            }
+            protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+            {
+                throw new \LogicException('encode must not be called when source dimensions are unknown (fail-closed).');
+            }
+        };
+
+        $result = $transformer->transform($sourcePath, 100, 100, 'fit', 80);
+
+        $this->assertNull($result, 'Unknown dimensions must fail-closed to null (serve original), not decode blind.');
     }
 
     /**
