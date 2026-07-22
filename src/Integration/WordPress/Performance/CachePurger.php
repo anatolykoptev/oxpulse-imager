@@ -51,7 +51,10 @@ class CachePurger
             return;
         }
         try {
-            do_action('after_rocket_clean_domain');
+            // rocket_clean_domain() performs the full-domain purge AND
+            // fires the `after_rocket_clean_domain` action itself, so we
+            // must NOT fire that action manually (it would run listeners —
+            // e.g. CDN-purge add-ons — twice, and out of order).
             rocket_clean_domain();
         } catch (\Throwable $e) {
             // Never fatal during settings-save.
@@ -64,6 +67,10 @@ class CachePurger
             if ($this->w3tcAvailable()) {
                 w3tc_flush_all();
             } else {
+                // Future-proofing only: when w3tc_flush_all() is absent
+                // W3TC isn't loaded, so nothing listens on this action
+                // (effective no-op). Kept in case a future W3TC exposes
+                // the flush purely as an action.
                 do_action('w3tc_flush_all');
             }
         } catch (\Throwable $e) {

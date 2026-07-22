@@ -68,7 +68,10 @@ class CachePurgerTest extends TestCase
             $GLOBALS['__oxpulse_wp_rocket_called'],
             'WP Rocket purge (rocket_clean_domain) must fire when the function exists',
         );
-        $this->assertGreaterThan(0, did_action('after_rocket_clean_domain'));
+        // rocket_clean_domain() fires after_rocket_clean_domain itself; we
+        // must NOT fire it manually too. Locks the single-fire (was 2×
+        // before the fix — manual do_action + the plugin's internal one).
+        $this->assertSame(1, did_action('after_rocket_clean_domain'));
     }
 
     public function test_purge_skips_wp_rocket_when_absent(): void

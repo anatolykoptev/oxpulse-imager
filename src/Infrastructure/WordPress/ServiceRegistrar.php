@@ -657,29 +657,21 @@ final class ServiceRegistrar
         };
 
         add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability, $purgeCaches): void {
-            $watched = [
-                OptionSettingsRepository::OPTION_ENDPOINT,
-                OptionSettingsRepository::OPTION_KEY,
-                OptionSettingsRepository::OPTION_SALT,
-                OptionSettingsRepository::OPTION_ENABLED,
-            ];
-            if (in_array($option, $watched, true)) {
+            if (in_array($option, OptionSettingsRepository::DELIVERY_OPTION_KEYS, true)) {
                 $reinstall();
             }
             if ($option === OptionSettingsRepository::OPTION_ENDPOINT) {
                 $recheckCapability();
             }
             // Purge page caches on delivery-relevant option changes
-            // (the watched set + OPTION_REWRITE_CAPABILITY, whose flip
+            // (the delivery keys + OPTION_REWRITE_CAPABILITY, whose flip
             // changes the URL format). Mirrors the capability-recheck
-            // gating — no broad updated_option listener.
-            $purgeWatched = [
-                OptionSettingsRepository::OPTION_ENDPOINT,
-                OptionSettingsRepository::OPTION_KEY,
-                OptionSettingsRepository::OPTION_SALT,
-                OptionSettingsRepository::OPTION_ENABLED,
-                OptionSettingsRepository::OPTION_REWRITE_CAPABILITY,
-            ];
+            // gating — no broad updated_option listener. Derived from the
+            // single DELIVERY_OPTION_KEYS source so the two gates can't drift.
+            $purgeWatched = array_merge(
+                OptionSettingsRepository::DELIVERY_OPTION_KEYS,
+                [OptionSettingsRepository::OPTION_REWRITE_CAPABILITY],
+            );
             if (in_array($option, $purgeWatched, true)) {
                 $purgeCaches();
             }

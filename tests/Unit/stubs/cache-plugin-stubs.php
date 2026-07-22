@@ -15,6 +15,9 @@ namespace {
         function rocket_clean_domain(): void
         {
             $GLOBALS['__oxpulse_wp_rocket_called'] = true;
+            // Model the real plugin: rocket_clean_domain() fires this
+            // action itself at the end of the purge.
+            do_action('after_rocket_clean_domain');
         }
     }
 
