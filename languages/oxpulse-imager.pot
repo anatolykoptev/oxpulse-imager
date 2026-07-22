@@ -71,7 +71,7 @@ msgstr ""
 msgid "WordPress HTTP API not available."
 msgstr ""
 
-#: src/Infrastructure/WordPress/ServiceRegistrar.php:341
+#: src/Infrastructure/WordPress/ServiceRegistrar.php:306
 msgid "Settings"
 msgstr ""
 
