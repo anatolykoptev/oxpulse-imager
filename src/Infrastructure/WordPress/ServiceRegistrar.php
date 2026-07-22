@@ -269,9 +269,14 @@ final class ServiceRegistrar
         // rewrite of clean URLs is no longer needed for the content path.
         // BufferRewriter (gated on bufferRewritingEnabled, default OFF)
         // remains as the explicit opt-in for THEME-HARDCODED <img> tags
-        // (Foxiz) — its original purpose. FallbackRewriter itself is not
-        // removed (it may be re-wired in a future phase for defense-in-
-        // depth), but the auto-on-fallbackNeeded registration is gone.
+        // (Foxiz) — its original purpose.
+        //
+        // #43 Phase 3: FallbackRewriter itself is now REMOVED. The
+        // idempotency guard in UrlRewriter (isAlreadyRewritten) handles
+        // the cache-URL detection that FallbackRewriter's regex did, and
+        // LocalBackend emits ?k= URLs directly. The HtaccessGenerator
+        // still emits rewrite rules for clean cache URLs (Apache), but
+        // the PHP-side buffer rewriter for nginx is no longer needed.
     }
 
     /**

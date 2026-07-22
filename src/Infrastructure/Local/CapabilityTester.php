@@ -3,9 +3,8 @@
  * Apache mod_rewrite / AllowOverride capability tester.
  *
  * Determines whether .htaccess rewrite rules can be trusted at runtime.
- * If mod_rewrite is unavailable or AllowOverride is off, the plugin
- * falls back to the FallbackRewriter output-buffer path (rewrites
- * cache URLs to oxpulse-img.php?k=<key> in the HTML output).
+ * If mod_rewrite is unavailable or AllowOverride is off, LocalBackend
+ * emits ?k= endpoint URLs directly (no .htaccess rewrite needed).
  *
  * #43 Phase 1 review (BLOCKER): the front-end-reachable path —
  * rewriteAvailable() / fallbackNeeded() — performs ZERO blocking I/O.

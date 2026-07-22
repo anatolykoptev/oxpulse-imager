@@ -55,6 +55,17 @@ final class ContentImgTagRewriter
             return $filteredImage;
         }
 
+        // #43 Phase 3 — tag-level idempotency guard. Skip an <img> that
+        // (a) already carries our data-oxpulse marker (a previous pass
+        // already rewrote it), or (b) carries ShortPixel's sp-no-webp
+        // class (another plugin already handled this tag). The <picture>
+        // parent check does not apply here — wp_content_img_tag fires per
+        // individual <img> tag, so the parent is not visible; BufferRewriter
+        // handles the <picture> case at the buffer level.
+        if ($this->hasOxpulseMarker($filteredImage) || $this->hasSpNoWebpClass($filteredImage)) {
+            return $filteredImage;
+        }
+
         // Capture the original src BEFORE any rewriting — LQIP and DPR
         // generation need to authorize against the original URL, not the
         // rewritten imgproxy URL (which the SourcePolicy won't allow).
@@ -81,7 +92,63 @@ final class ContentImgTagRewriter
             $filteredImage = $this->addDprSrcset($filteredImage, $originalSrc, $originalWidth);
         }
 
+        // #43 Phase 3: stamp a data-oxpulse="1" marker so a later pass
+        // (ours or another plugin's) can skip this tag as already-handled.
+        // Only add when we actually rewrote something (the src changed).
+        $filteredImage = $this->addOxpulseMarker($filteredImage, $originalSrc);
+
         return $filteredImage;
+    }
+
+    /**
+     * #43 Phase 3 — whether the tag already carries our data-oxpulse
+     * marker attribute (a previous pass already rewrote it).
+     */
+    private function hasOxpulseMarker(string $imgTag): bool
+    {
+        return (bool) preg_match('/\bdata-oxpulse\s*=\s*["\'][^"\']*["\']/i', $imgTag);
+    }
+
+    /**
+     * #43 Phase 3 — whether the tag carries ShortPixel's sp-no-webp
+     * class (ShortPixel's already-handled marker). Class attribute match
+     * is word-boundary aware so "sp-no-webp-extra" does not match.
+     */
+    private function hasSpNoWebpClass(string $imgTag): bool
+    {
+        if (!preg_match('/\bclass\s*=\s*["\']([^"\']*)["\']/i', $imgTag, $m)) {
+            return false;
+        }
+        $classes = preg_split('/\s+/', $m[1]) ?: [];
+        return in_array('sp-no-webp', $classes, true);
+    }
+
+    /**
+     * #43 Phase 3 — add data-oxpulse="1" marker to a rewritten <img>.
+     * Only adds the attribute when the src actually changed (we rewrote
+     * something). Inserted right after the opening <img to keep it
+     * visible to a later regex pass.
+     */
+    private function addOxpulseMarker(string $imgTag, string $originalSrc): string
+    {
+        // Did the src actually change? If no rewrite happened, don't stamp.
+        if ($originalSrc === '') {
+            return $imgTag;
+        }
+        if (!preg_match('/\bsrc=["\']([^"\']+)["\']/', $imgTag, $m)) {
+            return $imgTag;
+        }
+        if ($m[1] === $originalSrc) {
+            return $imgTag;
+        }
+
+        // Insert data-oxpulse="1" right after the opening <img .
+        return preg_replace(
+            '/^(<img\b)/i',
+            '$1 data-oxpulse="1"',
+            $imgTag,
+            1,
+        );
     }
 
     private function rewriteSrcAttribute(string $imgTag): string

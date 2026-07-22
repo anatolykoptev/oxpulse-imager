@@ -526,4 +526,111 @@ class UrlRewriterTest extends TestCase
         $this->assertStringStartsWith('/imgproxy/', $result->url);
         $this->assertStringNotContainsString('://imgproxy', $result->url);
     }
+
+    // --- #43 Phase 3: URL-level idempotency guard (no double-rewrite) ---
+
+    /**
+     * If a source URL is ALREADY one of OUR rewritten forms — a
+     * LocalBackend cache URL — it must be preserved unchanged, never
+     * re-rewritten. This stops the recursion where a filtered URL is
+     * fed back through a content filter.
+     */
+    public function test_preserves_already_rewritten_cache_url(): void
+    {
+        $rewriter = $this->createRewriter();
+        $alreadyRewritten = 'https://example.com/wp-content/cache/oxpulse/a1b2c3d4e5f6a1b2/eyJfIjoid2VicCJ9.sig.webp';
+
+        $result = $rewriter->rewrite($alreadyRewritten);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('already_rewritten', $result->reason);
+        $this->assertSame($alreadyRewritten, $result->url);
+    }
+
+    public function test_preserves_already_rewritten_endpoint_url(): void
+    {
+        $rewriter = $this->createRewriter();
+        $alreadyRewritten = 'https://example.com/wp-content/oxpulse-img.php?k=eyJfIjoid2VicCJ9.sig';
+
+        $result = $rewriter->rewrite($alreadyRewritten);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('already_rewritten', $result->reason);
+        $this->assertSame($alreadyRewritten, $result->url);
+    }
+
+    public function test_preserves_already_rewritten_relative_cache_url(): void
+    {
+        // Relative cache URLs (emitted in non-absolute contexts) must
+        // also be detected — the guard is path-based, not host-based.
+        $rewriter = $this->createRewriter();
+        $alreadyRewritten = '/wp-content/cache/oxpulse/a1b2c3d4e5f6a1b2/key.webp';
+
+        $result = $rewriter->rewrite($alreadyRewritten);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('already_rewritten', $result->reason);
+    }
+
+    public function test_idempotency_guard_runs_before_delivery_disabled_check(): void
+    {
+        // Even with delivery disabled, an already-rewritten URL is
+        // preserved as already_rewritten (not delivery_disabled) — the
+        // guard is the first check, so we never accidentally re-process
+        // a URL that was rewritten before delivery was toggled off.
+        $rewriter = $this->createRewriter(enabled: false);
+        $alreadyRewritten = 'https://example.com/wp-content/cache/oxpulse/h/key.webp';
+
+        $result = $rewriter->rewrite($alreadyRewritten);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('already_rewritten', $result->reason);
+    }
+
+    public function test_idempotency_guard_does_not_match_imgproxy_urls(): void
+    {
+        // Imgproxy URLs are NOT matched by the guard (they don't contain
+        // /wp-content/cache/oxpulse/). They are separately handled by
+        // SourcePolicy's proxy-loop check. Verify the guard leaves them
+        // to the normal path (which denies them via proxy_loop_detected).
+        $rewriter = $this->createRewriter();
+        $imgproxyUrl = 'https://imgproxy.example.com/sig/rs:fit:800:0/plain/abc@avif';
+
+        $result = $rewriter->rewrite($imgproxyUrl);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('proxy_loop_detected', $result->reason);
+    }
+
+    public function test_rewrite_lqip_preserves_already_rewritten_url(): void
+    {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: self::ENDPOINT,
+            allowedSources: [self::ALLOWED],
+            lqipEnabled: true,
+        );
+        $rewriter = new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX)
+        );
+
+        $alreadyRewritten = 'https://example.com/wp-content/oxpulse-img.php?k=key.sig';
+        $result = $rewriter->rewriteLqip($alreadyRewritten);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('already_rewritten', $result->reason);
+    }
+
+    public function test_rewrite_dpr_preserves_already_rewritten_url(): void
+    {
+        $rewriter = $this->createRewriter();
+        $alreadyRewritten = 'https://example.com/wp-content/cache/oxpulse/h/key.webp';
+
+        $result = $rewriter->rewriteDpr($alreadyRewritten, 400, 2.0);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('already_rewritten', $result->reason);
+    }
 }

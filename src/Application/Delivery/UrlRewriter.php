@@ -70,6 +70,20 @@ final class UrlRewriter
      */
     public function rewrite(string $sourceUrl, int $width = 0, int $height = 0, string $context = 'content'): RewriteResult
     {
+        // #43 Phase 3 — idempotency guard (no double-rewrite / recursion).
+        // If the source URL is ALREADY one of OUR rewritten forms — a
+        // LocalBackend cache URL (wp-content/cache/oxpulse/) or the
+        // ?k= endpoint (oxpulse-img.php) — preserve it unchanged. This
+        // stops the recursion where a filtered URL is fed back through
+        // a content filter, and prevents re-rewriting a URL another
+        // plugin already handed to us. Imgproxy URLs are not matched
+        // here (they don't contain /wp-content/) and are separately
+        // skipped by SourcePolicy's proxy-loop check.
+        if ($this->isAlreadyRewritten($sourceUrl)) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'already_rewritten'));
+            return RewriteResult::preserved($sourceUrl, 'already_rewritten');
+        }
+
         if (!$this->delivery->enabled) {
             $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'delivery_disabled'));
             return RewriteResult::preserved($sourceUrl, 'delivery_disabled');
@@ -168,6 +182,10 @@ final class UrlRewriter
             return RewriteResult::preserved($sourceUrl, 'lqip_disabled');
         }
 
+        if ($this->isAlreadyRewritten($sourceUrl)) {
+            return RewriteResult::preserved($sourceUrl, 'already_rewritten');
+        }
+
         if (!$this->delivery->enabled) {
             return RewriteResult::preserved($sourceUrl, 'delivery_disabled');
         }
@@ -228,6 +246,10 @@ final class UrlRewriter
      */
     public function rewriteDpr(string $sourceUrl, int $width, float $dpr, string $context = 'srcset'): RewriteResult
     {
+        if ($this->isAlreadyRewritten($sourceUrl)) {
+            return RewriteResult::preserved($sourceUrl, 'already_rewritten');
+        }
+
         if (!$this->delivery->enabled) {
             return RewriteResult::preserved($sourceUrl, 'delivery_disabled');
         }
@@ -309,6 +331,26 @@ final class UrlRewriter
         }
 
         return $this->delivery->endpoint !== '';
+    }
+
+    /**
+     * #43 Phase 3 — idempotency guard: detect whether a URL is ALREADY
+     * one of OUR rewritten forms, so we never re-process it.
+     *
+     * Matches the two LocalBackend output shapes:
+     *   - clean cache URL:  .../wp-content/cache/oxpulse/<hash>/<key>.<fmt>
+     *   - fallback endpoint: .../wp-content/oxpulse-img.php?k=<key>
+     *
+     * Imgproxy URLs are not matched here (they don't contain
+     * /wp-content/cache/oxpulse/); SourcePolicy's proxy-loop check
+     * separately skips them. The check is path-based (host-agnostic)
+     * so it also catches a relative `/wp-content/cache/oxpulse/...`
+     * URL emitted in a non-absolute context.
+     */
+    private function isAlreadyRewritten(string $sourceUrl): bool
+    {
+        return str_contains($sourceUrl, '/wp-content/cache/oxpulse/')
+            || str_contains($sourceUrl, '/wp-content/oxpulse-img.php');
     }
 
     /**

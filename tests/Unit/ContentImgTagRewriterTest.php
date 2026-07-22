@@ -64,7 +64,10 @@ class ContentImgTagRewriterTest extends TestCase
 
         $result = $rewriter->rewrite($tag, 'the_content', 0);
 
-        $this->assertStringStartsWith('<img src="https://imgproxy.example.com/', $result);
+        // #43 Phase 3: a data-oxpulse="1" marker is now inserted right
+        // after the opening <img, so the src is no longer the first
+        // attribute.
+        $this->assertStringStartsWith('<img data-oxpulse="1" src="https://imgproxy.example.com/', $result);
         $this->assertStringContainsString('plain/https://example.com/wp-content/uploads/photo.jpg', $result);
         $this->assertStringContainsString('alt="Test"', $result);
     }
@@ -294,5 +297,79 @@ class ContentImgTagRewriterTest extends TestCase
         $result = $contentRewriter->rewrite($tag, 'the_content', 0);
 
         $this->assertStringNotContainsString('srcset=', $result);
+    }
+
+    // --- #43 Phase 3: tag-level idempotency + marker ---
+
+    public function test_skips_img_with_data_oxpulse_marker(): void
+    {
+        $rewriter = $this->createContentRewriter();
+        // Already marked by a previous pass — must be returned unchanged.
+        $tag = '<img data-oxpulse="1" src="https://example.com/wp-content/uploads/photo.jpg" alt="Test" />';
+
+        $result = $rewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertSame($tag, $result);
+        $this->assertStringNotContainsString('imgproxy.example.com', $result);
+    }
+
+    public function test_skips_img_with_sp_no_webp_class(): void
+    {
+        $rewriter = $this->createContentRewriter();
+        // ShortPixel's already-handled marker — must be returned unchanged.
+        $tag = '<img class="wp-image-42 sp-no-webp" src="https://example.com/wp-content/uploads/photo.jpg" alt="Test" />';
+
+        $result = $rewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertSame($tag, $result);
+        $this->assertStringNotContainsString('imgproxy.example.com', $result);
+    }
+
+    public function test_sp_no_webp_class_match_is_word_boundary_aware(): void
+    {
+        $rewriter = $this->createContentRewriter();
+        // A class named "sp-no-webp-extra" must NOT match — only the
+        // exact "sp-no-webp" class is ShortPixel's marker.
+        $tag = '<img class="sp-no-webp-extra" src="https://example.com/wp-content/uploads/photo.jpg" alt="Test" />';
+
+        $result = $rewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertStringContainsString('imgproxy.example.com', $result);
+    }
+
+    public function test_adds_data_oxpulse_marker_on_rewrite(): void
+    {
+        $rewriter = $this->createContentRewriter();
+        $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" alt="Test" />';
+
+        $result = $rewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertStringContainsString('data-oxpulse="1"', $result);
+        $this->assertStringContainsString('imgproxy.example.com', $result);
+    }
+
+    public function test_does_not_add_marker_when_no_rewrite_happened(): void
+    {
+        $rewriter = $this->createContentRewriter();
+        // Non-allowed URL → no rewrite → no marker added.
+        $tag = '<img src="https://evil.com/images/photo.jpg" alt="Test" />';
+
+        $result = $rewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertSame($tag, $result);
+        $this->assertStringNotContainsString('data-oxpulse', $result);
+    }
+
+    public function test_second_pass_skips_already_marked_tag(): void
+    {
+        $rewriter = $this->createContentRewriter();
+        $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" alt="Test" />';
+
+        $firstPass = $rewriter->rewrite($tag, 'the_content', 0);
+        $this->assertStringContainsString('data-oxpulse="1"', $firstPass);
+
+        // A second pass over the already-marked tag must be a no-op.
+        $secondPass = $rewriter->rewrite($firstPass, 'the_content', 0);
+        $this->assertSame($firstPass, $secondPass);
     }
 }

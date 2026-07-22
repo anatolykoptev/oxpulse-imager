@@ -57,6 +57,16 @@ class BufferRewriterTest extends TestCase
         );
     }
 
+    /**
+     * #43 Phase 3 — wrap a fragment in <html> so the content-type guard
+     * (which sniffs for <html when no Content-Type header is set, as in
+     * the CLI test environment) lets the buffer through to the regex.
+     */
+    private function wrap(string $fragment): string
+    {
+        return '<html><body>' . $fragment . '</body></html>';
+    }
+
     public function test_empty_buffer_returned_unchanged(): void
     {
         $rewriter = $this->createBufferRewriter();
@@ -73,7 +83,7 @@ class BufferRewriterTest extends TestCase
     public function test_rewrites_src_attribute_for_wp_content_image(): void
     {
         $rewriter = $this->createBufferRewriter();
-        $html = '<img src="https://example.com/wp-content/uploads/2024/01/photo.jpg" alt="test">';
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/2024/01/photo.jpg" alt="test">');
         $result = $rewriter->rewrite($html);
 
         $this->assertNotSame($html, $result);
@@ -84,7 +94,7 @@ class BufferRewriterTest extends TestCase
     public function test_rewrites_data_src_attribute_for_lazy_load(): void
     {
         $rewriter = $this->createBufferRewriter();
-        $html = '<img data-src="https://example.com/wp-content/uploads/photo.jpg" src="placeholder.gif" alt="lazy">';
+        $html = $this->wrap('<img data-src="https://example.com/wp-content/uploads/photo.jpg" src="placeholder.gif" alt="lazy">');
         $result = $rewriter->rewrite($html);
 
         $this->assertNotSame($html, $result);
@@ -96,7 +106,7 @@ class BufferRewriterTest extends TestCase
     public function test_preserves_external_images_not_in_wp_content(): void
     {
         $rewriter = $this->createBufferRewriter();
-        $html = '<img src="https://cdn.example.com/photo.jpg" alt="external">';
+        $html = $this->wrap('<img src="https://cdn.example.com/photo.jpg" alt="external">');
         $result = $rewriter->rewrite($html);
 
         $this->assertSame($html, $result);
@@ -105,7 +115,7 @@ class BufferRewriterTest extends TestCase
     public function test_preserves_non_image_extensions_in_wp_content(): void
     {
         $rewriter = $this->createBufferRewriter();
-        $html = '<img src="https://example.com/wp-content/uploads/document.pdf" alt="doc">';
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/document.pdf" alt="doc">');
         $result = $rewriter->rewrite($html);
 
         $this->assertSame($html, $result);
@@ -114,7 +124,7 @@ class BufferRewriterTest extends TestCase
     public function test_handles_single_quoted_attributes(): void
     {
         $rewriter = $this->createBufferRewriter();
-        $html = "<img src='https://example.com/wp-content/uploads/photo.jpg' alt='test'>";
+        $html = $this->wrap("<img src='https://example.com/wp-content/uploads/photo.jpg' alt='test'>");
         $result = $rewriter->rewrite($html);
 
         $this->assertNotSame($html, $result);
@@ -124,7 +134,7 @@ class BufferRewriterTest extends TestCase
     public function test_extracts_width_height_for_better_resize(): void
     {
         $rewriter = $this->createBufferRewriter();
-        $html = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" alt="test">';
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" alt="test">');
         $result = $rewriter->rewrite($html);
 
         $this->assertStringContainsString('rs:fill:800:600', $result);
@@ -133,10 +143,10 @@ class BufferRewriterTest extends TestCase
     public function test_rewrites_multiple_img_tags_in_one_buffer(): void
     {
         $rewriter = $this->createBufferRewriter();
-        $html = '<div>'
+        $html = $this->wrap('<div>'
             . '<img src="https://example.com/wp-content/uploads/a.jpg" alt="a">'
             . '<img src="https://example.com/wp-content/uploads/b.png" alt="b">'
-            . '</div>';
+            . '</div>');
         $result = $rewriter->rewrite($html);
 
         $this->assertStringContainsString('imgproxy.example.com', $result);
@@ -166,7 +176,7 @@ class BufferRewriterTest extends TestCase
             )
         );
 
-        $html = '<img src="https://example.com/wp-content/uploads/photo.jpg" alt="test">';
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/photo.jpg" alt="test">');
         $result = $rewriter->rewrite($html);
 
         // Source not in allowlist → preserved.
@@ -176,7 +186,9 @@ class BufferRewriterTest extends TestCase
     public function test_skips_buffer_over_2mb(): void
     {
         $rewriter = $this->createBufferRewriter();
-        // Build a 2.1MB buffer containing an <img tag.
+        // Build a 2.1MB buffer containing an <img tag. The fast path
+        // (strlen > MAX_BUFFER) fires before the content-type guard, so
+        // no <html> wrapper is needed here.
         $img = '<img src="https://example.com/wp-content/uploads/photo.jpg" alt="test">';
         $padding = str_repeat('x', 2 * 1024 * 1024 + 100);
         $html = $padding . $img;
@@ -191,7 +203,7 @@ class BufferRewriterTest extends TestCase
         // An already-rewritten imgproxy URL does not contain /wp-content/,
         // so the buffer regex won't match it — no double rewrite.
         $rewriter = $this->createBufferRewriter();
-        $alreadyRewritten = '<img src="https://imgproxy.example.com/sig/rs:fit:800:0/plain/abc@avif" alt="test">';
+        $alreadyRewritten = $this->wrap('<img src="https://imgproxy.example.com/sig/rs:fit:800:0/plain/abc@avif" alt="test">');
         $result = $rewriter->rewrite($alreadyRewritten);
 
         $this->assertSame($alreadyRewritten, $result);
@@ -212,7 +224,7 @@ class BufferRewriterTest extends TestCase
         // This is the worst case for a bounded quantifier.
         $malformed = '<img src="' . str_repeat('a', 4000) . ' <img';
         // Add a real img tag at the end to ensure the regex runs.
-        $html = $malformed . '<img src="https://example.com/wp-content/uploads/photo.jpg" alt="ok">';
+        $html = '<html>' . $malformed . '<img src="https://example.com/wp-content/uploads/photo.jpg" alt="ok">';
 
         $start = microtime(true);
         $result = $rewriter->rewrite($html);
@@ -228,7 +240,7 @@ class BufferRewriterTest extends TestCase
     public function test_preserves_when_delivery_disabled(): void
     {
         $rewriter = $this->createBufferRewriter(enabled: false);
-        $html = '<img src="https://example.com/wp-content/uploads/photo.jpg" alt="test">';
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/photo.jpg" alt="test">');
         $result = $rewriter->rewrite($html);
 
         // Delivery disabled → UrlRewriter preserves → buffer regex matches
@@ -242,7 +254,7 @@ class BufferRewriterTest extends TestCase
         $extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp', 'tif', 'tiff'];
 
         foreach ($extensions as $ext) {
-            $html = '<img src="https://example.com/wp-content/uploads/photo.' . $ext . '" alt="test">';
+            $html = $this->wrap('<img src="https://example.com/wp-content/uploads/photo.' . $ext . '" alt="test">');
             $result = $rewriter->rewrite($html);
             $this->assertStringContainsString(
                 'imgproxy.example.com',
@@ -250,5 +262,236 @@ class BufferRewriterTest extends TestCase
                 "Extension .$ext should be rewritten"
             );
         }
+    }
+
+    // --- #43 Phase 3: guard battery (B.2 table) — shouldBuffer() skip conditions ---
+
+    /**
+     * Each skip condition in shouldBuffer() must return false. We test
+     * shouldBuffer() directly (it's public for this reason) by flipping
+     * each $GLOBALS toggle. The register() closure calls shouldBuffer()
+     * at template_redirect time — testing it directly is equivalent and
+     * avoids needing to fire the action.
+     */
+    public function test_register_uses_template_redirect_priority_5(): void
+    {
+        $GLOBALS['__oxpulse_actions'] = [];
+        $rewriter = $this->createBufferRewriter();
+        $rewriter->register();
+
+        $actions = array_filter(
+            $GLOBALS['__oxpulse_actions'] ?? [],
+            static fn($e) => $e['hook'] === 'template_redirect'
+        );
+        $this->assertNotEmpty($actions, 'register() must add a template_redirect action');
+        // Priority 5 — inside Autoptimize (pri 2) / WP Rocket (pri 2).
+        $first = reset($actions);
+        $this->assertSame(5, $first['priority']);
+    }
+
+    public function test_should_buffer_returns_true_by_default(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $this->assertTrue($rewriter->shouldBuffer());
+    }
+
+    public function test_should_buffer_skips_admin(): void
+    {
+        $GLOBALS['__oxpulse_is_admin'] = true;
+        try {
+            $this->assertFalse($this->createBufferRewriter()->shouldBuffer());
+        } finally {
+            unset($GLOBALS['__oxpulse_is_admin']);
+        }
+    }
+
+    public function test_should_buffer_skips_ajax(): void
+    {
+        $GLOBALS['__oxpulse_doing_ajax'] = true;
+        try {
+            $this->assertFalse($this->createBufferRewriter()->shouldBuffer());
+        } finally {
+            unset($GLOBALS['__oxpulse_doing_ajax']);
+        }
+    }
+
+    public function test_should_buffer_skips_cron(): void
+    {
+        $GLOBALS['__oxpulse_doing_cron'] = true;
+        try {
+            $this->assertFalse($this->createBufferRewriter()->shouldBuffer());
+        } finally {
+            unset($GLOBALS['__oxpulse_doing_cron']);
+        }
+    }
+
+    public function test_should_buffer_skips_feed(): void
+    {
+        $GLOBALS['__oxpulse_is_feed'] = true;
+        try {
+            $this->assertFalse($this->createBufferRewriter()->shouldBuffer());
+        } finally {
+            unset($GLOBALS['__oxpulse_is_feed']);
+        }
+    }
+
+    public function test_should_buffer_skips_embed(): void
+    {
+        $GLOBALS['__oxpulse_is_embed'] = true;
+        try {
+            $this->assertFalse($this->createBufferRewriter()->shouldBuffer());
+        } finally {
+            unset($GLOBALS['__oxpulse_is_embed']);
+        }
+    }
+
+    public function test_should_buffer_skips_preview(): void
+    {
+        $GLOBALS['__oxpulse_is_preview'] = true;
+        try {
+            $this->assertFalse($this->createBufferRewriter()->shouldBuffer());
+        } finally {
+            unset($GLOBALS['__oxpulse_is_preview']);
+        }
+    }
+
+    public function test_should_buffer_skips_customize_preview(): void
+    {
+        $GLOBALS['__oxpulse_is_customize_preview'] = true;
+        try {
+            $this->assertFalse($this->createBufferRewriter()->shouldBuffer());
+        } finally {
+            unset($GLOBALS['__oxpulse_is_customize_preview']);
+        }
+    }
+
+    public function test_should_buffer_skips_amp(): void
+    {
+        $GLOBALS['__oxpulse_is_amp_endpoint'] = true;
+        try {
+            $this->assertFalse($this->createBufferRewriter()->shouldBuffer());
+        } finally {
+            unset($GLOBALS['__oxpulse_is_amp_endpoint']);
+        }
+    }
+
+    public function test_should_buffer_skips_page_builder_edit_mode(): void
+    {
+        $_GET['fl_builder'] = '1';
+        try {
+            $this->assertFalse($this->createBufferRewriter()->shouldBuffer());
+        } finally {
+            unset($_GET['fl_builder']);
+        }
+    }
+
+    // --- #43 Phase 3: rewrite() content-type / opt-out / fail-safe ---
+
+    public function test_rewrite_skips_non_html_buffer_without_html_tag(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        // JSON buffer (no <html, no Content-Type header in CLI) → skip.
+        $json = '{"posts":[{"img":"https://example.com/wp-content/uploads/photo.jpg"}]}';
+        $this->assertSame($json, $rewriter->rewrite($json));
+    }
+
+    public function test_rewrite_skips_xml_buffer(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $xml = '<?xml version="1.0"?><rss><channel><img src="https://example.com/wp-content/uploads/photo.jpg"/></channel></rss>';
+        $this->assertSame($xml, $rewriter->rewrite($xml));
+    }
+
+    public function test_rewrite_skips_when_no_oxpulse_marker_present(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $html = $this->wrap('<!-- no-oxpulse --><img src="https://example.com/wp-content/uploads/photo.jpg" alt="test">');
+        $this->assertSame($html, $rewriter->rewrite($html));
+    }
+
+    public function test_rewrite_skips_when_opt_out_filter_false(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/photo.jpg" alt="test">');
+
+        // Register a filter that disables buffer rewriting.
+        $GLOBALS['__oxpulse_filters'] = [];
+        add_filter('oxpulse_buffer_rewrite_enabled', '__return_false');
+        try {
+            $this->assertSame($html, $rewriter->rewrite($html));
+        } finally {
+            $GLOBALS['__oxpulse_filters'] = [];
+        }
+    }
+
+    public function test_rewrite_returns_original_on_throw(): void
+    {
+        // UrlRewriter is final, so we can't inject a throwing subclass.
+        // Instead, force preg_replace_callback to fail by setting a
+        // tiny backtrack limit — the regex returns null, and returning
+        // null from a : string method throws a TypeError, which the
+        // try/catch in rewrite() must catch and return the original.
+        $rewriter = $this->createBufferRewriter();
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/photo.jpg" alt="test">');
+
+        $originalLimit = ini_get('pcre.backtrack_limit');
+        ini_set('pcre.backtrack_limit', '1');
+        try {
+            // Must return the original buffer, not blank or partial.
+            $this->assertSame($html, $rewriter->rewrite($html));
+        } finally {
+            ini_set('pcre.backtrack_limit', $originalLimit !== false ? $originalLimit : '1000000');
+        }
+    }
+
+    // --- #43 Phase 3: tag-level idempotency ---
+
+    public function test_rewrite_skips_img_with_data_oxpulse_marker(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $html = $this->wrap('<img data-oxpulse="1" src="https://example.com/wp-content/uploads/photo.jpg" alt="test">');
+        $this->assertSame($html, $rewriter->rewrite($html));
+    }
+
+    public function test_rewrite_skips_img_with_sp_no_webp_class(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $html = $this->wrap('<img class="sp-no-webp" src="https://example.com/wp-content/uploads/photo.jpg" alt="test">');
+        $this->assertSame($html, $rewriter->rewrite($html));
+    }
+
+    public function test_rewrite_skips_img_inside_picture_element(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $html = $this->wrap('<picture><source type="image/webp" srcset="x.webp"><img src="https://example.com/wp-content/uploads/photo.jpg" alt="test"></picture>');
+        $result = $rewriter->rewrite($html);
+
+        // The <img> inside <picture> must NOT be rewritten.
+        $this->assertStringNotContainsString('imgproxy.example.com', $result);
+        $this->assertStringContainsString('https://example.com/wp-content/uploads/photo.jpg', $result);
+    }
+
+    public function test_rewrite_adds_data_oxpulse_marker_on_rewrite(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/photo.jpg" alt="test">');
+        $result = $rewriter->rewrite($html);
+
+        $this->assertStringContainsString('data-oxpulse="1"', $result);
+        $this->assertStringContainsString('imgproxy.example.com', $result);
+    }
+
+    public function test_rewrite_second_pass_skips_already_marked(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/photo.jpg" alt="test">');
+
+        $first = $rewriter->rewrite($html);
+        $this->assertStringContainsString('data-oxpulse="1"', $first);
+
+        // Second pass over the already-marked buffer must not double-rewrite.
+        $second = $rewriter->rewrite($first);
+        $this->assertSame(1, substr_count($second, 'data-oxpulse="1"'));
+        $this->assertSame(1, substr_count($second, 'imgproxy.example.com'));
     }
 }
