@@ -1,15 +1,15 @@
 <?php
 /**
- * WebP transform engine (Phase 6, local delivery).
+ * Image transform engine (Phase 6, local delivery).
  *
  * Given an absolute source file path + transform params (width, height,
- * fit, quality), produces optimized WebP bytes. Pure infrastructure — no
- * WordPress globals beyond what's injected, so it is unit-testable with
- * fixture images.
+ * fit, quality, format), produces optimized WebP or AVIF bytes. Pure
+ * infrastructure — no WordPress globals beyond what's injected, so it
+ * is unit-testable with fixture images.
  *
  * Engine selection (preferred-first):
  *   1. Imagick  (extension_loaded('imagick'))
- *   2. GD       (function_exists('imagewebp'))
+ *   2. GD       (function_exists('imagewebp') / imageavif)
  *   3. neither  -> null (FAIL-SAFE: caller serves the original)
  *
  * Resize rules:
@@ -19,9 +19,13 @@
  *           Never upscales past the original.
  *   - width=0 and height=0: no resize (encode the original dimensions).
  *
- * Size-guard: if the produced WebP is >= the original file size, returns
- * null (the caller serves the original — the "WebP larger than original"
+ * Size-guard: if the produced output is >= the original file size, returns
+ * null (the caller serves the original — the "output larger than original"
  * pitfall from competitor research).
+ *
+ * #47: AVIF encode support. AVIF is CPU-heavier than WebP (esp. Imagick/
+ * libaom), but the result is cached (one-time per variant) and the flock
+ * miss-dedupe in the handler already bounds concurrent transcodes.
  *
  * @package OXPulse\Imager\Infrastructure\Image
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -32,7 +36,7 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\Image;
 
-class WebpTransformer
+class ImageTransformer
 {
     /**
      * Decompression-bomb cap: reject sources whose pixel count (W*H)
@@ -45,28 +49,51 @@ class WebpTransformer
     private const MAX_MEGAPIXELS = 40;
 
     /**
-     * Transform a source image to WebP and return the optimized bytes.
+     * Memoized real-encode capability per format (probe once per
+     * process, not per request). Keyed by lowercase format name.
+     *
+     * @var array<string,bool>
+     */
+    private static array $encodeCapability = [];
+
+    /**
+     * Memoized Imagick real-encode capability per format.
+     *
+     * @var array<string,bool>
+     */
+    private static array $imagickEncodeCapability = [];
+
+    /**
+     * Memoized GD real-encode capability per format.
+     *
+     * @var array<string,bool>
+     */
+    private static array $gdEncodeCapability = [];
+
+    /**
+     * Transform a source image to WebP or AVIF and return the optimized bytes.
      *
      * @param string $sourcePath Absolute filesystem path to the source image.
      * @param int $width Target width (0 = auto/no resize).
      * @param int $height Target height (0 = auto/no resize).
      * @param string $fit Resize mode: 'fit' (preserve aspect, no upscale)
      *        or 'fill' (exact crop). Empty string = no resize.
-     * @param int $quality WebP quality (1-100).
-     * @return string|null WebP bytes, or null when:
+     * @param int $quality Quality (1-100).
+     * @param string $format Output format: 'webp' or 'avif'.
+     * @return string|null Encoded bytes, or null when:
      *         - the source file does not exist / is unreadable
-     *         - neither Imagick nor GD-WebP is available
+     *         - no encoder for the requested format is available
      *         - the source dimensions exceed the decompression-bomb cap
      *         - the source format is not decodable
-     *         - the produced WebP is >= the original file size (size-guard)
+     *         - the produced output is >= the original file size (size-guard)
      */
-    public function transform(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+    public function transform(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
     {
         if (!is_file($sourcePath) || !is_readable($sourcePath)) {
             return null;
         }
 
-        if (!$this->hasImagick() && !$this->hasGdWebp()) {
+        if (!$this->canEncode($format)) {
             return null;
         }
 
@@ -96,19 +123,19 @@ class WebpTransformer
             return null;
         }
 
-        $webp = $this->encode($sourcePath, $width, $height, $fit, $quality);
-        if ($webp === null) {
+        $encoded = $this->encode($sourcePath, $width, $height, $fit, $quality, $format);
+        if ($encoded === null) {
             return null;
         }
 
-        // Size-guard: if the WebP is not smaller than the original, serve
-        // the original instead. This handles the "WebP larger than
+        // Size-guard: if the output is not smaller than the original, serve
+        // the original instead. This handles the "output larger than
         // original" pitfall (small or already-optimized sources).
-        if (strlen($webp) >= $originalSize) {
+        if (strlen($encoded) >= $originalSize) {
             return null;
         }
 
-        return $webp;
+        return $encoded;
     }
 
     /**
@@ -130,26 +157,157 @@ class WebpTransformer
     }
 
     /**
-     * Encode the source image to WebP bytes using the available engine.
+     * Encode the source image to the requested format using the available engine.
      *
      * Imagick is preferred (better compression + format support); GD is
      * the fallback. Returns null on any encode failure (corrupt source,
      * unsupported format, engine error) — the caller's fail-safe serves
      * the original.
      *
-     * @return string|null Raw WebP bytes, or null on encode failure.
+     * @return string|null Raw encoded bytes, or null on encode failure.
      */
-    protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+    protected function encode(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
     {
-        if ($this->hasImagick()) {
-            return $this->encodeImagick($sourcePath, $width, $height, $fit, $quality);
+        // #63 review: FALL THROUGH on null. Do NOT trust
+        // imagickSupportsFormat() (queryFormats = read-side) as proof
+        // Imagick will write — a decode-only-avif Imagick build answers
+        // queryFormats('AVIF')=true but throws on getImageBlob(). The
+        // canImagickEncode() probe actually attempts a 2x2 encode, so
+        // dispatching on it routes a decode-only-avif + GD-imageavif
+        // host straight to GD (and skips a doomed Imagick attempt).
+        if ($this->canImagickEncode($format)) {
+            $bytes = $this->encodeImagick($sourcePath, $width, $height, $fit, $quality, $format);
+            if ($bytes !== null) {
+                return $bytes;
+            }
+            // Imagick could encode the probe but failed on this source
+            // (corrupt/odd image) — fall through to GD if it can encode.
         }
 
-        if ($this->hasGdWebp()) {
-            return $this->encodeGd($sourcePath, $width, $height, $fit, $quality);
+        if ($this->canGdEncode($format)) {
+            return $this->encodeGd($sourcePath, $width, $height, $fit, $quality, $format);
         }
 
         return null;
+    }
+
+    /**
+     * Whether any encoder can produce the requested format.
+     */
+    private function canEncode(string $format): bool
+    {
+        if ($format === 'avif') {
+            return $this->supportsAvif();
+        }
+        return $this->supportsWebp();
+    }
+
+    /**
+     * Whether the host can ACTUALLY ENCODE WebP — verified by a real
+     * 2x2 encode probe (memoized), not by queryFormats (which reports
+     * "format known", not "encode works"). Capability-gated so
+     * negotiate() never picks a format the host can't encode.
+     */
+    public function supportsWebp(): bool
+    {
+        return $this->canReallyEncode('webp');
+    }
+
+    /**
+     * Whether the host can ACTUALLY ENCODE AVIF — verified by a real
+     * 2x2 encode probe (memoized), not by queryFormats. A decode-only-
+     * avif Imagick build (queryFormats('AVIF')=true, getImageBlob()
+     * throws) reports false here, so negotiate() skips avif and picks
+     * webp instead — no prod re-transcode, no defeated cache.
+     */
+    public function supportsAvif(): bool
+    {
+        return $this->canReallyEncode('avif');
+    }
+
+    /**
+     * Real encode-capability probe: attempts a minimal 2x2 encode of
+     * $format via the SAME engine path encode() uses, and returns true
+     * only if it yields non-empty bytes without throwing. Memoized per
+     * format per-process (probe once, not per request).
+     *
+     * #63 review: queryFormats() reports "format known to Imagick",
+     * NOT "Imagick can ENCODE it" — a decode-only Imagick build answers
+     * true for queryFormats('AVIF') but throws on getImageBlob(). This
+     * probe catches that by actually encoding a tiny image.
+     */
+    protected function canReallyEncode(string $format): bool
+    {
+        $format = strtolower($format);
+        if (isset(self::$encodeCapability[$format])) {
+            return self::$encodeCapability[$format];
+        }
+        return self::$encodeCapability[$format] =
+            $this->canImagickEncode($format) || $this->canGdEncode($format);
+    }
+
+    /**
+     * Whether Imagick can ACTUALLY ENCODE $format — real 2x2 encode
+     * probe, memoized. Uses imagickSupportsFormat() (queryFormats) as a
+     * fast read-side pre-gate, then confirms with a real getImageBlob()
+     * on a 2x2 image (the write-side proof).
+     */
+    protected function canImagickEncode(string $format): bool
+    {
+        $format = strtolower($format);
+        if (isset(self::$imagickEncodeCapability[$format])) {
+            return self::$imagickEncodeCapability[$format];
+        }
+        if (!$this->hasImagick() || !$this->imagickSupportsFormat($format)) {
+            return self::$imagickEncodeCapability[$format] = false;
+        }
+        try {
+            $image = new \Imagick();
+            $image->newImage(2, 2, new \ImagickPixel('white'));
+            $image->setImageFormat(strtoupper($format));
+            $blob = $image->getImageBlob();
+            $image->clear();
+            return self::$imagickEncodeCapability[$format] = ($blob !== '');
+        } catch (\Throwable $e) {
+            return self::$imagickEncodeCapability[$format] = false;
+        }
+    }
+
+    /**
+     * Whether GD can ACTUALLY ENCODE $format — real 2x2 encode probe,
+     * memoized. Gated by hasGdWebp()/hasGdAvif() (function_exists) then
+     * confirmed with a real imageavif/imagewebp on a 2x2 image.
+     */
+    protected function canGdEncode(string $format): bool
+    {
+        $format = strtolower($format);
+        if (isset(self::$gdEncodeCapability[$format])) {
+            return self::$gdEncodeCapability[$format];
+        }
+        $hasFn = $format === 'avif' ? $this->hasGdAvif() : $this->hasGdWebp();
+        if (!$hasFn) {
+            return self::$gdEncodeCapability[$format] = false;
+        }
+        try {
+            $img = imagecreatetruecolor(2, 2);
+            if ($img === false) {
+                return self::$gdEncodeCapability[$format] = false;
+            }
+            ob_start();
+            if ($format === 'avif') {
+                $ok = imageavif($img, null, 50);
+            } else {
+                $ok = imagewebp($img, null, 50);
+            }
+            $bytes = ob_get_clean();
+            imagedestroy($img);
+            if ($ok === false || $bytes === false || $bytes === '') {
+                return self::$gdEncodeCapability[$format] = false;
+            }
+            return self::$gdEncodeCapability[$format] = true;
+        } catch (\Throwable $e) {
+            return self::$gdEncodeCapability[$format] = false;
+        }
     }
 
     protected function hasImagick(): bool
@@ -160,6 +318,46 @@ class WebpTransformer
     protected function hasGdWebp(): bool
     {
         return function_exists('imagewebp');
+    }
+
+    /**
+     * Whether Imagick has the AVIF delegate (extension_loaded + the
+     * build's delegate list includes AVIF). Guarded in try/catch —
+     * queryFormats can throw on odd builds.
+     */
+    protected function hasImagickAvif(): bool
+    {
+        if (!$this->hasImagick()) {
+            return false;
+        }
+        try {
+            return \Imagick::queryFormats('AVIF') !== [];
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    protected function hasGdAvif(): bool
+    {
+        return function_exists('imageavif');
+    }
+
+    /**
+     * Whether Imagick can encode a given format (checks the delegate list).
+     */
+    private function imagickSupportsFormat(string $format): bool
+    {
+        if (!$this->hasImagick()) {
+            return false;
+        }
+        try {
+            $fmt = strtoupper($format);
+            return in_array($fmt, \Imagick::queryFormats($fmt), true);
+        } catch (\Throwable $e) {
+            // If queryFormats throws, conservatively assume the format
+            // is NOT supported (fail-safe → caller serves original).
+            return false;
+        }
     }
 
     /**
@@ -213,7 +411,7 @@ class WebpTransformer
         return [(int) round($origW * $scale), $reqH];
     }
 
-    private function encodeImagick(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+    private function encodeImagick(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format): ?string
     {
         try {
             // Resource limits: bound memory + pixel-area so a malformed
@@ -249,7 +447,7 @@ class WebpTransformer
                 }
             }
 
-            $image->setImageFormat('webp');
+            $image->setImageFormat($format);
             $image->setImageCompressionQuality($quality);
 
             $bytes = $image->getImageBlob();
@@ -261,7 +459,7 @@ class WebpTransformer
         }
     }
 
-    private function encodeGd(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+    private function encodeGd(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format): ?string
     {
         // Detect the source format and load via the appropriate GD loader.
         $info = @getimagesize($sourcePath);
@@ -319,7 +517,11 @@ class WebpTransformer
             }
 
             ob_start();
-            $ok = imagewebp($source, null, $quality);
+            if ($format === 'avif') {
+                $ok = imageavif($source, null, $quality);
+            } else {
+                $ok = imagewebp($source, null, $quality);
+            }
             $bytes = ob_get_clean();
 
             if ($ok === false || $bytes === false) {

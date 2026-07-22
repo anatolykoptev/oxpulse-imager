@@ -23,7 +23,7 @@ namespace OXPulse\Imager\Tests\Unit;
 
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Transform\TransformRequest;
-use OXPulse\Imager\Infrastructure\Image\WebpTransformer;
+use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use OXPulse\Imager\Infrastructure\Local\MissEndpointHandler;
 use OXPulse\Imager\Infrastructure\Local\MissEndpointResponse;
@@ -79,7 +79,7 @@ class MissEndpointHandlerTest extends TestCase
         rmdir($dir);
     }
 
-    private function handler(?WebpTransformer $transformer = null): MissEndpointHandler
+    private function handler(?ImageTransformer $transformer = null): MissEndpointHandler
     {
         return new MissEndpointHandler(
             backend: $this->backend,
@@ -616,24 +616,234 @@ class MissEndpointHandlerTest extends TestCase
             'Original response max-age must be <= 3600 (short cache for mutable source).',
         );
     }
+
+    // --- #47: AVIF negotiation matrix (fake transformer, no real encoder) ---
+    //
+    // The negotiation is the LOAD-BEARING logic. It must be tested with
+    // a FAKE transformer whose supportsAvif/supportsWebp are deterministic
+    // (no real encoder dependency → no synthetic-green when CI lacks AVIF).
+
+    public function test_negotiate_avif_when_accepts_avif_and_capable(): void
+    {
+        $handler = $this->handler(new FakeCapableTransformer(true, true, 'avif-bytes'));
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'auto', 'image/avif,image/webp,*/*;q=0.8');
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/avif', $response->contentType);
+        $this->assertSame('avif-bytes', $response->body);
+    }
+
+    public function test_negotiate_webp_when_accepts_avif_but_no_avif_cap(): void
+    {
+        $handler = $this->handler(new FakeCapableTransformer(false, true, 'webp-bytes'));
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'auto', 'image/avif,image/webp,*/*;q=0.8');
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/webp', $response->contentType);
+        $this->assertSame('webp-bytes', $response->body);
+    }
+
+    public function test_negotiate_webp_when_accepts_webp_only(): void
+    {
+        $handler = $this->handler(new FakeCapableTransformer(true, true, 'webp-bytes'));
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'auto', 'image/webp,*/*;q=0.8');
+
+        // No image/avif in Accept → must not upgrade to avif.
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/webp', $response->contentType);
+        $this->assertSame('webp-bytes', $response->body);
+    }
+
+    public function test_negotiate_original_when_accepts_neither(): void
+    {
+        $handler = $this->handler(new FakeCapableTransformer(true, true, 'avif-bytes'));
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'auto', 'text/html,application/xhtml+xml');
+
+        // No image/avif or image/webp in Accept → serve original.
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/jpeg', $response->contentType);
+        $this->assertNotNull($response->filePath);
+        $this->assertNull($response->body);
+    }
+
+    public function test_negotiate_original_when_no_encoder_cap(): void
+    {
+        $handler = $this->handler(new FakeCapableTransformer(false, false, ''));
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'auto', 'image/avif,image/webp,*/*;q=0.8');
+
+        // Neither avif nor webp capable → serve original.
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/jpeg', $response->contentType);
+        $this->assertNotNull($response->filePath);
+    }
+
+    public function test_explicit_webp_format_never_upgrades_to_avif(): void
+    {
+        // Explicit 'webp' format (clean-URL path) must NOT negotiate to
+        // avif even when the client accepts avif and the host is capable.
+        $handler = $this->handler(new FakeCapableTransformer(true, true, 'webp-bytes'));
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'webp', 'image/avif,image/webp');
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/webp', $response->contentType);
+        $this->assertSame('webp-bytes', $response->body);
+    }
+
+    public function test_explicit_avif_format_served_when_accepted(): void
+    {
+        // Explicit 'avif' format (clean-URL .avif path) → serve avif.
+        $handler = $this->handler(new FakeCapableTransformer(true, true, 'avif-bytes'));
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'avif', 'image/avif,image/webp');
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/avif', $response->contentType);
+        $this->assertSame('avif-bytes', $response->body);
+    }
+
+    public function test_explicit_avif_format_serves_original_when_not_accepted(): void
+    {
+        // Explicit 'avif' but client doesn't accept avif → serve original.
+        $handler = $this->handler(new FakeCapableTransformer(true, true, 'avif-bytes'));
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'avif', 'image/webp,*/*;q=0.8');
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/jpeg', $response->contentType);
+        $this->assertNotNull($response->filePath);
+    }
+
+    // --- #47: fail-safe chain — negotiated avif null → webp → original ---
+
+    public function test_negotiated_avif_null_falls_back_to_webp(): void
+    {
+        // Transformer returns null for avif but bytes for webp.
+        $handler = $this->handler(new class extends ImageTransformer {
+            public function supportsAvif(): bool { return true; }
+            public function supportsWebp(): bool { return true; }
+            public function transform(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
+            {
+                return $format === 'avif' ? null : 'webp-fallback-bytes';
+            }
+        });
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'auto', 'image/avif,image/webp');
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/webp', $response->contentType);
+        $this->assertSame('webp-fallback-bytes', $response->body);
+    }
+
+    public function test_negotiated_avif_null_and_webp_null_serves_original(): void
+    {
+        // Both avif and webp transform return null → serve original.
+        $handler = $this->handler(new NullTransformer());
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'auto', 'image/avif,image/webp');
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('image/jpeg', $response->contentType);
+        $this->assertNotNull($response->filePath);
+    }
+
+    // --- #47: avif cache file extension ---
+
+    public function test_avif_cache_file_has_avif_extension(): void
+    {
+        $handler = $this->handler(new FakeCapableTransformer(true, true, 'avif-bytes'));
+        $key = $this->validKey();
+
+        $handler->handle($key, 'auto', 'image/avif,image/webp');
+
+        $sourceHash = LocalBackend::sourceHash(self::SOURCE);
+        $this->assertFileExists($this->cacheDir . '/' . $sourceHash . '/' . $key . '.avif');
+    }
+
+    // --- #47: avif quality override ---
+
+    public function test_avif_quality_override_used_when_set(): void
+    {
+        $handler = new MissEndpointHandler(
+            backend: $this->backend,
+            transformer: new class extends ImageTransformer {
+                public int $lastQuality = 0;
+                public string $lastFormat = '';
+                public function supportsAvif(): bool { return true; }
+                public function supportsWebp(): bool { return true; }
+                public function transform(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
+                {
+                    $this->lastQuality = $quality;
+                    $this->lastFormat = $format;
+                    return $format . '-q' . $quality;
+                }
+            },
+            pathGuard: new PathGuard($this->uploadsBase, $this->uploadsBaseUrl),
+            cacheDir: $this->cacheDir,
+            uploadsBasedir: $this->uploadsBase,
+            avifQualityOverride: 55,
+        );
+        $key = $this->validKey();
+
+        $response = $handler->handle($key, 'auto', 'image/avif,image/webp');
+
+        $this->assertSame('image/avif', $response->contentType);
+        $this->assertSame('avif-q55', $response->body);
+    }
 }
 
 /** Stub transformer that returns fixed bytes (bypasses ext checks). */
-class StubTransformer extends WebpTransformer
+class StubTransformer extends ImageTransformer
 {
     public function __construct(private string $bytes) {}
 
-    public function transform(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+    public function transform(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
     {
         return $this->bytes;
     }
 }
 
 /** Stub transformer that always returns null (fail-safe path). */
-class NullTransformer extends WebpTransformer
+class NullTransformer extends ImageTransformer
 {
-    public function transform(string $sourcePath, int $width, int $height, string $fit, int $quality): ?string
+    public function transform(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
     {
         return null;
+    }
+}
+
+/**
+ * Fake transformer with deterministic capability flags + fixed bytes.
+ * Used by the negotiation matrix tests (no real encoder dependency).
+ */
+class FakeCapableTransformer extends ImageTransformer
+{
+    public function __construct(
+        private bool $avifCap,
+        private bool $webpCap,
+        private string $bytes,
+    ) {}
+
+    public function supportsAvif(): bool { return $this->avifCap; }
+    public function supportsWebp(): bool { return $this->webpCap; }
+
+    public function transform(string $sourcePath, int $width, int $height, string $fit, int $quality, string $format = 'webp'): ?string
+    {
+        return $this->bytes;
     }
 }

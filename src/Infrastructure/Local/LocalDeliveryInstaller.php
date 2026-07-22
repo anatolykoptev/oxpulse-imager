@@ -67,6 +67,11 @@ final class LocalDeliveryInstaller
 
         $endpointFile = $this->wpContentDir . '/oxpulse-img.php';
 
+        // #47: thread the per-format AVIF quality override from the admin
+        // formatQuality setting into the generated endpoint (baked as a
+        // constant — the endpoint has no WP option access at runtime).
+        $avifQuality = $delivery->formatQuality['avif'] ?? null;
+
         $generator = new MissEndpointGenerator();
         $generator->generate(
             outputFile: $endpointFile,
@@ -76,6 +81,7 @@ final class LocalDeliveryInstaller
             uploadsBaseurl: $this->uploadsBaseurl,
             cacheDir: $this->cacheDir,
             srcDir: $this->srcDir,
+            avifQuality: $avifQuality,
         );
 
         // Cache dir .htaccess (miss → endpoint routing).

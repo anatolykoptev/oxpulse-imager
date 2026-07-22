@@ -38,7 +38,7 @@ namespace OXPulse\Imager\Tests\Integration;
 
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Transform\TransformRequest;
-use OXPulse\Imager\Infrastructure\Image\WebpTransformer;
+use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use OXPulse\Imager\Infrastructure\Local\MissEndpointHandler;
 use OXPulse\Imager\Infrastructure\Local\PathGuard;
@@ -54,7 +54,7 @@ class MissEndpointIntegrationTest extends TestCase
     private string $cacheDir;
     private SigningConfig $signing;
     private LocalBackend $backend;
-    private WebpTransformer $transformer;
+    private ImageTransformer $transformer;
     private PathGuard $pathGuard;
     private MissEndpointHandler $handler;
 
@@ -104,7 +104,7 @@ class MissEndpointIntegrationTest extends TestCase
 
         $this->signing = SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX);
         $this->backend = new LocalBackend($this->signing);
-        $this->transformer = new WebpTransformer();
+        $this->transformer = new ImageTransformer();
         $this->pathGuard = new PathGuard($this->uploadsBase, self::UPLOADS_BASEURL);
         $this->handler = new MissEndpointHandler(
             backend: $this->backend,
