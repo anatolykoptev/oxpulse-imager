@@ -31,6 +31,10 @@ const pot = new WP_Pot({
     domain: 'oxpulse-imager',
     lastTranslator: 'Anatoly Koptev <koptev@koptev.org>',
     team: 'Anatoly Koptev <koptev@koptev.org>',
+    // Omit `#: file:line` source references so the .pot is a pure function
+    // of the translatable string SET — it only changes when a string is
+    // added/removed/changed, never on a line shift (issue #85).
+    noFilePaths: true,
   },
 });
 
@@ -139,7 +143,8 @@ if (jsEntries.size > 0) {
     if (entry.msgctxt) {
       lines.push(`msgctxt "${escapePo(entry.msgctxt)}"`);
     }
-    lines.push(`#: ${[...entry.references].join(' ')}`);
+    // No `#: file:line` reference — keep the .pot a pure function of the
+    // string set (issue #85). Translators key on msgid.
     lines.push(`msgid "${escapePo(entry.msgid)}"`);
     if (entry.msgidPlural) {
       lines.push(`msgid_plural "${escapePo(entry.msgidPlural)}"`);
