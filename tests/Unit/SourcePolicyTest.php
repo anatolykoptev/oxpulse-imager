@@ -409,6 +409,180 @@ class SourcePolicyTest extends TestCase
         }
     }
 
+    // === Same-host imgproxy delivery (proxy loop must match host+path) ===
+
+    /**
+     * The bug: when imgproxy is reverse-proxied at a PATH on the site's
+     * own domain (endpoint https://example.com/imgproxy), a real uploads
+     * image on the SAME host must NOT be flagged as a proxy loop. The
+     * loop guard must compare host AND path prefix, not host alone.
+     */
+    public function test_same_host_imgproxy_authorizes_real_uploads_image(): void
+    {
+        $config = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://example.com/imgproxy',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+        );
+
+        $decision = $this->policy->authorize(
+            'https://example.com/wp-content/uploads/a.jpg',
+            $config
+        );
+
+        $this->assertTrue($decision->authorized);
+        $this->assertSame('authorized', $decision->reason);
+    }
+
+    /**
+     * A genuine same-host loop — the source IS an imgproxy URL under the
+     * endpoint path prefix — must STILL be denied.
+     */
+    public function test_same_host_imgproxy_denies_genuine_loop_under_endpoint_path(): void
+    {
+        $config = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://example.com/imgproxy',
+            allowedSources: ['https://example.com/imgproxy/'],
+        );
+
+        $decision = $this->policy->authorize(
+            'https://example.com/imgproxy/sig/rs:fill:8:8/plain/x',
+            $config
+        );
+
+        $this->assertFalse($decision->authorized);
+        $this->assertSame('proxy_loop_detected', $decision->reason);
+    }
+
+    /**
+     * Path-segment boundary: /imgproxy must NOT match /imgproxydata — a
+     * sibling path that shares a string prefix but is not under the
+     * endpoint. Such a source is NOT a loop; it follows normal allowlist
+     * rules (here: not in allowlist → source_not_in_allowlist).
+     */
+    public function test_same_host_imgproxy_path_prefix_segment_boundary(): void
+    {
+        $config = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://example.com/imgproxy',
+            allowedSources: ['https://example.com/imgproxydata/'],
+        );
+
+        $decision = $this->policy->authorize(
+            'https://example.com/imgproxydata/a.jpg',
+            $config
+        );
+
+        // NOT a proxy loop (segment boundary), and IS in the allowlist.
+        $this->assertTrue($decision->authorized);
+    }
+
+    /**
+     * Cross-host imgproxy: endpoint on a dedicated host still denies a
+     * source on that host (loop), and authorizes a same-host uploads
+     * image that is in the allowlist (not a loop).
+     */
+    public function test_cross_host_imgproxy_loop_and_normal_authorization(): void
+    {
+        $config = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://img.example.com',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+        );
+
+        // Normal uploads image on a different host → authorized.
+        $ok = $this->policy->authorize(
+            'https://example.com/wp-content/uploads/a.jpg',
+            $config
+        );
+        $this->assertTrue($ok->authorized);
+
+        // Source on the imgproxy host → denied as a loop.
+        $loop = $this->policy->authorize(
+            'https://img.example.com/x',
+            $config
+        );
+        $this->assertFalse($loop->authorized);
+        $this->assertSame('proxy_loop_detected', $loop->reason);
+    }
+
+    // === Relative same-host endpoint (endpoint stored as '/imgproxy') ===
+    //
+    // OptionSettingsRepository stores the raw endpoint option. For a
+    // same-host nginx reverse-proxy the documented value is a RELATIVE
+    // path '/imgproxy' (no scheme/host). NormalizedUrl::parse throws on
+    // it (no scheme) — so isProxyLoop must handle the relative form
+    // itself: same-host is implied, compare the source path against the
+    // endpoint path prefix at a segment boundary.
+
+    /**
+     * Relative endpoint, real uploads image: the guard must NOT flag a
+     * normal uploads image as a loop (path doesn't start with /imgproxy).
+     * Authorize proceeds to the allowlist. (Passes today because the guard
+     * no-ops on the relative endpoint — kept to document the unblock.)
+     */
+    public function test_relative_endpoint_authorizes_real_uploads_image(): void
+    {
+        $config = new DeliveryConfig(
+            enabled: true,
+            endpoint: '/imgproxy',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+        );
+
+        $decision = $this->policy->authorize(
+            'https://example.com/wp-content/uploads/a.jpg',
+            $config
+        );
+
+        $this->assertTrue($decision->authorized);
+        $this->assertSame('authorized', $decision->reason);
+    }
+
+    /**
+     * Relative endpoint, genuine loop: the source IS an imgproxy URL
+     * under the endpoint path prefix. MUST be denied proxy_loop_detected.
+     * RED on current code — isProxyLoop no-ops on the relative endpoint
+     * so this returns authorized today.
+     */
+    public function test_relative_endpoint_denies_genuine_loop_under_endpoint_path(): void
+    {
+        $config = new DeliveryConfig(
+            enabled: true,
+            endpoint: '/imgproxy',
+            allowedSources: ['https://example.com/imgproxy/'],
+        );
+
+        $decision = $this->policy->authorize(
+            'https://example.com/imgproxy/sig/rs:fill:8:8/plain/x',
+            $config
+        );
+
+        $this->assertFalse($decision->authorized);
+        $this->assertSame('proxy_loop_detected', $decision->reason);
+    }
+
+    /**
+     * Relative endpoint, segment boundary: /imgproxy must NOT match
+     * /imgproxydata — a sibling path sharing a string prefix but not
+     * under the endpoint. NOT a loop; allowlist decides.
+     */
+    public function test_relative_endpoint_path_prefix_segment_boundary(): void
+    {
+        $config = new DeliveryConfig(
+            enabled: true,
+            endpoint: '/imgproxy',
+            allowedSources: ['https://example.com/imgproxydata/'],
+        );
+
+        $decision = $this->policy->authorize(
+            'https://example.com/imgproxydata/a.jpg',
+            $config
+        );
+
+        $this->assertTrue($decision->authorized);
+    }
+
     public function test_local_mode_http_mode_still_works_when_source_mode_http(): void
     {
         // Regression: sourceMode='http' should NOT try to resolve filesystem paths.

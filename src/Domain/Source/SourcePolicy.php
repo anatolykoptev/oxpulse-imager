@@ -42,9 +42,15 @@ final class SourcePolicy
             return SourceDecision::denied('malformed_url');
         }
 
-        // Check proxy loop: source must not point at the imgproxy endpoint.
-        $endpointHost = $this->extractHost($config->endpoint);
-        if ($endpointHost !== '' && $url->host === $endpointHost) {
+        // Check proxy loop: the source must not be an already-imgproxy-
+        // transformed URL under the endpoint (host + path prefix). A
+        // host-only comparison is WRONG for same-host reverse-proxy
+        // setups (endpoint https://site/imgproxy): it would flag every
+        // site image (https://site/wp-content/uploads/...) as a loop.
+        // The endpoint is absolute at authorize time (resolved via
+        // resolveEndpoint + home_url). Match at a path-segment boundary
+        // so /imgproxy does not match /imgproxy-evil or /imgproxydata.
+        if ($this->isProxyLoop($url, $config->endpoint)) {
             return SourceDecision::denied('proxy_loop_detected');
         }
 
@@ -126,14 +132,96 @@ final class SourcePolicy
         return true;
     }
 
-    private function extractHost(string $url): string
+    /**
+     * Proxy-loop detection: is the source URL an already-imgproxy-
+     * transformed URL under the endpoint?
+     *
+     * Denies iff the source has the SAME host (and port) as the endpoint
+     * AND its path begins with the endpoint's path prefix at a path-
+     * segment boundary. A bare host match is insufficient — same-host
+     * reverse-proxy setups (endpoint /imgproxy on the site domain) would
+     * false-positive on every site image. Reuses the same segment-boundary
+     * rule as matchesPrefix(): /imgproxy matches /imgproxy and /imgproxy/...
+     * but NOT /imgproxydata or /imgproxy-evil.
+     *
+     * The endpoint may be stored as a RELATIVE same-host path ('/imgproxy',
+     * no scheme/host) — the documented value for a same-host nginx
+     * reverse-proxy. NormalizedUrl::parse throws on a host-less URL, so
+     * a relative endpoint is handled directly: same-host is IMPLIED (no
+     * host/port comparison), and the source path is compared against the
+     * endpoint's path prefix at a segment boundary. An empty or non-'/'
+     * relative path is not a meaningful prefix → return false (the
+     * allowlist still gates the request).
+     */
+    private function isProxyLoop(NormalizedUrl $url, string $endpoint): bool
     {
         try {
-            $parsed = NormalizedUrl::parse($url);
-            return $parsed->host;
+            $endpointUrl = NormalizedUrl::parse($endpoint);
+            // Absolute endpoint with a host → host + port + path-prefix
+            // comparison (current, reviewer-approved behavior).
+            if ($endpointUrl->host !== '') {
+                if ($url->host !== $endpointUrl->host) {
+                    return false;
+                }
+                if ($url->port !== $endpointUrl->port) {
+                    return false;
+                }
+
+                $endpointPath = $endpointUrl->path;
+                if ($endpointPath === '/' ) {
+                    // No path prefix → any path on this host is a loop.
+                    return true;
+                }
+
+                return $this->pathIsUnderEndpoint($url->path, $endpointPath);
+            }
         } catch (\InvalidArgumentException $e) {
-            return '';
+            // Fall through to relative-endpoint handling below.
         }
+
+        // Relative (host-less) endpoint: same-host is implied. Extract
+        // the path via parse_url (pure PHP, no WP/Infrastructure import)
+        // and compare at a segment boundary. Strip query/fragment.
+        $parsed = parse_url($endpoint);
+        if ($parsed === false) {
+            return false;
+        }
+        $endpointPath = $parsed['path'] ?? '';
+        if ($endpointPath === '' || $endpointPath === '/' || !str_starts_with($endpointPath, '/')) {
+            // Empty or '/' would match everything — not a meaningful
+            // prefix for a relative endpoint. Allowlist still gates.
+            return false;
+        }
+
+        return $this->pathIsUnderEndpoint($url->path, $endpointPath);
+    }
+
+    /**
+     * Path-prefix comparison with a segment boundary. Shared by the
+     * absolute-endpoint and relative-endpoint branches of isProxyLoop.
+     * $endpointPath must be a non-empty, non-'/' path starting with '/'.
+     * Returns true iff $sourcePath begins with $endpointPath at a path
+     * segment boundary (so /imgproxy matches /imgproxy and /imgproxy/...
+     * but NOT /imgproxydata).
+     */
+    private function pathIsUnderEndpoint(string $sourcePath, string $endpointPath): bool
+    {
+        if (!str_starts_with($sourcePath, $endpointPath)) {
+            return false;
+        }
+
+        // Segment-boundary check: if the endpoint path does not end with
+        // a slash, the next char in the source path must be a boundary
+        // (slash, query, fragment-end) so /imgproxy does not match
+        // /imgproxydata. Exact match (same length) is a loop.
+        if (!str_ends_with($endpointPath, '/') && strlen($sourcePath) > strlen($endpointPath)) {
+            $nextChar = $sourcePath[strlen($endpointPath)];
+            if ($nextChar !== '/' && $nextChar !== '?' && $nextChar !== '#') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
