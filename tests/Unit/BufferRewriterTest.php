@@ -19,11 +19,13 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Tests\Unit;
 
+use OXPulse\Imager\Application\Delivery\PictureElementWrapper;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Integration\WordPress\Delivery\BufferRewriter;
+use OXPulse\Imager\Tests\Unit\Stubs\PictureTestBackend;
 use PHPUnit\Framework\TestCase;
 
 class BufferRewriterTest extends TestCase
@@ -493,5 +495,169 @@ class BufferRewriterTest extends TestCase
         $second = $rewriter->rewrite($first);
         $this->assertSame(1, substr_count($second, 'data-oxpulse="1"'));
         $this->assertSame(1, substr_count($second, 'imgproxy.example.com'));
+    }
+
+    // --- Phase 1b: <picture> wrapping in BufferRewriter (default-off) ---
+
+    /**
+     * Build a BufferRewriter with a PictureElementWrapper wired + both
+     * flags (bufferRewritingEnabled + pictureEnabled) on, backed by the
+     * PictureTestBackend stub so emitted per-format URLs are deterministic
+     * (https://imgproxy.test/<format>/<base>@<format>). Mirrors the
+     * PictureElementWrapperTest wiring.
+     */
+    private function createBufferRewriterWithPicture(
+        bool $pictureEnabled = true,
+        bool $bufferEnabled = true,
+        array $allowedFormats = []
+    ): BufferRewriter {
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.test',
+            allowedSources: [self::ALLOWED],
+            bufferRewritingEnabled: $bufferEnabled,
+            pictureEnabled: $pictureEnabled,
+        );
+        $rewriter = new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            SigningConfig::fromHex('736563726574', '68656C6C6F'),
+            null,
+            new PictureTestBackend($allowedFormats)
+        );
+        $wrapper = new PictureElementWrapper($rewriter);
+        return new BufferRewriter($rewriter, $delivery, $wrapper);
+    }
+
+    public function test_picture_wrap_emits_picture_with_avif_and_webp_sources(): void
+    {
+        $rewriter = $this->createBufferRewriterWithPicture();
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/hero.jpg" srcset="https://example.com/wp-content/uploads/hero-1024.jpg 1024w, https://example.com/wp-content/uploads/hero-2048.jpg 2048w" sizes="100vw" width="1600" height="900" alt="hero">');
+        $result = $rewriter->rewrite($html);
+
+        // Exactly one <picture style="display:contents"> wrapper.
+        $this->assertSame(1, preg_match('/<picture style="display:contents">.*<\/picture>/s', $result, $picMatch), 'Expected a <picture style="display:contents"> wrapper');
+        $picture = $picMatch[0];
+
+        // <source> elements in order: AVIF-first, then WebP.
+        preg_match_all('/<source\b[^>]*>/i', $picture, $sourceMatches);
+        $sources = $sourceMatches[0];
+        $this->assertCount(2, $sources);
+        $this->assertStringContainsString('type="image/avif"', $sources[0]);
+        $this->assertStringContainsString('type="image/webp"', $sources[1]);
+
+        // Each source carries BOTH w-descriptors from the original srcset
+        // (the buffer does NOT rewrite srcset — the wrapper builds the
+        // per-format srcset from the original).
+        foreach ($sources as $source) {
+            $this->assertStringContainsString('1024w', $source);
+            $this->assertStringContainsString('2048w', $source);
+            // sizes copied from the inner img.
+            $this->assertStringContainsString('sizes="100vw"', $source);
+        }
+
+        // Inner <img> carries both idempotency markers + rewritten src.
+        preg_match('/(<img\b[^>]*>)/i', $picture, $imgMatch);
+        $innerImg = $imgMatch[1];
+        $this->assertStringContainsString('data-oxpulse="1"', $innerImg);
+        $this->assertStringContainsString('data-oxpulse-picture="1"', $innerImg);
+        $this->assertStringContainsString('imgproxy.test', $innerImg);
+        // Original src no longer present on the inner img.
+        $this->assertStringNotContainsString('src="https://example.com/wp-content/uploads/hero.jpg"', $innerImg);
+    }
+
+    public function test_picture_disabled_emits_plain_rewritten_img_no_picture(): void
+    {
+        $rewriter = $this->createBufferRewriterWithPicture(pictureEnabled: false);
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/hero.jpg" srcset="https://example.com/wp-content/uploads/hero-1024.jpg 1024w" width="1600" height="900" alt="hero">');
+        $result = $rewriter->rewrite($html);
+
+        // pictureEnabled=false → today's behavior: plain rewritten <img>.
+        $this->assertStringNotContainsString('<picture', $result);
+        $this->assertStringNotContainsString('data-oxpulse-picture', $result);
+        $this->assertStringContainsString('data-oxpulse="1"', $result);
+        $this->assertStringContainsString('imgproxy.test', $result);
+    }
+
+    public function test_picture_wrapper_null_emits_plain_rewritten_img_no_picture(): void
+    {
+        // No wrapper injected (pre-Phase-1b construction) → no <picture>,
+        // even if pictureEnabled were true. Exercises the null-guard branch.
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.test',
+            allowedSources: [self::ALLOWED],
+            bufferRewritingEnabled: true,
+            pictureEnabled: true,
+        );
+        $rewriter = new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            SigningConfig::fromHex('736563726574', '68656C6C6F'),
+            null,
+            new PictureTestBackend([])
+        );
+        $buffer = new BufferRewriter($rewriter, $delivery);
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/hero.jpg" width="800" height="600" alt="hero">');
+        $result = $buffer->rewrite($html);
+
+        $this->assertStringNotContainsString('<picture', $result);
+        $this->assertStringNotContainsString('data-oxpulse-picture', $result);
+        $this->assertStringContainsString('data-oxpulse="1"', $result);
+        $this->assertStringContainsString('imgproxy.test', $result);
+    }
+
+    public function test_picture_wrap_second_pass_is_noop(): void
+    {
+        $rewriter = $this->createBufferRewriterWithPicture();
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/hero.jpg" width="1600" height="900" alt="hero">');
+
+        $first = $rewriter->rewrite($html);
+        $this->assertSame(1, substr_count($first, '<picture'), 'first pass wraps once');
+
+        // Second pass over already-wrapped HTML must be a no-op: the inner
+        // img's src is now an imgproxy.test URL (no /wp-content/ → the
+        // buffer regex does not match), AND it sits inside a <picture>
+        // span (findPictureSpans), AND it carries data-oxpulse. Triple
+        // protection — assert no nested/double <picture>.
+        $second = $rewriter->rewrite($first);
+        $this->assertSame(1, substr_count($second, '<picture'), 'second pass must not double-wrap');
+        $this->assertSame(1, substr_count($second, 'data-oxpulse-picture="1"'));
+        $this->assertSame($first, $second, 'second pass over already-wrapped HTML is a no-op');
+    }
+
+    public function test_picture_wrap_throw_caught_returns_original_buffer(): void
+    {
+        $rewriter = $this->createBufferRewriterWithPicture();
+        $html = $this->wrap('<img src="https://example.com/wp-content/uploads/hero.jpg" width="800" height="600" alt="hero">');
+
+        // PictureElementWrapper is final, so we cannot inject a throwing
+        // stub. Instead force preg_replace_callback to fail (returns null →
+        // TypeError from the : string callback) via a tiny backtrack limit.
+        // The picture-wrap call lives INSIDE rewriteImgTags, which is inside
+        // the try/catch in rewrite() — so the throw is caught and the
+        // original buffer is returned, never blanked. This proves the
+        // picture path does not escape the fail-safe.
+        $originalLimit = ini_get('pcre.backtrack_limit');
+        ini_set('pcre.backtrack_limit', '1');
+        try {
+            $this->assertSame($html, $rewriter->rewrite($html));
+        } finally {
+            ini_set('pcre.backtrack_limit', $originalLimit !== false ? $originalLimit : '1000000');
+        }
+    }
+
+    public function test_picture_wrap_skips_img_already_inside_picture(): void
+    {
+        // An <img> already inside a <picture> in the source HTML must be
+        // skipped by findPictureSpans/isInsidePicture even when the picture
+        // wrapper is wired + enabled — no nested <picture> emitted.
+        $rewriter = $this->createBufferRewriterWithPicture();
+        $html = $this->wrap('<picture><source type="image/webp" srcset="x.webp"><img src="https://example.com/wp-content/uploads/photo.jpg" alt="test"></picture>');
+        $result = $rewriter->rewrite($html);
+
+        $this->assertSame(1, substr_count($result, '<picture'));
+        $this->assertStringNotContainsString('data-oxpulse-picture', $result);
+        $this->assertStringNotContainsString('imgproxy.test', $result);
     }
 }

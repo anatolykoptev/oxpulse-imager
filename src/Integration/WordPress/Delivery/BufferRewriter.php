@@ -37,6 +37,7 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Delivery;
 
+use OXPulse\Imager\Application\Delivery\PictureElementWrapper;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 
@@ -61,11 +62,25 @@ final class BufferRewriter
 
     private UrlRewriter $rewriter;
     private DeliveryConfig $delivery;
+    private ?PictureElementWrapper $pictureWrapper;
 
-    public function __construct(UrlRewriter $rewriter, DeliveryConfig $delivery)
-    {
+    /**
+     * @param PictureElementWrapper|null $pictureWrapper Optional <picture>
+     *        wrapper (Phase 1b). When null (the default — preserves backward
+     *        compatibility with all pre-Phase-1b callers), no <picture>
+     *        wrapping is attempted. When injected, the runtime
+     *        oxpulse_picture_enabled filter + $delivery->pictureEnabled gate
+     *        the actual wrapping at rewrite time, mirroring the
+     *        ContentImgTagRewriter shape.
+     */
+    public function __construct(
+        UrlRewriter $rewriter,
+        DeliveryConfig $delivery,
+        ?PictureElementWrapper $pictureWrapper = null
+    ) {
         $this->rewriter = $rewriter;
         $this->delivery = $delivery;
+        $this->pictureWrapper = $pictureWrapper;
     }
 
     /**
@@ -285,7 +300,40 @@ final class BufferRewriter
 
             // #43 Phase 3 — stamp data-oxpulse="1" so a later pass skips.
             $rewritten = $prefix . $result->url . $suffix;
-            return $this->addOxpulseMarker($rewritten);
+            $rewritten = $this->addOxpulseMarker($rewritten);
+
+            // Phase 1b — <picture> wrapping for theme-hardcoded <img> tags
+            // (default OFF). Wraps the rewritten <img> in
+            // <picture style="display:contents"><source type="image/avif">
+            // <source type="image/webp"> so a modern browser negotiates AVIF
+            // client-side on standard Apache — extends #68's content-path
+            // <picture> to the buffer path (theme-hardcoded <img> that bypass
+            // every WP content filter). Reuses PictureElementWrapper verbatim.
+            // The runtime oxpulse_picture_enabled filter is the SINGLE honest
+            // gate (mirrors oxpulse_buffer_rewrite_enabled + the content-path
+            // shape); when false OR no wrapper is injected, behavior is
+            // exactly today's (plain rewritten <img> with data-oxpulse).
+            // Runs INSIDE rewriteImgTags → inside the try/catch in rewrite(),
+            // so a wrap failure falls back to the (already-safe) non-picture
+            // output, never throws out of the buffer.
+            if ($this->pictureWrapper !== null
+                && apply_filters('oxpulse_picture_enabled', $this->delivery->pictureEnabled)
+            ) {
+                // Extract the ORIGINAL srcset from the full matched tag
+                // ($m[0]) — the buffer does NOT rewrite srcset, so the
+                // tag's srcset is still the pre-rewrite value. Pass '' when
+                // absent (the wrapper then builds single-URL <source>s).
+                $originalSrcset = $this->extractSrcsetAttribute($fullTag);
+                $rewritten = $this->pictureWrapper->wrap(
+                    $rewritten,
+                    $url,
+                    $originalSrcset,
+                    $width,
+                    $height
+                );
+            }
+
+            return $rewritten;
         }, $html);
     }
 
@@ -387,5 +435,22 @@ final class BufferRewriter
             return (int) $m[1];
         }
         return 0;
+    }
+
+    /**
+     * Phase 1b — extract the srcset attribute value from a full <img> tag
+     * (the original matched tag $m[0]). Returns '' when the tag has no
+     * srcset. The buffer does NOT rewrite srcset, so this is the ORIGINAL
+     * pre-rewrite srcset — exactly what PictureElementWrapper::wrap() needs
+     * to build per-format <source> srcset candidates (passing the already-
+     * rewritten srcset would cause every candidate to be rejected by the
+     * proxy-loop / already-rewritten guard). Handles double + single quotes.
+     */
+    private function extractSrcsetAttribute(string $imgTag): string
+    {
+        if (preg_match('/\bsrcset=["\x27]([^"\x27]*)["\x27]/i', $imgTag, $m)) {
+            return $m[1];
+        }
+        return '';
     }
 }
