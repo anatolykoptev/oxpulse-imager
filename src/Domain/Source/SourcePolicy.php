@@ -42,9 +42,15 @@ final class SourcePolicy
             return SourceDecision::denied('malformed_url');
         }
 
-        // Check proxy loop: source must not point at the imgproxy endpoint.
-        $endpointHost = $this->extractHost($config->endpoint);
-        if ($endpointHost !== '' && $url->host === $endpointHost) {
+        // Check proxy loop: the source must not be an already-imgproxy-
+        // transformed URL under the endpoint (host + path prefix). A
+        // host-only comparison is WRONG for same-host reverse-proxy
+        // setups (endpoint https://site/imgproxy): it would flag every
+        // site image (https://site/wp-content/uploads/...) as a loop.
+        // The endpoint is absolute at authorize time (resolved via
+        // resolveEndpoint + home_url). Match at a path-segment boundary
+        // so /imgproxy does not match /imgproxy-evil or /imgproxydata.
+        if ($this->isProxyLoop($url, $config->endpoint)) {
             return SourceDecision::denied('proxy_loop_detected');
         }
 
@@ -126,14 +132,66 @@ final class SourcePolicy
         return true;
     }
 
-    private function extractHost(string $url): string
+    /**
+     * Proxy-loop detection: is the source URL an already-imgproxy-
+     * transformed URL under the endpoint?
+     *
+     * Denies iff the source has the SAME host (and port) as the endpoint
+     * AND its path begins with the endpoint's path prefix at a path-
+     * segment boundary. A bare host match is insufficient — same-host
+     * reverse-proxy setups (endpoint /imgproxy on the site domain) would
+     * false-positive on every site image. Reuses the same segment-boundary
+     * rule as matchesPrefix(): /imgproxy matches /imgproxy and /imgproxy/...
+     * but NOT /imgproxydata or /imgproxy-evil.
+     *
+     * When the endpoint has no host (a relative path like '/imgproxy'
+     * that was not yet resolved, or a malformed endpoint), the loop
+     * check is skipped — same as the prior host-empty behavior.
+     */
+    private function isProxyLoop(NormalizedUrl $url, string $endpoint): bool
     {
         try {
-            $parsed = NormalizedUrl::parse($url);
-            return $parsed->host;
+            $endpointUrl = NormalizedUrl::parse($endpoint);
         } catch (\InvalidArgumentException $e) {
-            return '';
+            return false;
         }
+
+        if ($endpointUrl->host === '') {
+            return false;
+        }
+
+        if ($url->host !== $endpointUrl->host) {
+            return false;
+        }
+
+        if ($url->port !== $endpointUrl->port) {
+            return false;
+        }
+
+        $endpointPath = $endpointUrl->path;
+        if ($endpointPath === '' || $endpointPath === '/') {
+            // No path prefix → any path on this host is a loop.
+            return true;
+        }
+
+        $sourcePath = $url->path;
+
+        if (!str_starts_with($sourcePath, $endpointPath)) {
+            return false;
+        }
+
+        // Segment-boundary check: if the endpoint path does not end with
+        // a slash, the next char in the source path must be a boundary
+        // (slash, query, fragment-end) so /imgproxy does not match
+        // /imgproxydata. Exact match (same length) is a loop.
+        if (!str_ends_with($endpointPath, '/') && strlen($sourcePath) > strlen($endpointPath)) {
+            $nextChar = $sourcePath[strlen($endpointPath)];
+            if ($nextChar !== '/' && $nextChar !== '?' && $nextChar !== '#') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
