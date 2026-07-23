@@ -32,7 +32,9 @@ use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\Local\CacheJanitor;
 use OXPulse\Imager\Infrastructure\Local\HttpRequester;
 use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
+use OXPulse\Imager\Infrastructure\License\OpenLicenseGate;
 use OXPulse\Imager\Infrastructure\Local\WpRemoteHttpRequester;
+use OXPulse\Imager\Domain\License\LicenseGate;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminBarDiagnostics;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminNotice;
 use OXPulse\Imager\Integration\WordPress\Admin\CapabilityRestController;
@@ -80,6 +82,16 @@ final class ServiceRegistrar
      */
     private static ?UrlRewriter $rewriter = null;
 
+    /**
+     * Shared LicenseGate instance. #89: the single seam through which
+     * the plugin asks "is this a paying (Pro) customer?". Lazy-
+     * initialized to the OpenLicenseGate (everything unlocked — zero
+     * behavior change for every existing install). A Freemius-backed
+     * gate replaces this once credentials exist; the swap happens here
+     * only, so no feature code is aware of the provider.
+     */
+    private static ?LicenseGate $licenseGate = null;
+
     public static function register(Plugin $plugin): void
     {
         self::registerHealthGate($plugin);
@@ -117,6 +129,25 @@ final class ServiceRegistrar
     public static function getRewriter(): ?UrlRewriter
     {
         return self::$rewriter;
+    }
+
+    /**
+     * Get the shared LicenseGate instance (lazy-initialized).
+     *
+     * #89: the single seam through which any feature asks "is this a
+     * Pro customer?". Defaults to OpenLicenseGate (everything unlocked
+     * — zero behavior change for every existing install, including
+     * imgproxy/AVIF sites). A Freemius-backed gate replaces the default
+     * here once credentials exist; the swap is local to this accessor
+     * so no feature code is aware of the provider. Exposed publicly via
+     * the oxpulse_license_gate() global helper.
+     */
+    public static function licenseGate(): LicenseGate
+    {
+        if (self::$licenseGate === null) {
+            self::$licenseGate = new OpenLicenseGate();
+        }
+        return self::$licenseGate;
     }
 
     /**
