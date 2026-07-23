@@ -271,6 +271,67 @@ class ServiceRegistrarImgproxyHealthTest extends TestCase
         );
     }
 
+    // ─── #84: self-heal cron on upgrade (init guard-schedule) ─────────
+
+    public function test_init_self_heals_cron_when_unscheduled_on_upgrade(): void
+    {
+        // Simulate an already-active install that UPGRADED in place
+        // (activation hook did NOT fire for this load). The recurring
+        // event is unscheduled. Bootstrap registerImgproxyHealthCron
+        // registers the callback AND an init guard; firing init must
+        // schedule the event so the install converges without a
+        // deactivate→reactivate.
+        $this->assertFalse(
+            wp_next_scheduled('oxpulse_imgproxy_health_recheck'),
+            'Precondition: event must be unscheduled (upgrade path)',
+        );
+
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerImgproxyHealthCron', [$plugin]);
+
+        do_action('init');
+
+        $this->assertNotFalse(
+            wp_next_scheduled('oxpulse_imgproxy_health_recheck'),
+            'init must guard-schedule the recurring cron when unscheduled (upgrade self-heal)',
+        );
+    }
+
+    public function test_init_does_not_double_schedule_when_cron_already_scheduled(): void
+    {
+        // Idempotency: when the event is already scheduled (e.g. a
+        // fresh-activate install that DID run the activation hook),
+        // firing init must NOT create a second schedule and must NOT
+        // shift the existing timestamp. The wp_next_scheduled guard
+        // makes the activation-hook schedule and the init guard
+        // idempotent.
+        $existingTimestamp = time() + 3600;
+        wp_schedule_event($existingTimestamp, 'hourly', 'oxpulse_imgproxy_health_recheck');
+        $this->assertSame(
+            $existingTimestamp,
+            wp_next_scheduled('oxpulse_imgproxy_health_recheck'),
+            'Precondition: event is scheduled at a known timestamp',
+        );
+
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerImgproxyHealthCron', [$plugin]);
+
+        do_action('init');
+
+        $matching = 0;
+        foreach ($GLOBALS['__oxpulse_scheduled_events'] as $event) {
+            if ($event['hook'] === 'oxpulse_imgproxy_health_recheck') {
+                $matching++;
+            }
+        }
+        $this->assertSame(1, $matching, 'init must not add a second schedule entry when one already exists');
+        $this->assertSame(
+            $existingTimestamp,
+            wp_next_scheduled('oxpulse_imgproxy_health_recheck'),
+            'init must not shift the existing scheduled timestamp',
+        );
+    }
+
     // ─── helpers ──────────────────────────────────────────────────────
 
     private function buildPluginStub(): \OXPulse\Imager\Plugin

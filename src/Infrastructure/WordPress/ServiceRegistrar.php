@@ -430,11 +430,28 @@ final class ServiceRegistrar
      * imgproxy endpoint is configured. Registered at plugin bootstrap
      * (every load) so WP-cron can fire it; the EVENT is scheduled on
      * activation and cleared on deactivation.
+     *
+     * #84: register_activation_hook does NOT fire on a plugin UPDATE,
+     * so an already-active install that upgrades in place (auto-update
+     * / ZIP replace) never gets the recurring event scheduled → the
+     * recovery cron is inert until a manual settings-save, a
+     * version-gated reprobe, or a deactivate→reactivate. The init
+     * guard-schedule below is the standard self-healing recurring-cron
+     * idiom: any active install converges on its first request after
+     * upgrade. The wp_next_scheduled guard makes this idempotent with
+     * the activation-hook schedule (no double-schedule, no timestamp
+     * shift) and re-heals a vanished cron.
      */
     private static function registerImgproxyHealthCron(Plugin $plugin): void
     {
         add_action('oxpulse_imgproxy_health_recheck', static function (): void {
             self::recheckImgproxyHealth();
+        });
+
+        add_action('init', static function (): void {
+            if (!wp_next_scheduled('oxpulse_imgproxy_health_recheck')) {
+                wp_schedule_event(time(), 'hourly', 'oxpulse_imgproxy_health_recheck');
+            }
         });
     }
 
