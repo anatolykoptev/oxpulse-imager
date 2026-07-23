@@ -689,6 +689,98 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
         // environment lacks it. In practice this branch never fires.
     }
 
+    // #88: $wpdb stub for uninstall prefix-scan tests. Mirrors the
+    // options store in $GLOBALS['__oxpulse_options'] so DELETE ... LIKE
+    // queries actually remove matching keys. Supports esc_like(),
+    // prepare(), and query() — the subset Uninstaller uses.
+    if (!isset($GLOBALS['wpdb'])) {
+        $GLOBALS['wpdb'] = new class {
+            public $options = 'wp_options';
+
+            public function esc_like($text) {
+                return addcslashes((string) $text, '_%\\');
+            }
+
+            public function prepare($query, ...$args) {
+                foreach ($args as $arg) {
+                    $replacement = is_string($arg) ? "'" . $arg . "'" : (string) $arg;
+                    $query = preg_replace('/%s/', $replacement, $query, 1);
+                }
+                return $query;
+            }
+
+            public function query($sql) {
+                if (preg_match("/option_name LIKE '([^']+)'/i", (string) $sql, $m)) {
+                    $like = $m[1];
+                    $regex = '';
+                    $i = 0;
+                    $len = strlen($like);
+                    while ($i < $len) {
+                        $ch = $like[$i];
+                        if ($ch === '\\' && $i + 1 < $len) {
+                            $regex .= preg_quote($like[$i + 1], '/');
+                            $i += 2;
+                        } elseif ($ch === '%') {
+                            $regex .= '.*';
+                            $i++;
+                        } elseif ($ch === '_') {
+                            $regex .= '.';
+                            $i++;
+                        } else {
+                            $regex .= preg_quote($ch, '/');
+                            $i++;
+                        }
+                    }
+                    $pattern = '/^' . $regex . '$/';
+                    foreach (array_keys($GLOBALS['__oxpulse_options'] ?? []) as $key) {
+                        if (preg_match($pattern, (string) $key)) {
+                            unset($GLOBALS['__oxpulse_options'][$key]);
+                        }
+                    }
+                }
+                return true;
+            }
+        };
+    }
+
+    // #88: multisite stubs for uninstall cleanup tests.
+    if (!function_exists('is_multisite')) {
+        function is_multisite() {
+            return !empty($GLOBALS['__oxpulse_is_multisite']);
+        }
+    }
+    if (!function_exists('get_sites')) {
+        function get_sites() {
+            return $GLOBALS['__oxpulse_sites'] ?? [];
+        }
+    }
+    if (!function_exists('switch_to_blog')) {
+        function switch_to_blog($blogId) {
+            $current = $GLOBALS['__oxpulse_current_blog'] ?? 1;
+            $GLOBALS['__oxpulse_blog_options'][$current] = $GLOBALS['__oxpulse_options'] ?? [];
+            $GLOBALS['__oxpulse_options'] = $GLOBALS['__oxpulse_blog_options'][$blogId] ?? [];
+            $GLOBALS['__oxpulse_current_blog'] = (int) $blogId;
+            $GLOBALS['__oxpulse_blog_stack'][] = $current;
+            return true;
+        }
+    }
+    if (!function_exists('restore_current_blog')) {
+        function restore_current_blog() {
+            $current = $GLOBALS['__oxpulse_current_blog'] ?? 1;
+            $GLOBALS['__oxpulse_blog_options'][$current] = $GLOBALS['__oxpulse_options'] ?? [];
+            $prev = array_pop($GLOBALS['__oxpulse_blog_stack']) ?? 1;
+            $GLOBALS['__oxpulse_options'] = $GLOBALS['__oxpulse_blog_options'][$prev] ?? [];
+            $GLOBALS['__oxpulse_current_blog'] = $prev;
+            return true;
+        }
+    }
+    if (!function_exists('delete_site_option')) {
+        function delete_site_option($option) {
+            unset($GLOBALS['__oxpulse_network_options'][$option]);
+            return true;
+        }
+    }
+
     // Load the main plugin file in the stub environment so its
     // top-level functions (activation/deactivation guards, constants)
     // are available to unit tests.

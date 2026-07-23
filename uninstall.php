@@ -1,10 +1,16 @@
 <?php
 /**
- * Uninstall handler.
+ * Uninstall handler — complete cleanup (#88).
  *
- * Removes plugin options only when the explicit "remove settings on
- * uninstall" option is enabled. Never touches attachments, media files,
- * post content, external systems, or unrelated options.
+ * Removes EVERYTHING the plugin created: all options (the
+ * oxpulse_imager_ prefix family + standalone keys), all cron events,
+ * all transients (static + dynamic UUID-suffixed), the on-disk cache
+ * directory (WP_CONTENT_DIR/cache/oxpulse/), the generated endpoint
+ * file (oxpulse-img.php) + its cache .htaccess, and per-site cleanup
+ * on multisite.
+ *
+ * Guarded by WP_UNINSTALL_PLUGIN (defined by WordPress only when the
+ * user clicks "Delete" in the plugins admin). Direct access exits.
  *
  * @package OXPulse\Imager
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -17,25 +23,25 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
     exit;
 }
 
-$remove_on_uninstall = (bool) get_option('oxpulse_imager_remove_on_uninstall', false);
-
-if (!$remove_on_uninstall) {
-    return;
+// Bootstrap class loading. In development / composer installs the
+// vendor autoloader is available; in the wordpress.org release ZIP
+// vendor/ is export-ignored, so we register a self-contained PSR-4
+// autoloader pointing at src/ (same pattern as the generated
+// miss-endpoint file).
+if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
+} else {
+    spl_autoload_register(static function (string $class): void {
+        $prefix = 'OXPulse\\Imager\\';
+        if (!str_starts_with($class, $prefix)) {
+            return;
+        }
+        $relative = str_replace('\\', '/', substr($class, strlen($prefix)));
+        $file = __DIR__ . '/src/' . $relative . '.php';
+        if (file_exists($file)) {
+            require_once $file;
+        }
+    });
 }
 
-$options_to_delete = [
-    'oxpulse_imager_enabled',
-    'oxpulse_imager_endpoint',
-    'oxpulse_imager_key',
-    'oxpulse_imager_salt',
-    'oxpulse_imager_allowed_sources',
-    'oxpulse_imager_remove_on_uninstall',
-    'oxpulse_imager_diagnostic_level',
-    'oxpulse_imager_schema_version',
-];
-
-foreach ($options_to_delete as $option) {
-    delete_option($option);
-}
-
-delete_transient('oxpulse_imager_health_check');
+\OXPulse\Imager\Infrastructure\WordPress\Uninstaller::run();
