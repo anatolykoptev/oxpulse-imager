@@ -181,4 +181,9 @@ class RecordingLogger implements DiagnosticLoggerInterface
     {
         // No-op for tests.
     }
+
+    public function warning(string $message): void
+    {
+        // No-op for tests.
+    }
 }

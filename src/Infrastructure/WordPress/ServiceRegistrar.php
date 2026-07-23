@@ -362,7 +362,10 @@ final class ServiceRegistrar
         $healthRest->register();
 
         // REST: POST /oxpulse/v1/prewarm — bulk cache pre-warm.
-        $prewarmRest = new PrewarmRestController($repository);
+        // #92: inject the shared diagnostic logger so a blocked async
+        // pre-warm (DISABLE_WP_CRON) is logged through the same channel
+        // as rewrite decisions.
+        $prewarmRest = new PrewarmRestController($repository, self::diagnosticLogger());
         $prewarmRest->register();
 
         // REST: GET /oxpulse/v1/status + /info — status + URL preview.
