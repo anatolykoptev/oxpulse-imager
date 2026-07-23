@@ -181,4 +181,51 @@ class WordPressDiagnosticLoggerTest extends TestCase
         $this->assertSame(0, $summary['rewritten']);
         $this->assertSame(0, $summary['preserved']);
     }
+
+    // ─── #92: warning() operational one-shot log ─────────────────────
+
+    /**
+     * #92: warning() writes a single line to error_log with the plugin
+     * prefix, gated on the diagnostic level being non-'off'. Captured
+     * by redirecting the `error_log` ini directive to a temp file.
+     */
+    public function test_warning_writes_to_error_log_when_level_basic(): void
+    {
+        $GLOBALS['__oxpulse_options']['oxpulse_imager_diagnostic_level'] = 'basic';
+        $tmp = tempnam(sys_get_temp_dir(), 'oxpulse_warn_');
+        $previous = ini_set('error_log', $tmp);
+        try {
+            $logger = new WordPressDiagnosticLogger();
+            $logger->warning('background pre-warm blocked: DISABLE_WP_CRON');
+
+            $contents = (string) file_get_contents($tmp);
+            $this->assertStringContainsString('OXPulse Imager:', $contents);
+            $this->assertStringContainsString('DISABLE_WP_CRON', $contents);
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+            @unlink($tmp);
+        }
+    }
+
+    /**
+     * #92: warning() is silent when the diagnostic level is 'off' —
+     * an operator who silenced diagnostics stays silent.
+     */
+    public function test_warning_is_silent_when_level_off(): void
+    {
+        $GLOBALS['__oxpulse_options']['oxpulse_imager_diagnostic_level'] = 'off';
+        $tmp = tempnam(sys_get_temp_dir(), 'oxpulse_warn_');
+        // Truncate the temp file so we can assert it stays empty.
+        file_put_contents($tmp, '');
+        $previous = ini_set('error_log', $tmp);
+        try {
+            $logger = new WordPressDiagnosticLogger();
+            $logger->warning('should not be logged');
+
+            $this->assertSame('', (string) file_get_contents($tmp), 'warning() must not write when level is off');
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+            @unlink($tmp);
+        }
+    }
 }

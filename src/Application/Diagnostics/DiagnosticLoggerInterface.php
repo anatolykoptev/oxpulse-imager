@@ -44,4 +44,17 @@ interface DiagnosticLoggerInterface
      * (error_log + transient). Called once at shutdown.
      */
     public function flush(): void;
+
+    /**
+     * #92: Record a one-shot operational warning (NOT a rewrite
+     * decision — e.g. "background pre-warm blocked because WP-Cron
+     * is disabled"). Written to error_log immediately (not deferred
+     * to shutdown), gated on the diagnostic level being non-'off'
+     * so an operator who silenced diagnostics stays silent.
+     *
+     * Distinct from log(LogEntry): LogEntry models a per-URL rewrite
+     * decision and is accumulated for the request summary; a warning
+     * is a single operational event with no per-URL shape.
+     */
+    public function warning(string $message): void;
 }

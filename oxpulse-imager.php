@@ -163,6 +163,13 @@ function oxpulse_imager_activate(): void {
         if (!wp_next_scheduled('oxpulse_imgproxy_health_recheck')) {
             wp_schedule_event(time(), 'hourly', 'oxpulse_imgproxy_health_recheck');
         }
+        // #93: schedule the recurring LocalBackend cache LRU eviction
+        // cron so the on-disk cache is bounded by cache_max_mb. No-op
+        // when ImgproxyBackend is active (runCacheCleanup self-guards).
+        // The init self-heal in ServiceRegistrar covers the upgrade path.
+        if (!wp_next_scheduled('oxpulse_cache_cleanup')) {
+            wp_schedule_event(time(), 'twicedaily', 'oxpulse_cache_cleanup');
+        }
     }
 }
 
@@ -189,6 +196,8 @@ function oxpulse_imager_deactivate(): void {
     // picks up where it left off.
     if (function_exists('wp_clear_scheduled_hook')) {
         wp_clear_scheduled_hook('oxpulse_imgproxy_health_recheck');
+        // #93: clear the recurring LocalBackend cache LRU eviction cron.
+        wp_clear_scheduled_hook('oxpulse_cache_cleanup');
     }
 }
 
@@ -237,5 +246,22 @@ if (!function_exists('oxpulse_thumb_url')) {
         }
         $result = $rewriter->rewrite($url, $width, $height, 'thumb_url');
         return $result->url;
+    }
+}
+
+/**
+ * Public helper: resolve the shared LicenseGate.
+ *
+ * #89: the single seam through which the plugin asks "is this a paying
+ * (Pro) customer?". Returns the OpenLicenseGate (everything unlocked)
+ * until a Freemius-backed gate is wired in ServiceRegistrar. Sibling
+ * code and tests use this instead of touching ServiceRegistrar directly,
+ * mirroring the oxpulse_thumb_url() helper shape.
+ *
+ * @return \OXPulse\Imager\Domain\License\LicenseGate
+ */
+if (!function_exists('oxpulse_license_gate')) {
+    function oxpulse_license_gate(): \OXPulse\Imager\Domain\License\LicenseGate {
+        return \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::licenseGate();
     }
 }

@@ -29,9 +29,12 @@ use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackendProvider;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
+use OXPulse\Imager\Infrastructure\Local\CacheJanitor;
 use OXPulse\Imager\Infrastructure\Local\HttpRequester;
 use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
+use OXPulse\Imager\Infrastructure\License\OpenLicenseGate;
 use OXPulse\Imager\Infrastructure\Local\WpRemoteHttpRequester;
+use OXPulse\Imager\Domain\License\LicenseGate;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminBarDiagnostics;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminNotice;
 use OXPulse\Imager\Integration\WordPress\Admin\CapabilityRestController;
@@ -79,6 +82,16 @@ final class ServiceRegistrar
      */
     private static ?UrlRewriter $rewriter = null;
 
+    /**
+     * Shared LicenseGate instance. #89: the single seam through which
+     * the plugin asks "is this a paying (Pro) customer?". Lazy-
+     * initialized to the OpenLicenseGate (everything unlocked — zero
+     * behavior change for every existing install). A Freemius-backed
+     * gate replaces this once credentials exist; the swap happens here
+     * only, so no feature code is aware of the provider.
+     */
+    private static ?LicenseGate $licenseGate = null;
+
     public static function register(Plugin $plugin): void
     {
         self::registerHealthGate($plugin);
@@ -87,6 +100,7 @@ final class ServiceRegistrar
         self::registerPerformanceIntegration($plugin);
         self::registerAsyncPrewarmCron($plugin);
         self::registerImgproxyHealthCron($plugin);
+        self::registerCacheCleanupCron($plugin);
         self::registerLocalCacheInvalidation($plugin);
         self::registerLocalDeliverySettingsSync($plugin);
         self::maybeReprobeOnVersionUpdate();
@@ -116,6 +130,25 @@ final class ServiceRegistrar
     public static function getRewriter(): ?UrlRewriter
     {
         return self::$rewriter;
+    }
+
+    /**
+     * Get the shared LicenseGate instance (lazy-initialized).
+     *
+     * #89: the single seam through which any feature asks "is this a
+     * Pro customer?". Defaults to OpenLicenseGate (everything unlocked
+     * — zero behavior change for every existing install, including
+     * imgproxy/AVIF sites). A Freemius-backed gate replaces the default
+     * here once credentials exist; the swap is local to this accessor
+     * so no feature code is aware of the provider. Exposed publicly via
+     * the oxpulse_license_gate() global helper.
+     */
+    public static function licenseGate(): LicenseGate
+    {
+        if (self::$licenseGate === null) {
+            self::$licenseGate = new OpenLicenseGate();
+        }
+        return self::$licenseGate;
     }
 
     /**
@@ -332,7 +365,10 @@ final class ServiceRegistrar
         $healthRest->register();
 
         // REST: POST /oxpulse/v1/prewarm — bulk cache pre-warm.
-        $prewarmRest = new PrewarmRestController($repository);
+        // #92: inject the shared diagnostic logger so a blocked async
+        // pre-warm (DISABLE_WP_CRON) is logged through the same channel
+        // as rewrite decisions.
+        $prewarmRest = new PrewarmRestController($repository, self::diagnosticLogger());
         $prewarmRest->register();
 
         // REST: GET /oxpulse/v1/status + /info — status + URL preview.
@@ -451,6 +487,80 @@ final class ServiceRegistrar
                 wp_schedule_event(time(), 'hourly', 'oxpulse_imgproxy_health_recheck');
             }
         });
+    }
+
+    /**
+     * #93: Register the periodic LocalBackend cache LRU eviction cron.
+     *
+     * The LocalBackend on-disk cache grows unbounded (one file per
+     * transform variant); this recurring cron bounds it by evicting
+     * least-recently-used files when the total exceeds the cache_max_mb
+     * cap. Wired EXACTLY like the #81 imgproxy-health cron:
+     *   - add_action at bootstrap so WP-cron can fire the callback,
+     *   - activation wp_schedule_event (guarded) in oxpulse-imager.php,
+     *   - init self-heal guard-schedule so an in-place upgrade converges
+     *     without a deactivate→reactivate (#84 idiom),
+     *   - deactivation wp_clear_scheduled_hook in oxpulse-imager.php.
+     *
+     * The cleanup is a no-op when LocalBackend isn't the active tier
+     * (imgproxy sites have no local cache) — guarded inside
+     * runCacheCleanup() via isLocalBackendActive(), mirroring how
+     * recheckImgproxyHealth() is self-guarding.
+     *
+     * Recurrence is 'twicedaily' (the cache fills gradually; hourly
+     * would over-sweep, and eviction is bounded per run anyway).
+     */
+    private static function registerCacheCleanupCron(Plugin $plugin): void
+    {
+        add_action('oxpulse_cache_cleanup', static function (): void {
+            self::runCacheCleanup();
+        });
+
+        add_action('init', static function (): void {
+            if (!wp_next_scheduled('oxpulse_cache_cleanup')) {
+                wp_schedule_event(time(), 'twicedaily', 'oxpulse_cache_cleanup');
+            }
+        });
+    }
+
+    /**
+     * #93: Run one LocalBackend cache LRU eviction pass.
+     *
+     * Self-guarding via isLocalBackendActive(): a no-op when
+     * ImgproxyBackend is active (endpoint configured — imgproxy manages
+     * its own cache, the local cache dir is not used). When LocalBackend
+     * is active, resolves the cache dir + the cache_max_mb cap (option +
+     * oxpulse_cache_max_mb filter) and delegates to CacheJanitor::run().
+     *
+     * Test seam: accepts an injected CacheJanitor so tests can point at
+     * a temp cache dir. Production callers pass null → a real janitor is
+     * built against the resolved cache dir.
+     */
+    public static function runCacheCleanup(?CacheJanitor $janitor = null): void
+    {
+        $repository = new OptionSettingsRepository();
+        $delivery = $repository->loadDeliveryConfig();
+
+        // No-op when ImgproxyBackend is active — imgproxy sites have no
+        // local cache to bound. Mirrors the isLocalBackendActive() guard
+        // in registerLocalCacheInvalidation() + recheckImgproxyHealth().
+        if (!$delivery->isLocalBackendActive()) {
+            return;
+        }
+
+        if ($janitor === null) {
+            $cacheDir = self::resolveLocalCacheDir();
+            if ($cacheDir === null) {
+                return;
+            }
+            $janitor = new CacheJanitor($cacheDir);
+        }
+
+        $janitor->run($repository->loadCacheMaxMb());
+
+        // Marker action for test assertions + observability (mirrors
+        // oxpulse_recheck_imgproxy_health).
+        do_action('oxpulse_cache_cleanup_ran');
     }
 
     private static function deliveryEnabled(): bool

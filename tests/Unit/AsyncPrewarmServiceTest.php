@@ -227,4 +227,71 @@ class AsyncPrewarmServiceTest extends TestCase
             $jobId
         );
     }
+
+    // ─── #92: DISABLE_WP_CRON detection ──────────────────────────────
+
+    public function test_isWpCronDisabled_returns_false_when_not_defined(): void
+    {
+        $this->assertFalse(AsyncPrewarmService::isWpCronDisabled());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_isWpCronDisabled_returns_true_when_disabled_true(): void
+    {
+        define('DISABLE_WP_CRON', true);
+        $this->assertTrue(AsyncPrewarmService::isWpCronDisabled());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_isWpCronDisabled_returns_true_when_disabled_truthy_string(): void
+    {
+        // Some hosts write `define('DISABLE_WP_CRON', 'true');` — a
+        // truthy string. WP core treats this as disabled; so must we.
+        define('DISABLE_WP_CRON', 'true');
+        $this->assertTrue(AsyncPrewarmService::isWpCronDisabled());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_isWpCronDisabled_returns_false_when_defined_false(): void
+    {
+        // `define('DISABLE_WP_CRON', false)` is NOT disabled — the
+        // operator explicitly left cron enabled.
+        define('DISABLE_WP_CRON', false);
+        $this->assertFalse(AsyncPrewarmService::isWpCronDisabled());
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_createJob_does_not_schedule_cron_when_disabled(): void
+    {
+        define('DISABLE_WP_CRON', true);
+
+        // Re-build the service in this isolated process (setUp ran
+        // before the define, but the check is in createJob, not the
+        // constructor, so the existing instance is fine).
+        $jobId = $this->asyncService->createJob(
+            ['https://example.com/uploads/photo.jpg'],
+            [0]
+        );
+
+        // Job record still created (harmless)...
+        $job = $this->store->get($jobId);
+        $this->assertNotNull($job);
+        $this->assertSame('pending', $job['status']);
+
+        // ...but NO cron event scheduled — a dead event that would
+        // never fire is the silent no-op #92 fixes.
+        $this->assertCount(0, $GLOBALS['__oxpulse_scheduled_events'] ?? []);
+    }
 }

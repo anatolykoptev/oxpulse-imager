@@ -105,6 +105,26 @@ final class AdminNotice
      */
     public const IMGPROXY_DOWN_KEY = 'imgproxy_down';
 
+    /**
+     * #92: notice key for the "background pre-warm blocked because
+     * WP-Cron is disabled" warning. Capability-independent (the notice
+     * is about the host's cron config, not the rewrite capability), so
+     * its dismissal is stored against NOTICE_STATE_ACTIVE — mirroring
+     * the co-install / multisite / no-encoder keyed-dismiss pattern.
+     * Re-surfaces when a new blocked attempt re-sets the transient flag
+     * after the 1h TTL expires.
+     */
+    public const CRON_DISABLED_KEY = 'prewarm_cron_disabled';
+
+    /**
+     * #92: transient flag set by PrewarmRestController when an async
+     * pre-warm is attempted while WP-Cron is disabled. The notice
+     * renders only while this flag is live (1h TTL), so it surfaces
+     * the limitation right after a blocked attempt rather than
+     * permanently nagging every admin page load.
+     */
+    public const CRON_BLOCKED_TRANSIENT = 'oxpulse_prewarm_cron_blocked';
+
     private OptionSettingsRepository $repository;
     private ImageTransformer $imageTransformer;
     private ImgproxyHealthCache $imgproxyHealthCache;
@@ -167,6 +187,11 @@ final class AdminNotice
         if ($noticeKey === self::IMGPROXY_DOWN_KEY) {
             return 'down';
         }
+        // #92: the cron-disabled notice is capability-independent (it is
+        // about the host's WP-Cron config, not the rewrite capability).
+        if ($noticeKey === self::CRON_DISABLED_KEY) {
+            return self::NOTICE_STATE_ACTIVE;
+        }
         return $repository->loadRewriteCapability();
     }
 
@@ -183,6 +208,13 @@ final class AdminNotice
         if (!function_exists('current_user_can') || !current_user_can('manage_options')) {
             return;
         }
+
+        // #92: the cron-disabled notice is independent of the delivery
+        // backend (it is about the host's WP-Cron config, not LocalBackend
+        // vs imgproxy), so it is evaluated BEFORE the delivery branching
+        // and can render in any backend context. Gated on the transient
+        // flag set by PrewarmRestController when a blocked attempt occurs.
+        $this->maybeRenderCronDisabledNotice();
 
         $delivery = $this->repository->loadDeliveryConfig();
 
@@ -473,6 +505,40 @@ location ~* ^{$cachePath}/([0-9a-f]+)/(.+)\.(webp|avif)$ {
     }
 
     /**
+     * #92: Build the "background pre-warm blocked because WP-Cron is
+     * disabled" notice. Dismissable warning, keyed CRON_DISABLED_KEY
+     * (capability-independent dismissal via NOTICE_STATE_ACTIVE, like
+     * co-install / multisite / no-encoder). Points the operator at the
+     * two working alternatives: the `wp oxpulse warm` WP-CLI command
+     * (synchronous, no WP-Cron needed) or a real system cron hitting
+     * wp-cron.php. Renders only while the CRON_BLOCKED_TRANSIENT flag
+     * is live (set on a blocked attempt, 1h TTL) so it surfaces right
+     * after the attempt rather than permanently nagging.
+     *
+     * @return array{key:string,class:string,html:string}
+     */
+    public function buildCronDisabledNotice(): array
+    {
+        $dismissUrl = rest_url('oxpulse/v1/capability/dismiss');
+        $nonce = function_exists('wp_create_nonce') ? wp_create_nonce('wp_rest') : '';
+
+        $heading = __(
+            'OXPulse Imager: background pre-warm requires WP-Cron, which is disabled on this site (DISABLE_WP_CRON). Run it via WP-CLI (`wp oxpulse warm`) or enable a system cron hitting wp-cron.php.',
+            'oxpulse-imager'
+        );
+
+        $html = '<div class="notice notice-warning is-dismissible oxpulse-notice" '
+            . 'data-oxpulse-notice-key="' . esc_attr(self::CRON_DISABLED_KEY) . '" '
+            . 'data-oxpulse-dismiss-url="' . esc_url($dismissUrl) . '" '
+            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '">'
+            . '<p><strong>' . esc_html__('OXPulse Imager', 'oxpulse-imager') . '</strong> — '
+            . esc_html($heading) . '</p>'
+            . '</div>';
+
+        return ['key' => self::CRON_DISABLED_KEY, 'class' => 'warning', 'html' => $html];
+    }
+
+    /**
      * #90: Render the no-encoder notice when LocalBackend is active and the
      * host can encode neither webp nor avif.
      */
@@ -670,6 +736,25 @@ location ~* ^{$cachePath}/([0-9a-f]+)/(.+)\.(webp|avif)$ {
     private function maybeRenderMultisiteNotice(): void
     {
         $notice = $this->buildMultisiteNotice();
+        if (!$this->repository->isNoticeDismissed($notice['key'], self::noticeDismissState($notice['key'], $this->repository))) {
+            echo wp_kses_post($notice['html']);
+            $this->emitInlineScript();
+        }
+    }
+
+    /**
+     * #92: Render the cron-disabled notice when a blocked async pre-warm
+     * attempt set the CRON_BLOCKED_TRANSIENT flag (1h TTL) and the notice
+     * has not been dismissed. Capability-independent dismissal
+     * (NOTICE_STATE_ACTIVE). Renders in every delivery-backend context
+     * because WP-Cron config is independent of the delivery backend.
+     */
+    private function maybeRenderCronDisabledNotice(): void
+    {
+        if (!function_exists('get_transient') || get_transient(self::CRON_BLOCKED_TRANSIENT) !== true) {
+            return;
+        }
+        $notice = $this->buildCronDisabledNotice();
         if (!$this->repository->isNoticeDismissed($notice['key'], self::noticeDismissState($notice['key'], $this->repository))) {
             echo wp_kses_post($notice['html']);
             $this->emitInlineScript();
