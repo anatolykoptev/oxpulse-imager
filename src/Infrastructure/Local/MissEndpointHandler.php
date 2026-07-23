@@ -338,7 +338,29 @@ final class MissEndpointHandler
         }
         $htaccess = $dir . '/.htaccess';
         if (!is_file($htaccess)) {
-            @file_put_contents($htaccess, "php_flag engine off\nRemoveHandler .php .phtml .phar\n");
+            // `php_flag engine off` is a mod_php-only directive. Under
+            // Apache + php-fpm (mod_proxy_fcgi / SetHandler — the modern
+            // default) with AllowOverride All, a bare php_flag is an
+            // unknown directive → 500 on every request served from this
+            // dir. Guard it with <IfModule> so it only applies when
+            // mod_php is loaded; RemoveHandler/RemoveType are valid
+            // regardless of the PHP SAPI. The cache dir only ever holds
+            // .webp/.avif (format allowlist) + index.html, so PHP
+            // execution here is already impossible — this is
+            // defense-in-depth and must not itself break the site.
+            @file_put_contents($htaccess, <<<'HTACCESS'
+<IfModule mod_php.c>
+php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+php_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+php_flag engine off
+</IfModule>
+RemoveHandler .php .phtml .phar
+RemoveType .php .phtml .phar
+HTACCESS);
         }
     }
 

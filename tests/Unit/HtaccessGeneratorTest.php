@@ -71,6 +71,46 @@ class HtaccessGeneratorTest extends TestCase
     }
 
     /**
+     * Regression guard for the Apache+php-fpm 500 BLOCKER: no bare
+     * `php_flag`/`php_value` (mod_php-only) directive may appear in the
+     * generated .htaccess outside an `<IfModule mod_php*.c>` block.
+     * HtaccessGenerator already uses FilesMatch + type stripping (no
+     * php_flag at all); this locks that invariant.
+     */
+    public function test_no_bare_php_flag_outside_ifmodule(): void
+    {
+        $gen = new HtaccessGenerator();
+        $rules = $gen->generate(
+            cacheBaseUrl: 'https://example.com/wp-content/cache/oxpulse',
+            endpointRelPath: 'oxpulse-img.php',
+        );
+
+        $phpDepth = 0;
+        $sawPhpFlag = false;
+        foreach (preg_split('/\r\n|\r|\n/', $rules) as $line) {
+            if (preg_match('/<IfModule\s+mod_php\d*\.c>/i', $line)) {
+                $phpDepth++;
+                continue;
+            }
+            if (preg_match('/<\/IfModule>/i', $line) && $phpDepth > 0) {
+                $phpDepth--;
+                continue;
+            }
+            if (preg_match('/^\s*(php_flag|php_value)\b/i', $line)) {
+                $sawPhpFlag = true;
+                $this->assertGreaterThan(
+                    0,
+                    $phpDepth,
+                    "Bare mod_php-only directive outside <IfModule mod_php*.c> breaks Apache + php-fpm (500). Line: $line",
+                );
+            }
+        }
+        // HtaccessGenerator uses FilesMatch + type stripping only — it
+        // must never emit a bare mod_php-only directive at all.
+        $this->assertFalse($sawPhpFlag, 'HtaccessGenerator must not emit php_flag/php_value');
+    }
+
+    /**
      * Regression for #40. The .htaccess is written INTO the cache dir
      * (a per-directory context), where mod_rewrite matches the path
      * RELATIVE to that dir. The old rule used a docroot-relative

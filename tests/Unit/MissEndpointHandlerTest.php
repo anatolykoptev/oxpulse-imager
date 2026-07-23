@@ -274,7 +274,60 @@ class MissEndpointHandlerTest extends TestCase
         $this->assertFileExists($cacheSubdir . '/index.html');
         $this->assertFileExists($cacheSubdir . '/.htaccess');
         $htaccess = file_get_contents($cacheSubdir . '/.htaccess');
-        $this->assertStringContainsString('php_flag engine off', $htaccess);
+        // index.html + RemoveHandler/RemoveType hardening remain.
+        $this->assertStringContainsString('RemoveHandler .php .phtml .phar', $htaccess);
+        $this->assertStringContainsString('RemoveType .php .phtml .phar', $htaccess);
+    }
+
+    /**
+     * Regression for the Apache+php-fpm 500 BLOCKER. A bare
+     * `php_flag engine off` is a mod_php-only directive; under php-fpm
+     * (mod_proxy_fcgi / SetHandler — the dominant modern Apache setup)
+     * with AllowOverride All, Apache hits the unknown directive and
+     * returns 500 on every request served from the cache dir. Every
+     * `php_flag` written into the generated .htaccess MUST be guarded
+     * by an `<IfModule mod_php*.c>` block so it only applies when
+     * mod_php is actually loaded.
+     */
+    public function test_cache_dir_htaccess_php_flag_guarded_by_ifmodule(): void
+    {
+        $handler = $this->handler();
+        $key = $this->validKey();
+
+        $handler->handle($key, 'webp', 'image/webp');
+
+        $sourceHash = LocalBackend::sourceHash(self::SOURCE);
+        $cacheSubdir = $this->cacheDir . '/' . $sourceHash;
+        $htaccess = file_get_contents($cacheSubdir . '/.htaccess');
+
+        $this->assertPhpFlagGuardedByIfModule($htaccess);
+    }
+
+    /**
+     * Asserts that every `php_flag` line in $htaccess appears inside an
+     * open `<IfModule mod_php*.c>` block (i.e. no bare mod_php-only
+     * directive that 500s Apache under php-fpm).
+     */
+    private function assertPhpFlagGuardedByIfModule(string $htaccess): void
+    {
+        $phpDepth = 0;
+        foreach (preg_split('/\r\n|\r|\n/', $htaccess) as $line) {
+            if (preg_match('/<IfModule\s+mod_php\d*\.c>/i', $line)) {
+                $phpDepth++;
+                continue;
+            }
+            if (preg_match('/<\/IfModule>/i', $line) && $phpDepth > 0) {
+                $phpDepth--;
+                continue;
+            }
+            if (preg_match('/^\s*php_flag\b/i', $line)) {
+                $this->assertGreaterThan(
+                    0,
+                    $phpDepth,
+                    "Bare `php_flag` outside an <IfModule mod_php*.c> block breaks Apache + php-fpm (500). Line: $line",
+                );
+            }
+        }
     }
 
     // --- Cache hit serves directly ---
