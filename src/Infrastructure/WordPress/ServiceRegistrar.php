@@ -87,6 +87,7 @@ final class ServiceRegistrar
         self::registerCli($plugin);
         self::registerPerformanceIntegration($plugin);
         self::registerAsyncPrewarmCron($plugin);
+        self::registerImgproxyHealthCron($plugin);
         self::registerLocalCacheInvalidation($plugin);
         self::registerLocalDeliverySettingsSync($plugin);
         self::maybeReprobeOnVersionUpdate();
@@ -412,6 +413,29 @@ final class ServiceRegistrar
         $syncService = new PrewarmService($rewriter, new \OXPulse\Imager\Infrastructure\Http\WordPressPrewarmClient());
         $asyncService = new AsyncPrewarmService($syncService, new PrewarmJobStore());
         $asyncService->registerCronHandler();
+    }
+
+    /**
+     * #81: Register the periodic imgproxy health re-probe cron.
+     *
+     * WP-cron is traffic-triggered, so the persistent option
+     * (ImgproxyHealthCache) is what GUARANTEES safety — a definitive
+     * 'down' never self-expires to optimistic 'up'. The cron only
+     * bounds recovery/re-detection latency: a recovered imgproxy is
+     * re-promoted (down→up) and a newly-dead one is detected (up→down)
+     * WITHOUT waiting for a settings-save.
+     *
+     * The callback delegates to recheckImgproxyHealth(), which is
+     * self-guarding via isLocalBackendActive() — a no-op when no
+     * imgproxy endpoint is configured. Registered at plugin bootstrap
+     * (every load) so WP-cron can fire it; the EVENT is scheduled on
+     * activation and cleared on deactivation.
+     */
+    private static function registerImgproxyHealthCron(Plugin $plugin): void
+    {
+        add_action('oxpulse_imgproxy_health_recheck', static function (): void {
+            self::recheckImgproxyHealth();
+        });
     }
 
     private static function deliveryEnabled(): bool

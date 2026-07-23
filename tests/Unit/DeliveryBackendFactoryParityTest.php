@@ -43,17 +43,20 @@ class DeliveryBackendFactoryParityTest extends TestCase
 
     protected function setUp(): void
     {
-        // Reset the imgproxy health cache transient + the WP filter
-        // list so each parity case starts from a clean slate (the
-        // registry's default() applies the oxpulse_delivery_backends
-        // filter, which must not leak between tests).
+        // Reset the imgproxy health cache option (#81: persistent
+        // option, not transient) + the WP filter list so each parity
+        // case starts from a clean slate (the registry's default()
+        // applies the oxpulse_delivery_backends filter, which must
+        // not leak between tests).
         $GLOBALS['__oxpulse_transients'] = [];
+        $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_filters'] = [];
     }
 
     protected function tearDown(): void
     {
         unset($GLOBALS['__oxpulse_transients']);
+        unset($GLOBALS['__oxpulse_options']);
         unset($GLOBALS['__oxpulse_filters']);
     }
 

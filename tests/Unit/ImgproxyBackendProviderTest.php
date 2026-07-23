@@ -42,11 +42,13 @@ class ImgproxyBackendProviderTest extends TestCase
     protected function setUp(): void
     {
         $GLOBALS['__oxpulse_transients'] = [];
+        $GLOBALS['__oxpulse_options'] = [];
     }
 
     protected function tearDown(): void
     {
         unset($GLOBALS['__oxpulse_transients']);
+        unset($GLOBALS['__oxpulse_options']);
     }
 
     private function delivery(string $endpoint = self::ENDPOINT, string $sourceMode = 'http'): DeliveryConfig
@@ -236,6 +238,40 @@ class ImgproxyBackendProviderTest extends TestCase
         $provider->recheck($this->delivery(''));
 
         $this->assertSame(0, $http->headCalls, 'recheck must not probe when no endpoint is configured');
+    }
+
+    // ─── #81: recovery + newly-dead detection via recheck ───────────
+
+    public function test_recheck_recovers_down_to_up_when_probe_succeeds(): void
+    {
+        // Recovery: option holds 'down' (imgproxy was dead), a later
+        // recheck probes 200 → writes 'up' so the registry re-promotes
+        // imgproxy. This is the cron's primary job (bounds recovery
+        // latency without waiting for a settings-save).
+        $http = new RecordingHttpRequester(status: 200);
+        $cache = new ImgproxyHealthCache();
+        $cache->write('down');
+        $provider = new ImgproxyBackendProvider($http, $cache);
+
+        $provider->recheck($this->delivery());
+
+        $this->assertSame('up', $cache->read(), 'A 200 probe after a prior down must write up (recovery)');
+    }
+
+    public function test_recheck_detects_newly_dead_up_to_down_when_probe_fails(): void
+    {
+        // Newly-dead detection: option holds 'up' (imgproxy was healthy),
+        // a later recheck probes 502 → writes 'down' so the registry
+        // falls through to LocalBackend. This is the cron's secondary
+        // job (bounds re-detection latency without waiting for a save).
+        $http = new RecordingHttpRequester(status: 502);
+        $cache = new ImgproxyHealthCache();
+        $cache->write('up');
+        $provider = new ImgproxyBackendProvider($http, $cache);
+
+        $provider->recheck($this->delivery());
+
+        $this->assertSame('down', $cache->read(), 'A 502 probe after a prior up must write down (newly-dead)');
     }
 }
 
