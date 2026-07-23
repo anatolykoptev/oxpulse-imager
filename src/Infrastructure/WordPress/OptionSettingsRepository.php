@@ -21,6 +21,35 @@ use OXPulse\Imager\Domain\Transform\Watermark;
 
 final class OptionSettingsRepository
 {
+    /**
+     * Hot render-path option keys that MUST be autoloaded so they are
+     * served by wp_load_alloptions()'s single bootstrap query instead of
+     * N separate SELECTs on sites without a persistent object cache.
+     * Populated at activation with autoload=yes and flipped on existing
+     * installs by the schema_version 1→2 upgrade (ServiceRegistrar).
+     */
+    public const AUTOLOAD_OPTION_KEYS = [
+        self::OPTION_ENABLED,
+        self::OPTION_ENDPOINT,
+        self::OPTION_ALLOWED_SOURCES,
+        self::OPTION_DIAGNOSTIC_LEVEL,
+    ];
+
+    /**
+     * In-request memo of raw option values (key => value with the
+     * requested default already applied). Populated lazily on first
+     * read and reused by every load* method so the ~24 option reads
+     * that assemble delivery + signing config happen at most once per
+     * instance per request. Cleared by {@see refresh()} after every
+     * repository write so a save-then-read in the same request returns
+     * the new value. Per-instance (not static) so PHP teardown between
+     * requests guarantees no cross-request staleness, and each test
+     * case starts with a fresh memo via its own repository instance.
+     *
+     * @var array<string, mixed>
+     */
+    private array $optionMemo = [];
+
     public const OPTION_ENABLED = 'oxpulse_imager_enabled';
     public const OPTION_ENDPOINT = 'oxpulse_imager_endpoint';
     public const OPTION_KEY = 'oxpulse_imager_key';
@@ -101,30 +130,57 @@ final class OptionSettingsRepository
         self::OPTION_ENABLED,
     ];
 
+    /**
+     * Clear the in-request option memo. Called after every repository
+     * write (update_option / delete_option) so a save-then-read in the
+     * same request returns the new value. Also callable by tests to
+     * isolate the memo between assertions.
+     */
+    public function refresh(): void
+    {
+        $this->optionMemo = [];
+    }
+
+    /**
+     * Memoized get_option: the first read of a key fetches from the
+     * option store and caches the result (default already applied);
+     * subsequent reads of the same key in the same instance return the
+     * cached value without re-entering get_option. This collapses the
+     * ~24 option reads that assemble delivery + signing config to at
+     * most one fetch per key per instance per request.
+     */
+    private function memo(string $key, mixed $default): mixed
+    {
+        if (!array_key_exists($key, $this->optionMemo)) {
+            $this->optionMemo[$key] = get_option($key, $default);
+        }
+        return $this->optionMemo[$key];
+    }
+
     public function loadDeliveryConfig(): DeliveryConfig
     {
         return new DeliveryConfig(
-            enabled: (bool) get_option(self::OPTION_ENABLED, false),
-            endpoint: (string) get_option(self::OPTION_ENDPOINT, ''),
+            enabled: (bool) $this->memo(self::OPTION_ENABLED, false),
+            endpoint: (string) $this->memo(self::OPTION_ENDPOINT, ''),
             allowedSources: $this->loadAllowedSources(),
-            outputFormat: (string) get_option(self::OPTION_OUTPUT_FORMAT, 'auto'),
-            defaultQuality: (int) get_option(self::OPTION_DEFAULT_QUALITY, 80),
-            devHttpOverride: (bool) get_option(self::OPTION_DEV_HTTP, false),
-            lqipEnabled: (bool) get_option(self::OPTION_LQIP_ENABLED, false),
-            lqipBlur: (float) get_option(self::OPTION_LQIP_BLUR, 1),
-            dprEnabled: (bool) get_option(self::OPTION_DPR_ENABLED, false),
+            outputFormat: (string) $this->memo(self::OPTION_OUTPUT_FORMAT, 'auto'),
+            defaultQuality: (int) $this->memo(self::OPTION_DEFAULT_QUALITY, 80),
+            devHttpOverride: (bool) $this->memo(self::OPTION_DEV_HTTP, false),
+            lqipEnabled: (bool) $this->memo(self::OPTION_LQIP_ENABLED, false),
+            lqipBlur: (float) $this->memo(self::OPTION_LQIP_BLUR, 1),
+            dprEnabled: (bool) $this->memo(self::OPTION_DPR_ENABLED, false),
             dprVariants: $this->loadDprVariants(),
             watermark: $this->loadWatermark(),
             formatQuality: $this->loadFormatQuality(),
-            sourceMode: (string) get_option(self::OPTION_SOURCE_MODE, 'http'),
-            localBasePath: (string) get_option(self::OPTION_LOCAL_BASE_PATH, ''),
-            bufferRewritingEnabled: (bool) get_option(self::OPTION_BUFFER_REWRITING_ENABLED, false),
+            sourceMode: (string) $this->memo(self::OPTION_SOURCE_MODE, 'http'),
+            localBasePath: (string) $this->memo(self::OPTION_LOCAL_BASE_PATH, ''),
+            bufferRewritingEnabled: (bool) $this->memo(self::OPTION_BUFFER_REWRITING_ENABLED, false),
             // Phase 1 enablement: the `oxpulse_picture_enabled` filter or a
             // direct update_option. The settings-UI toggle (validator +
             // OptionsMapper + save) lands with the SPA integration.
-            pictureEnabled: (bool) get_option(self::OPTION_PICTURE_ENABLED, false),
-            rankMathCompatibility: (bool) get_option(self::OPTION_RANKMATH_COMPATIBILITY, true),
-            saveDataQualityReduction: (int) get_option(self::OPTION_SAVE_DATA_QUALITY_REDUCTION, 15),
+            pictureEnabled: (bool) $this->memo(self::OPTION_PICTURE_ENABLED, false),
+            rankMathCompatibility: (bool) $this->memo(self::OPTION_RANKMATH_COMPATIBILITY, true),
+            saveDataQualityReduction: (int) $this->memo(self::OPTION_SAVE_DATA_QUALITY_REDUCTION, 15),
             sizeQualityTiers: $this->loadSizeQualityTiers(),
         );
     }
@@ -162,8 +218,8 @@ final class OptionSettingsRepository
 
     public function loadSigningConfig(): ?SigningConfig
     {
-        $keyHex = (string) get_option(self::OPTION_KEY, '');
-        $saltHex = (string) get_option(self::OPTION_SALT, '');
+        $keyHex = (string) $this->memo(self::OPTION_KEY, '');
+        $saltHex = (string) $this->memo(self::OPTION_SALT, '');
 
         if ($keyHex === '' || $saltHex === '') {
             return null;
@@ -296,6 +352,10 @@ final class OptionSettingsRepository
             ksort($clean, SORT_NUMERIC);
             update_option(self::OPTION_SIZE_QUALITY_TIERS, $clean);
         }
+
+        // Bust the in-request memo so a read in the same request
+        // returns the freshly persisted values, not the pre-save cache.
+        $this->refresh();
     }
 
     /**
@@ -310,6 +370,7 @@ final class OptionSettingsRepository
     {
         update_option(self::OPTION_KEY, $keyHex);
         update_option(self::OPTION_SALT, $saltHex);
+        $this->refresh();
     }
 
     /**
@@ -350,7 +411,7 @@ final class OptionSettingsRepository
 
     private function loadAllowedSources(): array
     {
-        $sources = get_option(self::OPTION_ALLOWED_SOURCES, []);
+        $sources = $this->memo(self::OPTION_ALLOWED_SOURCES, []);
         if (!is_array($sources)) {
             return [];
         }
@@ -365,7 +426,7 @@ final class OptionSettingsRepository
      */
     private function loadDprVariants(): array
     {
-        $variants = get_option(self::OPTION_DPR_VARIANTS, []);
+        $variants = $this->memo(self::OPTION_DPR_VARIANTS, []);
         if (!is_array($variants)) {
             return [];
         }
@@ -388,7 +449,7 @@ final class OptionSettingsRepository
      */
     private function loadFormatQuality(): array
     {
-        $stored = get_option(self::OPTION_FORMAT_QUALITY, []);
+        $stored = $this->memo(self::OPTION_FORMAT_QUALITY, []);
         if (!is_array($stored)) {
             return [];
         }
@@ -414,7 +475,7 @@ final class OptionSettingsRepository
      */
     private function loadSizeQualityTiers(): array
     {
-        $stored = get_option(self::OPTION_SIZE_QUALITY_TIERS, []);
+        $stored = $this->memo(self::OPTION_SIZE_QUALITY_TIERS, []);
         if (!is_array($stored)) {
             return [];
         }
@@ -447,7 +508,7 @@ final class OptionSettingsRepository
      */
     private function loadWatermark(): ?Watermark
     {
-        $stored = get_option(self::OPTION_WATERMARK, null);
+        $stored = $this->memo(self::OPTION_WATERMARK, null);
         if (!is_array($stored) || empty($stored['enabled'])) {
             return null;
         }
@@ -493,7 +554,7 @@ final class OptionSettingsRepository
      */
     public function loadRewriteCapabilityOrNull(): ?string
     {
-        $value = get_option(self::OPTION_REWRITE_CAPABILITY, null);
+        $value = $this->memo(self::OPTION_REWRITE_CAPABILITY, null);
         if ($value === null) {
             return null;
         }
@@ -510,6 +571,7 @@ final class OptionSettingsRepository
     {
         update_option(self::OPTION_REWRITE_CAPABILITY, $state);
         update_option(self::OPTION_REWRITE_CAPABILITY_CHECKED_AT, time());
+        $this->refresh();
     }
 
     /**
@@ -517,7 +579,7 @@ final class OptionSettingsRepository
      */
     public function loadRewriteCapabilityCheckedAt(): int
     {
-        return (int) get_option(self::OPTION_REWRITE_CAPABILITY_CHECKED_AT, 0);
+        return (int) $this->memo(self::OPTION_REWRITE_CAPABILITY_CHECKED_AT, 0);
     }
 
     /**
@@ -528,6 +590,7 @@ final class OptionSettingsRepository
     {
         delete_option(self::OPTION_REWRITE_CAPABILITY);
         delete_option(self::OPTION_REWRITE_CAPABILITY_CHECKED_AT);
+        $this->refresh();
     }
 
     /**
@@ -536,7 +599,7 @@ final class OptionSettingsRepository
      */
     public function loadProbeVersion(): string
     {
-        return (string) get_option(self::OPTION_PROBE_VERSION, '');
+        return (string) $this->memo(self::OPTION_PROBE_VERSION, '');
     }
 
     /**
@@ -545,6 +608,7 @@ final class OptionSettingsRepository
     public function saveProbeVersion(string $version): void
     {
         update_option(self::OPTION_PROBE_VERSION, $version);
+        $this->refresh();
     }
 
     /**
@@ -573,6 +637,7 @@ final class OptionSettingsRepository
         $dismissed = $this->loadDismissedNotices();
         $dismissed[$noticeKey] = $capability;
         update_option(self::OPTION_ADMIN_NOTICE_DISMISSED, $dismissed);
+        $this->refresh();
     }
 
     /**
@@ -582,7 +647,7 @@ final class OptionSettingsRepository
      */
     public function loadDismissedNotices(): array
     {
-        $value = get_option(self::OPTION_ADMIN_NOTICE_DISMISSED, []);
+        $value = $this->memo(self::OPTION_ADMIN_NOTICE_DISMISSED, []);
         if (!is_array($value)) {
             return [];
         }

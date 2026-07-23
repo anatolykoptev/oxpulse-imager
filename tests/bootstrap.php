@@ -136,11 +136,19 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('add_option')) {
         function add_option($option, $value = '', $deprecated = '', $autoload = true) {
             $GLOBALS['__oxpulse_options'][$option] = $value;
+            // #91: record the autoload arg so the activation-hook
+            // test can verify hot defaults are stored autoload=yes.
+            $GLOBALS['__oxpulse_autoload'][$option] = (bool) $autoload;
             return true;
         }
     }
     if (!function_exists('get_option')) {
         function get_option($option, $default = false) {
+            // #91: count get_option invocations so the memoization
+            // tests can assert the in-request cache bounds repeated
+            // reads. Tests reset this counter via
+            // $GLOBALS['__oxpulse_get_option_calls'] = 0.
+            $GLOBALS['__oxpulse_get_option_calls'] = ($GLOBALS['__oxpulse_get_option_calls'] ?? 0) + 1;
             return array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? [])
                 ? $GLOBALS['__oxpulse_options'][$option]
                 : $default;
@@ -155,6 +163,18 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('delete_option')) {
         function delete_option($option) {
             unset($GLOBALS['__oxpulse_options'][$option]);
+            return true;
+        }
+    }
+    // #91: wp_set_options_autoload stub (WP 6.4+). Records the
+    // autoload flag flip per option so the migration test can verify
+    // the hot options were promoted to autoload=yes. Does not touch
+    // the stored values — mirrors the real WP behavior.
+    if (!function_exists('wp_set_options_autoload')) {
+        function wp_set_options_autoload($options, $autoload) {
+            foreach ((array) $options as $option) {
+                $GLOBALS['__oxpulse_autoload'][$option] = (bool) $autoload;
+            }
             return true;
         }
     }

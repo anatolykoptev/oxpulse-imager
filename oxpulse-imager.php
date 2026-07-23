@@ -109,9 +109,23 @@ function oxpulse_imager_activate(): void {
         OXPULSE_IMAGER_OPTION_PREFIX . 'onboarded' => false,
     ];
 
+    // #91: hot render-path options (read on every page load via
+    // OptionSettingsRepository::loadDeliveryConfig / the diagnostic
+    // logger) are stored autoload=yes so they are served by
+    // wp_load_alloptions()'s single bootstrap query instead of N
+    // separate SELECTs on sites without a persistent object cache.
+    // Write-only / admin-only / uninstall-only options stay
+    // autoload=no to keep the autoload set lean.
+    $autoloadKeys = [
+        OXPULSE_IMAGER_OPTION_PREFIX . 'enabled',
+        OXPULSE_IMAGER_OPTION_PREFIX . 'endpoint',
+        OXPULSE_IMAGER_OPTION_PREFIX . 'allowed_sources',
+        OXPULSE_IMAGER_OPTION_PREFIX . 'diagnostic_level',
+    ];
+
     foreach ($defaults as $key => $value) {
         if (get_option($key, null) === null) {
-            add_option($key, $value, '', false);
+            add_option($key, $value, '', in_array($key, $autoloadKeys, true));
         }
     }
 
