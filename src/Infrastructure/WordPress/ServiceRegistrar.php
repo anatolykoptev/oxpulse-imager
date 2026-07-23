@@ -542,6 +542,17 @@ final class ServiceRegistrar
             return;
         }
 
+        // #87: LocalBackend is not supported on WordPress Multisite — one
+        // shared oxpulse-img.php baked with a single blog's per-site values
+        // breaks every other blog. Clear any stale endpoint + cache
+        // .htaccess left from a pre-multisite conversion, then return
+        // without generating. This also makes the settings-save re-install
+        // hook (registerLocalDeliverySettingsSync) a no-op on multisite.
+        if (function_exists('is_multisite') && is_multisite()) {
+            $installer->uninstall();
+            return;
+        }
+
         $repository = new OptionSettingsRepository();
         $delivery = $repository->loadDeliveryConfig();
         $delivery = $delivery->withEndpoint(

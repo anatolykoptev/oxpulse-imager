@@ -316,6 +316,14 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return !empty($GLOBALS['__oxpulse_is_admin']);
         }
     }
+    // #87: multisite stub. Tests flip $GLOBALS['__oxpulse_is_multisite']
+    // to exercise the LocalBackend multisite gate (single-site = false,
+    // the production default for a non-multisite install).
+    if (!function_exists('is_multisite')) {
+        function is_multisite() {
+            return !empty($GLOBALS['__oxpulse_is_multisite']);
+        }
+    }
     // #43 Phase 3: guard-battery stubs. Each reads a $GLOBALS toggle
     // so tests can flip them on/off to exercise every skip branch of
     // BufferRewriter::register()/rewrite(). Defaults match production

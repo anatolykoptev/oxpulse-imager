@@ -146,10 +146,13 @@ msgstr ""
 msgid "Another image-optimization plugin is active (%s). Running two delivery layers can double-rewrite images — pick one to avoid conflicts."
 msgstr ""
 
-msgid "OXPulse Imager is serving optimized images via a PHP fallback. For best performance, add this nginx rule to your server block and reload nginx:"
+msgid "OXPulse Imager: LocalBackend delivery is not supported on WordPress Multisite. Configure an imgproxy endpoint to enable optimized delivery."
 msgstr ""
 
 msgid "OXPulse Imager"
+msgstr ""
+
+msgid "OXPulse Imager is serving optimized images via a PHP fallback. For best performance, add this nginx rule to your server block and reload nginx:"
 msgstr ""
 
 msgid "Testing…"
