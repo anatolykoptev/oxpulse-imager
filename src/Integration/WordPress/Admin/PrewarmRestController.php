@@ -15,13 +15,12 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Admin;
 
-use OXPulse\Imager\Application\Delivery\UrlRewriter;
+use OXPulse\Imager\Application\Delivery\UrlRewriterFactory;
 use OXPulse\Imager\Application\Prewarm\AsyncPrewarmService;
 use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Prewarm\PrewarmRequest;
-use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressPrewarmClient;
 use OXPulse\Imager\Infrastructure\Imgproxy\HmacSigner;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyPathBuilder;
@@ -182,13 +181,15 @@ final class PrewarmRestController
             );
         }
 
-        $policy = new SourcePolicy();
-        // Resolve relative endpoint to absolute so prewarm HEAD requests
-        // hit the real URL (same fix as frontend delivery adapters).
+        // #82: route through the health-gated factory so a cached-Down
+        // imgproxy falls through to LocalBackend / passthrough — same
+        // health-gate the front-end render path applies. Resolve the
+        // relative endpoint to absolute so prewarm HEAD requests hit
+        // the real URL (same fix as frontend delivery adapters).
         $delivery = $delivery->withEndpoint(
             OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
         );
-        $rewriter = new UrlRewriter($policy, $delivery, $signing);
+        $rewriter = UrlRewriterFactory::fromConfig($delivery, $signing);
         $httpClient = new WordPressPrewarmClient();
         $service = new PrewarmService($rewriter, $httpClient);
 

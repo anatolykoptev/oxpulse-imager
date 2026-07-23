@@ -16,16 +16,15 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\WordPress;
 
-use OXPulse\Imager\Application\Delivery\DeliveryBackendFactory;
 use OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder;
 use OXPulse\Imager\Application\Delivery\PictureElementWrapper;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
+use OXPulse\Imager\Application\Delivery\UrlRewriterFactory;
 use OXPulse\Imager\Application\Diagnostics\DiagnosticLoggerInterface;
 use OXPulse\Imager\Application\Health\HealthCheckService;
 use OXPulse\Imager\Application\Prewarm\AsyncPrewarmService;
 use OXPulse\Imager\Application\Prewarm\PrewarmJobStore;
 use OXPulse\Imager\Application\Prewarm\PrewarmService;
-use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackendProvider;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
@@ -176,8 +175,7 @@ final class ServiceRegistrar
         // actually exercises it (previously the backend was left null
         // and UrlRewriter always lazily constructed an ImgproxyBackend,
         // so LocalBackend was never reached at runtime).
-        $backend = DeliveryBackendFactory::select($delivery, $signing);
-        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, $logger, $backend);
+        $rewriter = UrlRewriterFactory::fromConfig($delivery, $signing, $logger);
 
         // Expose the rewriter for the public oxpulse_thumb_url() helper.
         // Sibling mu-plugins (e.g. piter-api) call oxpulse_thumb_url()
@@ -408,8 +406,7 @@ final class ServiceRegistrar
         // delivery path). Prewarming is only meaningful for ImgproxyBackend
         // (LocalBackend fills its cache on first miss, no daemon to warm),
         // but the factory keeps the selection logic in one place.
-        $backend = DeliveryBackendFactory::select($delivery, $signing);
-        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, null, $backend);
+        $rewriter = UrlRewriterFactory::fromConfig($delivery, $signing);
         $syncService = new PrewarmService($rewriter, new \OXPulse\Imager\Infrastructure\Http\WordPressPrewarmClient());
         $asyncService = new AsyncPrewarmService($syncService, new PrewarmJobStore());
         $asyncService->registerCronHandler();

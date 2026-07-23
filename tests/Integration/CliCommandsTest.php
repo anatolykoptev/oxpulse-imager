@@ -16,6 +16,9 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Tests\Integration;
 
+use OXPulse\Imager\Application\Delivery\UrlRewriter;
+use OXPulse\Imager\Domain\Source\SourcePolicy;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use OXPulse\Imager\Integration\WordPress\Cli\StatusCommand;
 use OXPulse\Imager\Integration\WordPress\Cli\InfoCommand;
@@ -248,5 +251,89 @@ class CliCommandsTest extends TestCase
         // \WP_CLI is not available (the test env).
         \OXPulse\Imager\Integration\WordPress\Cli\CliServiceProvider::register();
         $this->assertTrue(true); // No exception thrown = pass.
+    }
+
+    // ─── #82: health-gated CLI URL producers ──────────────────────
+
+    public function test_info_command_does_not_emit_imgproxy_url_when_health_down(): void
+    {
+        $this->setupFullConfig();
+        (new ImgproxyHealthCache())->write('down');
+
+        $command = new InfoCommand();
+
+        ob_start();
+        $command->info(
+            ['https://example.com/uploads/photo.jpg'],
+            ['width' => 800]
+        );
+        $output = ob_get_clean();
+
+        // With health Down, the rewriter must NOT produce an imgproxy
+        // URL — it falls through to LocalBackend (rewritten to a local
+        // cache URL) or passthrough (preserved). Either way, no
+        // imgproxy endpoint URL appears. The "Endpoint:" label is NOT
+        // logged by InfoCommand, so the trailing-slash check is clean.
+        $this->assertStringNotContainsString(
+            'https://imgproxy.example.com/',
+            $output,
+            'cached-Down imgproxy: info command must NOT emit an imgproxy URL'
+        );
+    }
+
+    public function test_warm_command_does_not_warm_imgproxy_when_health_down(): void
+    {
+        // Fixed signing keys so the imgproxy URL the BUG would produce
+        // is deterministic — we register a stub HTTP 200 for it. With
+        // the fix (health-gated), a DIFFERENT url is produced and the
+        // stub is never hit → Warmed: 0. With the bug (lazy
+        // ImgproxyBackend, no health gate), the stub IS hit → Warmed: 1.
+        $GLOBALS['__oxpulse_options']['oxpulse_imager_enabled'] = true;
+        $GLOBALS['__oxpulse_options']['oxpulse_imager_endpoint'] = 'https://imgproxy.example.com';
+        $GLOBALS['__oxpulse_options']['oxpulse_imager_allowed_sources'] = ['https://example.com/uploads/'];
+        $GLOBALS['__oxpulse_options']['oxpulse_imager_key'] = '736563726574';
+        $GLOBALS['__oxpulse_options']['oxpulse_imager_salt'] = '68656C6C6F';
+
+        // Compute the imgproxy URL the bug-path rewriter would produce.
+        $repo = new OptionSettingsRepository();
+        $delivery = $repo->loadDeliveryConfig();
+        $signing = $repo->loadSigningConfig();
+        $bugRewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
+        $bugResult = $bugRewriter->rewrite(
+            'https://example.com/uploads/photo.jpg',
+            0,
+            0,
+            'prewarm'
+        );
+        $this->assertTrue($bugResult->rewritten, 'precondition: bug-path rewriter produces an imgproxy URL');
+        $imgproxyUrl = $bugResult->url;
+
+        // Register a stub HTTP 200 for that exact imgproxy URL.
+        $GLOBALS['__oxpulse_http_responses'][$imgproxyUrl] = [
+            'response' => ['code' => 200],
+            'headers' => [],
+        ];
+
+        // Mark imgproxy health Down.
+        (new ImgproxyHealthCache())->write('down');
+
+        $command = new WarmCommand();
+
+        ob_start();
+        try {
+            $command->warm(['https://example.com/uploads/photo.jpg'], []);
+            $output = ob_get_clean();
+        } catch (\Throwable $e) {
+            $output = ob_get_clean();
+        }
+
+        // With the fix: no imgproxy URL is warmed (Warmed: 0).
+        // With the bug: the imgproxy URL hits the stub 200 → Warmed: 1.
+        $this->assertStringContainsString(
+            'Warmed: 0',
+            $output,
+            'cached-Down imgproxy: warm command must NOT warm an imgproxy URL'
+        );
+        $this->assertStringNotContainsString('Warmed: 1', $output);
     }
 }
