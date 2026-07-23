@@ -159,7 +159,10 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
         }
     }
     if (!function_exists('delete_transient')) {
-        function delete_transient($transient) { return true; }
+        function delete_transient($transient) {
+            unset($GLOBALS['__oxpulse_transients'][$transient]);
+            return true;
+        }
     }
     if (!function_exists('get_transient')) {
         function get_transient($transient) {

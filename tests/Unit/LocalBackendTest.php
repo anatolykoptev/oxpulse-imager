@@ -545,4 +545,9 @@ class NullHttpRequesterForFallback implements HttpRequester
     {
         return ['status' => 0, 'body' => '', 'error' => 'null'];
     }
+
+    public function head(string $url): array
+    {
+        return ['status' => 0, 'body' => '', 'error' => 'null'];
+    }
 }

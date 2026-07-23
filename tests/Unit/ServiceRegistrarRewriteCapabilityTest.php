@@ -400,4 +400,9 @@ class SyncNullHttpRequester implements \OXPulse\Imager\Infrastructure\Local\Http
     {
         return ['status' => 0, 'body' => '', 'error' => 'null'];
     }
+
+    public function head(string $url): array
+    {
+        return ['status' => 0, 'body' => '', 'error' => 'null'];
+    }
 }
