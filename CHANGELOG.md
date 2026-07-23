@@ -59,6 +59,18 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.4](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.3...v0.1.4) (2026-07-23)
+
+
+### Added
+
+* &lt;picture&gt; wrapping in BufferRewriter for theme-hardcoded &lt;img&gt; (default-off, Phase 1b, closes [#70](https://github.com/anatolykoptev/oxpulse-imager/issues/70)) ([#75](https://github.com/anatolykoptev/oxpulse-imager/issues/75)) ([44a2cf3](https://github.com/anatolykoptev/oxpulse-imager/commit/44a2cf3756061ebc28df549bd6a016395bcf5274))
+
+
+### Fixed
+
+* proxy-loop detection matches host+path so same-host imgproxy delivery works ([#78](https://github.com/anatolykoptev/oxpulse-imager/issues/78)) ([e3f3300](https://github.com/anatolykoptev/oxpulse-imager/commit/e3f330056197c9df64f22992e0cdcc254f0b6634))
+
 ## [0.1.3](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.2...v0.1.3) (2026-07-22)
 
 
