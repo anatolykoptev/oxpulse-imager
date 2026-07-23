@@ -59,6 +59,13 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.3](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.2...v0.1.3) (2026-07-22)
+
+
+### Added
+
+* deliver AVIF via &lt;picture&gt; element on the content path (default-off) ([#68](https://github.com/anatolykoptev/oxpulse-imager/issues/68)) ([4d214b9](https://github.com/anatolykoptev/oxpulse-imager/commit/4d214b9825147d63268356574b2533a20bae1dac))
+
 ## [0.1.2](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.1...v0.1.2) (2026-07-22)
 
 
