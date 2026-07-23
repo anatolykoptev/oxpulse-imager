@@ -29,6 +29,13 @@ namespace OXPulse\Imager\Application\Delivery;
 enum BackendHealth: string
 {
     case Healthy = 'healthy';
+    /**
+     * Reserved for third-party providers registered via
+     * `oxpulse_delivery_backends` (e.g. a slow-but-up backend). No
+     * core provider emits Degraded. selectable() treats it as
+     * selectable — the next-best provider is NOT preferred over a
+     * Degraded one.
+     */
     case Degraded = 'degraded';
     case Down = 'down';
 

@@ -64,7 +64,7 @@ final class DeliveryBackendRegistry
      */
     public static function default(DeliveryConfig $config, ?SigningConfig $signing): self
     {
-        $providers = [
+        $core = [
             new ImgproxyBackendProvider(new WpRemoteHttpRequester(), new ImgproxyHealthCache()),
             new LocalBackendProvider(new ImageTransformer()),
             new PassthroughBackendProvider(),
@@ -81,7 +81,16 @@ final class DeliveryBackendRegistry
          * @param DeliveryConfig $config
          * @param SigningConfig|null $signing
          */
-        $providers = apply_filters('oxpulse_delivery_backends', $providers, $config, $signing);
+        $providers = apply_filters('oxpulse_delivery_backends', $core, $config, $signing);
+
+        // A misbehaving filter that returns a non-array (null / scalar /
+        // false) would otherwise trip a PHP 8 foreach-warning and drop
+        // ALL providers including the passthrough floor. Fall back to
+        // the unfiltered core providers. An empty array is a valid
+        // "remove everything" intent and is left through.
+        if (!is_array($providers)) {
+            $providers = $core;
+        }
 
         // Re-index + filter to only DeliveryBackendProvider instances
         // (a misbehaving filter callback must not corrupt the list).

@@ -246,6 +246,41 @@ class DeliveryBackendRegistryTest extends TestCase
         $this->assertSame(['imgproxy', 'local', 'passthrough'], $ids);
     }
 
+    /**
+     * A misbehaving oxpulse_delivery_backends filter that returns a
+     * NON-array (null / scalar / false) must NOT drop the core
+     * providers — the registry falls back to the 3 core providers
+     * instead of emitting a PHP 8 foreach-warning and yielding 0.
+     *
+     * @dataProvider nonArrayFilterReturns
+     */
+    public function test_default_registry_falls_back_to_core_when_filter_returns_non_array($badReturn): void
+    {
+        add_filter('oxpulse_delivery_backends', static function () use ($badReturn) {
+            return $badReturn;
+        }, 10, 1);
+
+        $registry = DeliveryBackendRegistry::default($this->delivery(), $this->signing());
+        $reflection = new \ReflectionProperty(DeliveryBackendRegistry::class, 'providers');
+        $providers = $reflection->getValue($registry);
+
+        $ids = array_map(fn($p) => $p->id(), $providers);
+        $this->assertSame(['imgproxy', 'local', 'passthrough'], $ids, 'non-array filter return must fall back to the 3 core providers');
+
+        // Floor + core intact: imgproxy is endpoint-set + healthy → selected.
+        $backend = $registry->select($this->delivery(), $this->signing());
+        $this->assertInstanceOf(ImgproxyBackend::class, $backend);
+    }
+
+    public static function nonArrayFilterReturns(): array
+    {
+        return [
+            'null'   => [null],
+            'scalar' => ['not-an-array'],
+            'false'  => [false],
+        ];
+    }
+
     // ─── integration: default registry parity with the old factory ───
 
     public function test_default_registry_selects_imgproxy_when_endpoint_set_and_healthy(): void

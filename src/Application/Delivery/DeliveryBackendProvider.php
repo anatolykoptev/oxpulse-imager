@@ -12,9 +12,11 @@
  * Zero edits to DeliveryBackendRegistry or DeliveryBackendFactory.
  *
  * Contract notes:
- * - `health()` MUST be front-end-safe: read a cache only, ZERO network
- *   I/O. The live probe that writes the cache runs at write-time via
- *   `recheck()` (where applicable), never on the render path.
+ * - `health()` MUST be front-end-safe: no network I/O — a cache read
+ *   or a memoized local probe only (never a blocking/network call on
+ *   the render path). The live probe that writes the cache runs at
+ *   write-time via `recheck()` (where applicable), never on the
+ *   render path.
  * - `build()` may return null to signal "preserve the original URL"
  *   (the passthrough floor).
  *
@@ -54,9 +56,11 @@ interface DeliveryBackendProvider
     public function isApplicable(DeliveryConfig $config, ?SigningConfig $signing): bool;
 
     /**
-     * Cached, front-end-safe health state. ZERO network I/O — reads
-     * a cache only. The live probe (where applicable) runs at
-     * write-time via recheck(), never here.
+     * Front-end-safe health state. MUST NOT perform network I/O —
+     * a cache read or a memoized local probe only (never a
+     * blocking/network call on the render path). The live probe
+     * (where applicable) runs at write-time via recheck(), never
+     * here.
      */
     public function health(DeliveryConfig $config): BackendHealth;
 
