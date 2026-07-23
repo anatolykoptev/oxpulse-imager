@@ -185,6 +185,49 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return true;
         }
     }
+    // #81: recurring WP-cron API stubs for the imgproxy health
+    // recheck cron (and any future recurring event). Mirror the
+    // real WP API: wp_schedule_event stores a recurring entry,
+    // wp_next_scheduled returns the next timestamp or false,
+    // wp_clear_scheduled_hook removes all entries for a hook.
+    if (!function_exists('wp_schedule_event')) {
+        function wp_schedule_event($timestamp, $recurrence, $hook, $args = [], $wp_error = false) {
+            $GLOBALS['__oxpulse_scheduled_events'][] = [
+                'timestamp'  => $timestamp,
+                'recurrence' => $recurrence,
+                'hook'       => $hook,
+                'args'       => $args,
+            ];
+            return true;
+        }
+    }
+    if (!function_exists('wp_next_scheduled')) {
+        function wp_next_scheduled($hook, $args = []) {
+            $events = $GLOBALS['__oxpulse_scheduled_events'] ?? [];
+            foreach ($events as $event) {
+                if ($event['hook'] === $hook) {
+                    return $event['timestamp'];
+                }
+            }
+            return false;
+        }
+    }
+    if (!function_exists('wp_clear_scheduled_hook')) {
+        function wp_clear_scheduled_hook($hook, $args = []) {
+            $events = $GLOBALS['__oxpulse_scheduled_events'] ?? [];
+            $remaining = [];
+            $count = 0;
+            foreach ($events as $event) {
+                if ($event['hook'] === $hook) {
+                    $count++;
+                    continue;
+                }
+                $remaining[] = $event;
+            }
+            $GLOBALS['__oxpulse_scheduled_events'] = $remaining;
+            return $count;
+        }
+    }
     if (!function_exists('wp_cache_flush_group')) {
         function wp_cache_flush_group($group) { return true; }
     }

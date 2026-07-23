@@ -138,6 +138,18 @@ function oxpulse_imager_activate(): void {
         // in the activation context — never on the front-end read path.
         \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::recheckImgproxyHealth();
     }
+
+    // #81: schedule the recurring imgproxy health re-probe cron so a
+    // recovered imgproxy is re-promoted (down→up) and a newly-dead one
+    // is detected (up→down) without waiting for a settings-save. The
+    // persistent option (ImgproxyHealthCache) guarantees safety; the
+    // cron only bounds recovery/re-detection latency. WP-cron is
+    // traffic-triggered, so this is best-effort timing.
+    if (function_exists('wp_next_scheduled') && function_exists('wp_schedule_event')) {
+        if (!wp_next_scheduled('oxpulse_imgproxy_health_recheck')) {
+            wp_schedule_event(time(), 'hourly', 'oxpulse_imgproxy_health_recheck');
+        }
+    }
 }
 
 /**
@@ -155,6 +167,14 @@ function oxpulse_imager_deactivate(): void {
     // generated). Settings are preserved (not deleted).
     if (class_exists(\OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::class)) {
         \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::uninstallLocalDelivery();
+    }
+
+    // #81: clear the recurring imgproxy health re-probe cron so it
+    // does not fire while the plugin is inactive. The persistent
+    // health option is PRESERVED (not deleted) — a re-activation
+    // picks up where it left off.
+    if (function_exists('wp_clear_scheduled_hook')) {
+        wp_clear_scheduled_hook('oxpulse_imgproxy_health_recheck');
     }
 }
 
