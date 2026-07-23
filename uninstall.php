@@ -47,4 +47,13 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
     });
 }
 
-\OXPulse\Imager\Infrastructure\WordPress\Uninstaller::run();
+// Best-effort teardown: if a src/ class is missing from the release
+// ZIP, the autoloader fatals mid-cleanup. An uninstall must NEVER
+// fatal — swallow Throwable so partial teardown completes without a
+// white screen.
+try {
+    \OXPulse\Imager\Infrastructure\WordPress\Uninstaller::run();
+} catch (\Throwable $e) {
+    // Silent — best-effort. No error_log available reliably in all
+    // uninstall contexts.
+}

@@ -144,24 +144,29 @@ final class Uninstaller
      * deletion (gated by the oxpulse_imager_remove_on_uninstall opt-in
      * toggle, default false = preserve for reinstall).
      *
-     * The toggle is read ONCE at the start, BEFORE any deletion — so
-     * the false-path preserves the toggle option itself along with all
-     * other config (key/salt/settings). WordPress convention for a paid
-     * plugin: destroy persistent user data ONLY on explicit opt-in;
-     * otherwise preserve it so a reinstall restores the user's setup.
+     * The toggle is read ONCE at the start of run() for the SINGLE-SITE
+     * branch and for the NETWORK-SCOPED option deletion. On multisite,
+     * the per-site persistent-config deletion reads the toggle PER-SITE
+     * (inside the switch_to_blog loop) — the main site's toggle must
+     * NOT govern every sub-site's config deletion (cross-tenant data
+     * loss). Network options are deleted once here, gated on the
+     * run()-level (main-site / network-admin) toggle.
      *
-     * On multisite, the per-site split is applied for every blog; the
-     * cache dir and endpoint file are shared (network-wide) and cleaned
-     * once.
+     * WordPress convention for a paid plugin: destroy persistent user
+     * data ONLY on explicit opt-in; otherwise preserve it so a
+     * reinstall restores the user's setup.
      */
     public static function run(): void
     {
         // Read the opt-in ONCE, before any deletion. Default false =
         // preserve persistent config (key/salt/settings) for reinstall.
+        // On multisite this is the MAIN-SITE (network-admin) toggle —
+        // used for the single-site branch + network-option deletion.
+        // Per-site option deletion reads the toggle inside the loop.
         $remove = (bool) get_option('oxpulse_imager_remove_on_uninstall', false);
 
         if (function_exists('is_multisite') && is_multisite()) {
-            self::cleanMultisite($remove);
+            self::cleanMultisite();
         } else {
             // Ephemeral — always.
             self::deleteTransients();
@@ -170,6 +175,14 @@ final class Uninstaller
             if ($remove) {
                 self::deleteOptions();
             }
+        }
+
+        // Network-scoped options — deleted once, gated on the
+        // run()-level (main-site / network-admin) toggle. Hoisted out
+        // of per-site deleteOptions() so it runs exactly once, not N
+        // times per blog.
+        if ($remove) {
+            self::deleteNetworkOptions();
         }
 
         // Shared resources — cleaned once regardless of multisite.
@@ -188,6 +201,9 @@ final class Uninstaller
      *
      * Does NOT delete transients — those are ephemeral and always
      * cleaned via deleteTransients() regardless of the toggle.
+     *
+     * Does NOT delete network-scoped options — those are hoisted to
+     * deleteNetworkOptions() and called once from run().
      */
     private static function deleteOptions(): void
     {
@@ -198,17 +214,27 @@ final class Uninstaller
             delete_option($option);
         }
 
-        // Network options (multisite) — no known network options exist
-        // today, but delete via delete_site_option for future-proofing.
-        if (function_exists('delete_site_option')) {
-            foreach (self::STANDALONE_OPTIONS as $option) {
-                delete_site_option($option);
-            }
-        }
-
         // Production safety-net: prefix-scan for any oxpulse_imager_
         // options we might have missed (future keys).
         self::prefixScanDelete('oxpulse_imager_');
+    }
+
+    /**
+     * Delete network-scoped options (multisite) — called ONCE from
+     * run(), gated on the run()-level (main-site / network-admin)
+     * toggle. Hoisted out of per-site deleteOptions() so it runs
+     * exactly once, not N times per blog.
+     */
+    private static function deleteNetworkOptions(): void
+    {
+        if (!function_exists('delete_site_option')) {
+            return;
+        }
+        // No known network options exist today, but delete via
+        // delete_site_option for future-proofing.
+        foreach (self::STANDALONE_OPTIONS as $option) {
+            delete_site_option($option);
+        }
     }
 
     /**
@@ -242,7 +268,7 @@ final class Uninstaller
         }
         foreach (self::TRANSIENT_PREFIXES as $prefix) {
             $like = $wpdb->esc_like('_transient_' . $prefix) . '%';
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery -- uninstall cleanup; must bypass object cache.
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- uninstall cleanup; must bypass object cache; caching a DELETE is meaningless (one-time teardown).
             $wpdb->query(
                 $wpdb->prepare(
                     "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
@@ -250,7 +276,7 @@ final class Uninstaller
                 )
             );
             $likeTimeout = $wpdb->esc_like('_transient_timeout_' . $prefix) . '%';
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery -- uninstall cleanup.
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- uninstall cleanup; one-time teardown, caching a DELETE is meaningless.
             $wpdb->query(
                 $wpdb->prepare(
                     "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
@@ -272,7 +298,7 @@ final class Uninstaller
             return;
         }
         $like = $wpdb->esc_like($prefix) . '%';
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery -- uninstall cleanup; must bypass object cache.
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- uninstall cleanup; must bypass object cache; one-time teardown, caching a DELETE is meaningless.
         $wpdb->query(
             $wpdb->prepare(
                 "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
@@ -297,8 +323,9 @@ final class Uninstaller
     /**
      * Recursively delete the on-disk cache directory
      * (WP_CONTENT_DIR/cache/oxpulse/), guarded by a realpath
-     * startsWith check so a misconfigured constant can never delete
-     * outside wp-content.
+     * startsWith check against WP_CONTENT_DIR/cache (defense-in-depth:
+     * the containment root is the cache parent, not all of wp-content,
+     * so a future bug resolving the target higher can't wipe wp-content).
      */
     private static function removeCache(): void
     {
@@ -306,7 +333,7 @@ final class Uninstaller
             return;
         }
         $cacheDir = WP_CONTENT_DIR . '/cache/oxpulse';
-        self::removeDirectory($cacheDir, WP_CONTENT_DIR);
+        self::removeDirectory($cacheDir, WP_CONTENT_DIR . '/cache');
     }
 
     /**
@@ -328,12 +355,13 @@ final class Uninstaller
      * containment check.
      *
      * The target must resolve (via realpath, which follows symlinks and
-     * collapses ..) to a path STRICTLY UNDER the root. A symlink that
-     * points outside the root, or a .. traversal, is refused — nothing
-     * is deleted. This is the path-safety guard mandated by #88.
+     * collapses ..) to a path STRICTLY UNDER the root — target === root
+     * is refused (would wipe the root wholesale). A symlink that points
+     * outside the root, or a .. traversal, is also refused — nothing is
+     * deleted. This is the path-safety guard mandated by #88.
      *
      * @param string $target The directory to delete.
-     * @param string $root   The root the target must be contained under.
+     * @param string $root   The root the target must be strictly under.
      */
     public static function removeDirectory(string $target, string $root): void
     {
@@ -346,9 +374,15 @@ final class Uninstaller
             return;
         }
 
-        // Strict containment: target must be UNDER root. The trailing
-        // separator prevents prefix collisions (e.g. /foo/bar matching
-        // /foo/bar-evil).
+        // Strict containment: target must be STRICTLY UNDER root, not
+        // equal. Rejecting target === root prevents removeDirectory(X, X)
+        // from wiping X wholesale.
+        if ($realTarget === $realRoot) {
+            return;
+        }
+
+        // The trailing separator prevents prefix collisions (e.g.
+        // /foo/bar matching /foo/bar-evil).
         $targetWithSep = $realTarget . DIRECTORY_SEPARATOR;
         $rootWithSep = $realRoot . DIRECTORY_SEPARATOR;
         if (!str_starts_with($targetWithSep, $rootWithSep)) {
@@ -365,13 +399,15 @@ final class Uninstaller
         );
         foreach ($iterator as $file) {
             if (is_link($file->getPathname())) {
-                @unlink($file->getPathname());
+                wp_delete_file($file->getPathname());
             } elseif ($file->isDir()) {
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- guarded recursive delete under a realpath-verified root; WP_Filesystem not guaranteed initialized in uninstall on all hosts.
                 @rmdir($file->getPathname());
             } else {
-                @unlink($file->getPathname());
+                wp_delete_file($file->getPathname());
             }
         }
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- guarded recursive delete under a realpath-verified root; WP_Filesystem not guaranteed initialized in uninstall on all hosts.
         @rmdir($realTarget);
     }
 
@@ -380,21 +416,27 @@ final class Uninstaller
      * ephemeral/persistent split per site, restore_current_blog.
      *
      * Per site: transients + cron are ALWAYS cleaned (ephemeral);
-     * persistent config options are deleted ONLY when the user opted
-     * in via remove_on_uninstall ($remove === true).
+     * persistent config options are deleted ONLY when THIS SITE's
+     * remove_on_uninstall toggle is true. The toggle is read PER-SITE
+     * inside the loop (after switch_to_blog) — NOT once from the main
+     * site — so the main site's opt-in does NOT govern every sub-site's
+     * config deletion (cross-tenant data loss).
      *
+     * Network-scoped options are deleted once in run() (not here).
      * The cache dir and endpoint file are shared (network-wide) and
      * cleaned once in run(), NOT per-site.
      *
-     * @param bool $remove Whether the user opted into persistent-data
-     *                     removal (read once in run() before deletion).
+     * The per-site loop body is wrapped in try/finally so a throw
+     * mid-iteration cannot leak the blog switch.
      */
-    private static function cleanMultisite(bool $remove): void
+    private static function cleanMultisite(): void
     {
         if (!function_exists('get_sites') || !function_exists('switch_to_blog')) {
             return;
         }
-        $sites = get_sites();
+        // number => 0 lifts the WP_Site_Query default 100-site cap so
+        // sites 101+ get cleanup too.
+        $sites = get_sites(['number' => 0]);
         if (!is_array($sites)) {
             return;
         }
@@ -406,15 +448,23 @@ final class Uninstaller
                 continue;
             }
             switch_to_blog((int) $blogId);
-            // Ephemeral — always.
-            self::deleteTransients();
-            self::clearCronEvents();
-            // Persistent config — only on opt-in.
-            if ($remove) {
-                self::deleteOptions();
-            }
-            if (function_exists('restore_current_blog')) {
-                restore_current_blog();
+            try {
+                // Ephemeral — always.
+                self::deleteTransients();
+                self::clearCronEvents();
+                // Persistent config — read THIS site's toggle AFTER
+                // switch_to_blog, gate THIS site's deletion on it.
+                $siteRemove = (bool) get_option(
+                    'oxpulse_imager_remove_on_uninstall',
+                    false
+                );
+                if ($siteRemove) {
+                    self::deleteOptions();
+                }
+            } finally {
+                if (function_exists('restore_current_blog')) {
+                    restore_current_blog();
+                }
             }
         }
     }

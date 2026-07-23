@@ -164,6 +164,12 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return true;
         }
     }
+    if (!function_exists('wp_delete_file')) {
+        function wp_delete_file($file) {
+            @unlink($file);
+            return true;
+        }
+    }
     if (!function_exists('get_transient')) {
         function get_transient($transient) {
             return $GLOBALS['__oxpulse_transients'][$transient] ?? false;
@@ -750,7 +756,7 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
         }
     }
     if (!function_exists('get_sites')) {
-        function get_sites() {
+        function get_sites($args = []) {
             return $GLOBALS['__oxpulse_sites'] ?? [];
         }
     }

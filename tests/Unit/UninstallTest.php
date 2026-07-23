@@ -466,6 +466,23 @@ class UninstallTest extends TestCase
         $this->rmrf($sibling);
     }
 
+    /**
+     * target === root must be refused — the containment guard must be
+     * STRICTLY under root, not equal. Otherwise removeDirectory(X, X)
+     * would wipe X wholesale (#88-followup LOW).
+     */
+    public function test_remove_directory_refuses_when_target_equals_root(): void
+    {
+        $root = $this->wpContentDir;
+        mkdir($root . '/sub', 0755, true);
+        file_put_contents($root . '/keep.txt', 'data');
+
+        Uninstaller::removeDirectory($root, $root);
+
+        $this->assertFileExists($root . '/keep.txt');
+        $this->assertDirectoryExists($root . '/sub');
+    }
+
     // ------------------------------------------------------------------
     // Multisite — per-site options + cron cleaned for every blog.
     // ------------------------------------------------------------------
@@ -501,6 +518,66 @@ class UninstallTest extends TestCase
         $this->assertArrayNotHasKey('oxpulse_imager_key', $GLOBALS['__oxpulse_blog_options'][1]);
         $this->assertArrayNotHasKey('oxpulse_imager_enabled', $GLOBALS['__oxpulse_blog_options'][2]);
         $this->assertArrayNotHasKey('oxpulse_imager_salt', $GLOBALS['__oxpulse_blog_options'][2]);
+    }
+
+    /**
+     * Divergent toggles: site A opts in (toggle=true), site B does NOT
+     * (toggle=false). The per-site toggle must be read INSIDE the loop
+     * (after switch_to_blog) — NOT once from the main site. Otherwise
+     * the main site's toggle governs every sub-site's config deletion
+     * → cross-tenant data loss (#88-followup HIGH).
+     *
+     * Site A: options deleted (toggle true). Site B: options PRESERVED
+     * including key/salt (toggle false). Both sites' ephemeral
+     * (cron/transients) cleaned regardless of toggle.
+     */
+    public function test_multisite_divergent_toggles_per_site_option_deletion(): void
+    {
+        $GLOBALS['__oxpulse_is_multisite'] = true;
+        $GLOBALS['__oxpulse_sites'] = [
+            (object) ['blog_id' => 1, 'domain' => 'site1.test'],
+            (object) ['blog_id' => 2, 'domain' => 'site2.test'],
+        ];
+
+        // Site A (blog 1): toggle=true → persistent options deleted.
+        // Site B (blog 2): toggle=false → persistent options PRESERVED.
+        $GLOBALS['__oxpulse_blog_options'] = [
+            1 => [
+                'oxpulse_imager_enabled' => true,
+                'oxpulse_imager_key' => 'site1-key',
+                'oxpulse_imager_salt' => 'site1-salt',
+                'oxpulse_imager_remove_on_uninstall' => true,
+            ],
+            2 => [
+                'oxpulse_imager_enabled' => true,
+                'oxpulse_imager_key' => 'site2-key',
+                'oxpulse_imager_salt' => 'site2-salt',
+                'oxpulse_imager_remove_on_uninstall' => false,
+            ],
+        ];
+        $GLOBALS['__oxpulse_options'] = $GLOBALS['__oxpulse_blog_options'][1];
+        $GLOBALS['__oxpulse_current_blog'] = 1;
+
+        // Ephemeral data on both sites — must be cleaned regardless.
+        $GLOBALS['__oxpulse_blog_options'][1]['_transient_oxpulse_prewarm_job_a1'] = 'pending';
+        $GLOBALS['__oxpulse_blog_options'][2]['_transient_oxpulse_prewarm_job_b1'] = 'pending';
+
+        Uninstaller::run();
+
+        // Site A: toggle true → persistent config deleted.
+        $this->assertArrayNotHasKey('oxpulse_imager_enabled', $GLOBALS['__oxpulse_blog_options'][1]);
+        $this->assertArrayNotHasKey('oxpulse_imager_key', $GLOBALS['__oxpulse_blog_options'][1]);
+        $this->assertArrayNotHasKey('oxpulse_imager_salt', $GLOBALS['__oxpulse_blog_options'][1]);
+
+        // Site B: toggle false → persistent config PRESERVED (key/salt survive).
+        $this->assertArrayHasKey('oxpulse_imager_enabled', $GLOBALS['__oxpulse_blog_options'][2]);
+        $this->assertArrayHasKey('oxpulse_imager_key', $GLOBALS['__oxpulse_blog_options'][2]);
+        $this->assertArrayHasKey('oxpulse_imager_salt', $GLOBALS['__oxpulse_blog_options'][2]);
+        $this->assertArrayHasKey('oxpulse_imager_remove_on_uninstall', $GLOBALS['__oxpulse_blog_options'][2]);
+
+        // Both sites: ephemeral (transients) cleaned regardless of toggle.
+        $this->assertArrayNotHasKey('_transient_oxpulse_prewarm_job_a1', $GLOBALS['__oxpulse_blog_options'][1]);
+        $this->assertArrayNotHasKey('_transient_oxpulse_prewarm_job_b1', $GLOBALS['__oxpulse_blog_options'][2]);
     }
 
     public function test_multisite_cleans_all_sites_cron(): void
