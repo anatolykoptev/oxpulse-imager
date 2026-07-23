@@ -49,29 +49,18 @@ jobs:
         env:
           WP_TESTS_DIR: ''
 
+      - name: Materialize the release tree for Plugin Check
+        run: |
+          rm -rf plugincheck-dist && mkdir -p plugincheck-dist
+          git archive --format=tar --prefix=oxpulse-imager/ HEAD | tar -x -C plugincheck-dist
+          # Fail loudly if any hidden file leaked into what we ship / validate.
+          leaked="$(find plugincheck-dist -name '.*' -not -name '.' -not -name '..')"
+          if [ -n "$leaked" ]; then echo "::error::hidden files in dist tree:"; echo "$leaked"; exit 1; fi
+
       - name: Run Plugin Check
         uses: wordpress/plugin-check-action@v1.1.7
         with:
-          build-dir: '.'
-          exclude-files: |
-            .gitignore
-            .gitattributes
-            .editorconfig
-            .release-please-manifest.json
-            release-please-config.json
-            phpunit.xml.dist
-            .phpunit.result.cache
-            ROADMAP.md
-            CHANGELOG.md
-            SECURITY.md
-            README.md
-          exclude-directories: |
-            node_modules
-            vendor
-            tests
-            build
-            .github
-            .git
+          build-dir: plugincheck-dist/oxpulse-imager
           # Legitimate false positives (reviewed):
           # - ExceptionNotEscaped : exception messages are not HTML output.
           # - parse_url_parse_url : Domain/Application layer (UrlRewriter,
