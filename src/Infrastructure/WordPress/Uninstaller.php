@@ -85,6 +85,9 @@ final class Uninstaller
         'oxpulse_imager_probe_version',
         // Admin-notice dismissed keys (#43 Phase 5).
         'oxpulse_imager_admin_notice_dismissed',
+        // #93: LocalBackend cache size cap (MB). Default-only + filter;
+        // no SPA field (a partial save would clobber).
+        'oxpulse_imager_cache_max_mb',
     ];
 
     /**
@@ -134,6 +137,8 @@ final class Uninstaller
         'oxpulse_imgproxy_health_recheck',
         // Async prewarm batch processing.
         'oxpulse_prewarm_process_batch',
+        // #93: recurring LocalBackend cache LRU eviction.
+        'oxpulse_cache_cleanup',
     ];
 
     /**
@@ -351,6 +356,49 @@ final class Uninstaller
     }
 
     /**
+     * Realpath containment guard: verify $target resolves (via realpath,
+     * which follows symlinks and collapses ..) to a path UNDER $root.
+     *
+     * Shared by removeDirectory() (recursive dir delete, #88) and
+     * CacheJanitor (per-file LRU eviction, #93) so both enforce the SAME
+     * path-safety invariant from one source. The trailing-separator
+     * startsWith check prevents prefix collisions (e.g. /foo/bar matching
+     * /foo/bar-evil). A symlink that points outside the root, or a ..
+     * traversal, resolves outside → refused.
+     *
+     * @param string $target       The path to check (file or directory).
+     * @param string $root         The root the target must be under.
+     * @param bool   $strictUnder  When true, target === root is refused
+     *                             (prevents removeDirectory(X, X) wiping X).
+     *                             When false, target === root is accepted
+     *                             (a file equal to the root dir cannot
+     *                             happen, so the strict check is only
+     *                             meaningful for directory targets).
+     * @return bool True when $target is within $root (and, when strict,
+     *              strictly under it); false when either path cannot be
+     *              resolved or the containment check fails.
+     */
+    public static function isWithinRoot(string $target, string $root, bool $strictUnder = false): bool
+    {
+        $realTarget = realpath($target);
+        if ($realTarget === false) {
+            return false;
+        }
+        $realRoot = realpath($root);
+        if ($realRoot === false) {
+            return false;
+        }
+        if ($strictUnder && $realTarget === $realRoot) {
+            return false;
+        }
+        // The trailing separator prevents prefix collisions (e.g.
+        // /foo/bar matching /foo/bar-evil).
+        $targetWithSep = $realTarget . DIRECTORY_SEPARATOR;
+        $rootWithSep = $realRoot . DIRECTORY_SEPARATOR;
+        return str_starts_with($targetWithSep, $rootWithSep);
+    }
+
+    /**
      * Recursively delete a directory, guarded by a realpath startsWith
      * containment check.
      *
@@ -365,31 +413,15 @@ final class Uninstaller
      */
     public static function removeDirectory(string $target, string $root): void
     {
-        $realTarget = realpath($target);
-        if ($realTarget === false) {
-            return;
-        }
-        $realRoot = realpath($root);
-        if ($realRoot === false) {
-            return;
-        }
-
         // Strict containment: target must be STRICTLY UNDER root, not
         // equal. Rejecting target === root prevents removeDirectory(X, X)
         // from wiping X wholesale.
-        if ($realTarget === $realRoot) {
+        if (!self::isWithinRoot($target, $root, true)) {
             return;
         }
 
-        // The trailing separator prevents prefix collisions (e.g.
-        // /foo/bar matching /foo/bar-evil).
-        $targetWithSep = $realTarget . DIRECTORY_SEPARATOR;
-        $rootWithSep = $realRoot . DIRECTORY_SEPARATOR;
-        if (!str_starts_with($targetWithSep, $rootWithSep)) {
-            return;
-        }
-
-        if (!is_dir($realTarget)) {
+        $realTarget = realpath($target);
+        if ($realTarget === false || !is_dir($realTarget)) {
             return;
         }
 
