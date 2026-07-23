@@ -249,7 +249,11 @@ final class ServiceRegistrar
         // the filters missed (imgproxy URLs don't contain /wp-content/, so
         // already-rewritten tags are not double-rewritten).
         if ($delivery->bufferRewritingEnabled) {
-            $bufferRewriter = new BufferRewriter($rewriter, $delivery);
+            // Phase 1b: pass the SAME $pictureWrapper instance constructed
+            // above for ContentImgTagRewriter so theme-hardcoded <img> tags
+            // caught by the buffer also get <picture> wrapping (default-off
+            // via pictureEnabled + the oxpulse_picture_enabled filter).
+            $bufferRewriter = new BufferRewriter($rewriter, $delivery, $pictureWrapper);
             $bufferRewriter->register();
         }
 
