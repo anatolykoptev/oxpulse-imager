@@ -14,11 +14,11 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Cli;
 
-use OXPulse\Imager\Application\Delivery\UrlRewriter;
+use OXPulse\Imager\Application\Delivery\UrlRewriterFactory;
 use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Domain\Prewarm\PrewarmRequest;
-use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressPrewarmClient;
+use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 
 final class WarmCommand extends AbstractCommand
 {
@@ -64,6 +64,14 @@ final class WarmCommand extends AbstractCommand
             $this->error(__('No signing secrets configured.', 'oxpulse-imager'));
         }
 
+        // #82: resolve relative endpoint to absolute + route through the
+        // health-gated factory so a cached-Down imgproxy falls through
+        // to LocalBackend / passthrough — Warm does not pre-warm a dead
+        // endpoint. Mirrors the front-end render path (ServiceRegistrar).
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
+
         $widths = $this->parseWidths($assoc_args['widths'] ?? '');
         $urls = $this->resolveUrls($args, $assoc_args);
 
@@ -99,7 +107,7 @@ final class WarmCommand extends AbstractCommand
                 ));
             }
 
-            $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
+            $rewriter = UrlRewriterFactory::fromConfig($delivery, $signing);
             $service = new PrewarmService($rewriter, new WordPressPrewarmClient());
             $result = $service->warm(new PrewarmRequest($batch, $widths));
 

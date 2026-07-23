@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Tests\Integration;
 
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use OXPulse\Imager\Integration\WordPress\Admin\PrewarmRestController;
 use PHPUnit\Framework\TestCase;
@@ -169,5 +170,37 @@ class PrewarmRestControllerTest extends TestCase
         $GLOBALS['__oxpulse_options']['oxpulse_imager_allowed_sources'] = ['https://example.com/uploads/'];
         $GLOBALS['__oxpulse_options']['oxpulse_imager_key'] = bin2hex(random_bytes(16));
         $GLOBALS['__oxpulse_options']['oxpulse_imager_salt'] = bin2hex(random_bytes(16));
+    }
+
+    // ─── #82: health-gated REST prewarm URL producer ──────────────
+
+    public function test_handle_prewarm_does_not_emit_imgproxy_urls_when_health_down(): void
+    {
+        $this->setupFullConfig();
+        (new ImgproxyHealthCache())->write('down');
+
+        $controller = new PrewarmRestController($this->repository);
+        $request = new WP_REST_Request([
+            'urls' => ['https://example.com/uploads/photo.jpg'],
+        ]);
+
+        $response = $controller->handlePrewarm($request);
+
+        // With health Down, the controller must NOT produce imgproxy
+        // warm URLs. The response is either a WP_REST_Response with all
+        // items skipped/failed-with-local-urls, or (if the host has no
+        // encoder) still a WP_REST_Response — but NEVER an item whose
+        // imgproxyUrl starts with the imgproxy endpoint.
+        $this->assertNotInstanceOf(WP_Error::class, $response, 'health-down prewarm must not 400');
+
+        $data = $response->get_data();
+        $this->assertSame(1, $data['total']);
+
+        foreach ($data['items'] as $item) {
+            $this->assertFalse(
+                is_string($item['imgproxyUrl']) && str_starts_with($item['imgproxyUrl'], 'https://imgproxy.example.com/'),
+                'cached-Down imgproxy: prewarm item must NOT have an imgproxy URL, got: ' . $item['imgproxyUrl']
+            );
+        }
     }
 }

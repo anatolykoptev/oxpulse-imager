@@ -15,6 +15,7 @@ namespace OXPulse\Imager\Tests\Integration;
 
 use OXPulse\Imager\Application\Health\HealthCheckService;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use OXPulse\Imager\Integration\WordPress\Admin\StatusRestController;
 use PHPUnit\Framework\TestCase;
@@ -160,5 +161,39 @@ class StatusRestControllerTest extends TestCase
         $response = $controller->handleInfo($request);
 
         $this->assertInstanceOf(\WP_Error::class, $response);
+    }
+
+    // ─── #82: health-gated REST info URL producer ─────────────────
+
+    public function test_handle_info_does_not_emit_imgproxy_url_when_health_down(): void
+    {
+        $this->setupFullConfig();
+        (new ImgproxyHealthCache())->write('down');
+
+        $controller = new StatusRestController($this->repository);
+        $request = new WP_REST_Request([
+            'url'   => 'https://example.com/uploads/photo.jpg',
+            'width' => 800,
+        ]);
+
+        $response = $controller->handleInfo($request);
+
+        $this->assertInstanceOf(\WP_REST_Response::class, $response);
+        $data = $response->get_data();
+
+        // With health Down, the rewriter must NOT produce an imgproxy
+        // URL. Either preserved (rewritten=false, imgproxyUrl=null) or
+        // rewritten to a local cache URL — but NEVER an imgproxy URL.
+        if ($data['rewritten']) {
+            $this->assertStringNotContainsString(
+                'https://imgproxy.example.com/',
+                $data['imgproxyUrl'],
+                'cached-Down imgproxy: REST info must NOT return an imgproxy URL'
+            );
+        }
+        $this->assertFalse(
+            is_string($data['imgproxyUrl']) && str_starts_with($data['imgproxyUrl'], 'https://imgproxy.example.com/'),
+            'cached-Down imgproxy: imgproxyUrl must not be an imgproxy URL'
+        );
     }
 }

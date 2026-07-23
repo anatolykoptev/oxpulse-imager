@@ -16,9 +16,8 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Admin;
 
-use OXPulse\Imager\Application\Delivery\UrlRewriter;
+use OXPulse\Imager\Application\Delivery\UrlRewriterFactory;
 use OXPulse\Imager\Application\Health\HealthCheckService;
-use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use WP_Error;
@@ -171,7 +170,14 @@ final class StatusRestController
             ]);
         }
 
-        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
+        // #82: route through the health-gated factory so a cached-Down
+        // imgproxy falls through to LocalBackend / passthrough — same
+        // health-gate the front-end render path applies. Resolve the
+        // relative endpoint to absolute first (mirrors ServiceRegistrar).
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
+        $rewriter = UrlRewriterFactory::fromConfig($delivery, $signing);
         $result = $rewriter->rewrite($sourceUrl, $width, 0, 'info');
 
         return rest_ensure_response([
