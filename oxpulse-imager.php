@@ -225,3 +225,20 @@ if (!function_exists('oxpulse_thumb_url')) {
         return $result->url;
     }
 }
+
+/**
+ * Public helper: resolve the shared LicenseGate.
+ *
+ * #89: the single seam through which the plugin asks "is this a paying
+ * (Pro) customer?". Returns the OpenLicenseGate (everything unlocked)
+ * until a Freemius-backed gate is wired in ServiceRegistrar. Sibling
+ * code and tests use this instead of touching ServiceRegistrar directly,
+ * mirroring the oxpulse_thumb_url() helper shape.
+ *
+ * @return \OXPulse\Imager\Domain\License\LicenseGate
+ */
+if (!function_exists('oxpulse_license_gate')) {
+    function oxpulse_license_gate(): \OXPulse\Imager\Domain\License\LicenseGate {
+        return \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::licenseGate();
+    }
+}
