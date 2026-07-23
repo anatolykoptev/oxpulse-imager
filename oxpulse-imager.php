@@ -130,6 +130,13 @@ function oxpulse_imager_activate(): void {
         // endpoint is configured. The 3s HTTP round-trip is acceptable
         // in the activation context — never on the front-end read path.
         \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::recheckRewriteCapability();
+        // Delivery backend registry: probe imgproxy health at activation
+        // when ImgproxyBackend is active (endpoint set). The COMPLEMENT
+        // of recheckRewriteCapability() — exactly one fires for the
+        // current endpoint state. recheckImgproxyHealth() is a no-op
+        // when LocalBackend is active. The bounded 2s HEAD is acceptable
+        // in the activation context — never on the front-end read path.
+        \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::recheckImgproxyHealth();
     }
 }
 

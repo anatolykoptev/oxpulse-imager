@@ -1,0 +1,71 @@
+<?php
+/**
+ * Cached imgproxy health probe result (front-end-safe accessor).
+ *
+ * A small cache accessor mirroring the CapabilityTester cached-option
+ * pattern: the front-end render path reads the cached transient ONLY
+ * (zero network I/O), and the write-time `recheck()` on
+ * ImgproxyBackendProvider writes a definitive 'up'/'down' here.
+ *
+ * The cache is OPTIMISTIC: an unset transient defaults to 'up' so a
+ * never-probed imgproxy endpoint is NOT marked down (no spurious
+ * fallthrough that would break delivery). Only a definitive cached
+ * 'down' (written by a probe that actually got a non-2xx/3xx or a
+ * transport error) marks the backend Down.
+ *
+ * @package OXPulse\Imager\Infrastructure\Imgproxy
+ * @copyright Copyright (c) 2026 Anatoly Koptev
+ * @license GPL-2.0-or-later
+ */
+
+declare(strict_types=1);
+
+namespace OXPulse\Imager\Infrastructure\Imgproxy;
+
+final class ImgproxyHealthCache
+{
+    /** Transient key for the cached imgproxy health probe result. */
+    public const TRANSIENT = 'oxpulse_imgproxy_health';
+
+    /** Transient lifetime (seconds) — 1 hour. The probe re-runs at write-time. */
+    private const EXPIRATION = 3600;
+
+    /**
+     * Read the cached health state. OPTIMISTIC: returns 'up' when the
+     * transient is unset OR holds a garbage value (a corrupted cache
+     * must NOT break delivery). Returns 'down' only when a definitive
+     * 'down' was written by a probe.
+     *
+     * FRONT-END-SAFE: zero network I/O — reads the transient only.
+     */
+    public function read(): string
+    {
+        $value = get_transient(self::TRANSIENT);
+        if ($value === 'down') {
+            return 'down';
+        }
+        return 'up';
+    }
+
+    /**
+     * Write a definitive health state ('up' or 'down'). Write-time only
+     * — called by ImgproxyBackendProvider::recheck(), never from the
+     * front-end render path.
+     */
+    public function write(string $state): void
+    {
+        if ($state !== 'up' && $state !== 'down') {
+            return;
+        }
+        set_transient(self::TRANSIENT, $state, self::EXPIRATION);
+    }
+
+    /**
+     * Clear the cached state so the next read defaults to 'up' and a
+     * later recheck can write a fresh value.
+     */
+    public function clear(): void
+    {
+        delete_transient(self::TRANSIENT);
+    }
+}

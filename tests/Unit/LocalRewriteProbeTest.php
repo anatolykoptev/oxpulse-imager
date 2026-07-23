@@ -276,6 +276,11 @@ class FakeHttpRequester implements HttpRequester
             'error'  => $this->error,
         ];
     }
+
+    public function head(string $url): array
+    {
+        return ['status' => $this->status, 'body' => '', 'error' => $this->error];
+    }
 }
 
 /**

@@ -1,15 +1,29 @@
 <?php
 /**
- * Delivery backend factory.
+ * Delivery backend factory — thin composition root.
  *
- * The selection seam: picks the delivery backend based on configuration.
- * Dispatch 1 selection rule (config-presence only, no health probe):
+ * Delegates to DeliveryBackendRegistry::default(), which builds the 3
+ * core providers (imgproxy → local → passthrough), applies the
+ * `oxpulse_delivery_backends` filter (the extension point), and selects
+ * the best applicable, HEALTH-GATED backend: ranks by priority DESC,
+ * skips providers whose cached health is Down, falls through to the
+ * next best. Adding a new backend = one provider class + one
+ * add_filter call — zero edits here.
  *
- * - imgproxy endpoint configured AND non-empty -> ImgproxyBackend
- * - otherwise (no endpoint) -> LocalBackend
+ * The factory stays as the thin seam so the two ServiceRegistrar call
+ * sites (frontend delivery + prewarm cron) are UNCHANGED and the
+ * pre-select endpoint-resolution stays as-is.
  *
- * A manual override option and a health-check probe are deferred to a
- * later polish phase (see ROADMAP Phase 6 — "Selection").
+ * Behavior parity with the pre-registry factory (preserved by the
+ * registry's selection rules — see DeliveryBackendFactoryParityTest):
+ * - signing === null → null.
+ * - endpoint set + imgproxy healthy → ImgproxyBackend.
+ * - endpoint empty + http source + signing → LocalBackend.
+ * - endpoint empty + sourceMode === 'local' → null (passthrough).
+ *
+ * NEW behavior (the point of the registry): endpoint set + cached
+ * imgproxy health Down → falls through to LocalBackend (if applicable)
+ * else passthrough (null). No more broken URLs on a dead imgproxy.
  *
  * @package OXPulse\Imager\Application\Delivery
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -22,19 +36,16 @@ namespace OXPulse\Imager\Application\Delivery;
 
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
-use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
-use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
-use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 
 final class DeliveryBackendFactory
 {
     /**
      * Select the delivery backend for the given configuration.
      *
-     * Dispatch 3: signing may be null during early init (secrets not
-     * yet saved) — in that case no backend can sign keys, so we return
-     * null. Callers treat null as "delivery inactive" (UrlRewriter
-     * passes through, prewarm cron skips job processing).
+     * Delegates to the ranked, health-gated DeliveryBackendRegistry.
+     * The registry memoizes one decision per instance; the factory
+     * builds a fresh registry per call (mirroring the pre-registry
+     * "one decision per call site" usage).
      *
      * @param DeliveryConfig $delivery
      * @param SigningConfig|null $signing
@@ -42,41 +53,8 @@ final class DeliveryBackendFactory
      */
     public static function select(DeliveryConfig $delivery, ?SigningConfig $signing): ?DeliveryBackend
     {
-        if ($signing === null) {
-            return null;
-        }
-
-        // #43 Phase 3: use the shared isLocalBackendActive() predicate
-        // (same idiom as ServiceRegistrar::recheckRewriteCapability and
-        // LocalDeliveryInstaller::install) instead of a raw endpoint
-        // emptiness check. The predicate is the single source of truth
-        // for "is LocalBackend the active backend?" — keeping all call
-        // sites aligned.
-        if (!$delivery->isLocalBackendActive()) {
-            return new ImgproxyBackend($delivery, $signing);
-        }
-
-        // #29.2: LocalBackend requires http source mode. When
-        // sourceMode='local', SourcePolicy resolves the source to a bare
-        // filesystem path (SourceDecision::fsPath !== null) and
-        // UrlRewriter feeds that path — not the URL — into the
-        // TransformRequest. LocalBackend then signs a key whose payload
-        // 'source' is a bare fs path (no scheme+host). At miss-endpoint
-        // time, PathGuard::resolve() requires scheme+host from
-        // payload['source'] → null → 404 on every image; URL-normalized
-        // invalidation can't match either. Returning null here makes
-        // UrlRewriter preserve the original URL (no rewrite) — the safe
-        // behavior when no imgproxy endpoint is configured for local
-        // source mode. imgproxy + sourceMode='local' (local:// transport)
-        // is handled by the ImgproxyBackend branch above.
-        if ($delivery->sourceMode === 'local') {
-            return null;
-        }
-
-        // #43 Phase 2: inject a CapabilityTester so LocalBackend can
-        // emit ?k= fallback URLs when rewrite is unavailable. The
-        // tester reads the cached capability option (front-end-safe,
-        // zero blocking I/O — see CapabilityTester::rewriteAvailable()).
-        return new LocalBackend($signing, new CapabilityTester());
+        return DeliveryBackendRegistry::default($delivery, $signing)
+            ->select($delivery, $signing);
     }
 }
+

@@ -27,8 +27,12 @@ use OXPulse\Imager\Application\Prewarm\PrewarmJobStore;
 use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackendProvider;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
+use OXPulse\Imager\Infrastructure\Local\HttpRequester;
 use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
+use OXPulse\Imager\Infrastructure\Local\WpRemoteHttpRequester;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminBarDiagnostics;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminNotice;
 use OXPulse\Imager\Integration\WordPress\Admin\CapabilityRestController;
@@ -567,6 +571,59 @@ final class ServiceRegistrar
     }
 
     /**
+     * Write-time imgproxy health probe trigger — the COMPLEMENT of
+     * recheckRewriteCapability(). Runs the live ImgproxyBackendProvider
+     * health probe (a bounded 2s HEAD, redirection=0) ONLY in
+     * admin/activation context — never from the front-end read path
+     * (health() reads the cache only).
+     *
+     * Fires when ImgproxyBackend is active (endpoint non-empty). Called
+     * from:
+     *   - plugin activation (oxpulse_imager_activate()),
+     *   - settings-save when OPTION_ENDPOINT becomes non-empty (the
+     *     updated_option hook in registerLocalDeliverySettingsSync()),
+     *   - once-per-version re-probe (maybeReprobeOnVersionUpdate()).
+     *
+     * The probe and the rewrite-capability probe are complementary:
+     * exactly one fires on a given endpoint change (imgproxy active =
+     * endpoint set → imgproxy probe; local active = endpoint empty →
+     * rewrite-capability probe).
+     *
+     * Test seam: accepts injected HttpRequester + ImgproxyHealthCache
+     * so tests can verify the trigger without a real HTTP round-trip.
+     * Production callers pass null → real deps are built.
+     */
+    public static function recheckImgproxyHealth(
+        ?HttpRequester $requester = null,
+        ?ImgproxyHealthCache $cache = null,
+    ): void {
+        $repository = new OptionSettingsRepository();
+        $delivery = $repository->loadDeliveryConfig();
+
+        // Only probe when ImgproxyBackend is active (endpoint non-empty).
+        // The inverse guard of recheckRewriteCapability() — exactly one
+        // of the two probes fires for a given endpoint state.
+        if ($delivery->isLocalBackendActive()) {
+            return;
+        }
+
+        // Resolve relative endpoint to absolute (same as the frontend
+        // delivery path) so the probe hits the real URL, not '/imgproxy'.
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
+
+        $requester = $requester ?? new WpRemoteHttpRequester();
+        $cache = $cache ?? new ImgproxyHealthCache();
+        $provider = new ImgproxyBackendProvider($requester, $cache);
+        $provider->recheck($delivery);
+
+        // Marker action for test assertions (mirrors
+        // oxpulse_recheck_rewrite_capability).
+        do_action('oxpulse_recheck_imgproxy_health');
+    }
+
+    /**
      * #43 Phase 1 review (MAJOR): OPTION_PROBE_VERSION-gated re-probe
      * on plugin update. When the stored probe version does not match
      * the current plugin version AND LocalBackend is active, re-run the
@@ -596,8 +653,13 @@ final class ServiceRegistrar
 
         // Re-probe (writes a definitive result or leaves the prior one
         // intact on 'unknown'), then stamp the version so this fires
-        // at most once per version.
+        // at most once per version. Both probes are called — each is
+        // self-guarding: recheckRewriteCapability() is a no-op when
+        // imgproxy is active, recheckImgproxyHealth() is a no-op when
+        // LocalBackend is active. Exactly one fires for the current
+        // endpoint state.
         self::recheckRewriteCapability();
+        self::recheckImgproxyHealth();
         $repository->saveProbeVersion(OXPULSE_IMAGER_VERSION);
     }
 
@@ -662,6 +724,15 @@ final class ServiceRegistrar
         $recheckCapability = static function (): void {
             self::recheckRewriteCapability();
         };
+        // Delivery backend registry: re-probe imgproxy health when
+        // ImgproxyBackend becomes active (endpoint set). The COMPLEMENT
+        // of $recheckCapability — exactly one fires for a given endpoint
+        // state (imgproxy active = endpoint set → imgproxy probe; local
+        // active = endpoint empty → rewrite-capability probe). Both are
+        // self-guarding via isLocalBackendActive().
+        $recheckImgproxy = static function (): void {
+            self::recheckImgproxyHealth();
+        };
         // #43 Phase 4 (plan B.3 / D.4 #5): purge cache-plugin page
         // caches when delivery-relevant options change. Cached pages
         // have BAKED the old image URLs (clean vs ?k=); the purge
@@ -671,12 +742,16 @@ final class ServiceRegistrar
             (new CachePurger())->purge();
         };
 
-        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability, $purgeCaches): void {
+        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability, $recheckImgproxy, $purgeCaches): void {
             if (in_array($option, OptionSettingsRepository::DELIVERY_OPTION_KEYS, true)) {
                 $reinstall();
             }
             if ($option === OptionSettingsRepository::OPTION_ENDPOINT) {
+                // Both probes are self-guarding — exactly one fires
+                // for the new endpoint state (endpoint set → imgproxy
+                // probe; endpoint empty → rewrite-capability probe).
                 $recheckCapability();
+                $recheckImgproxy();
             }
             // Purge page caches on delivery-relevant option changes
             // (the delivery keys + OPTION_REWRITE_CAPABILITY, whose flip
