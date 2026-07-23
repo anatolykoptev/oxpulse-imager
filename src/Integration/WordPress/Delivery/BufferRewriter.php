@@ -319,6 +319,19 @@ final class BufferRewriter
             if ($this->pictureWrapper !== null
                 && apply_filters('oxpulse_picture_enabled', $this->delivery->pictureEnabled)
             ) {
+                // Skip <picture> wrapping for JS-lazy images (data-src): a
+                // <source srcset> is resolved EAGERLY by the browser at
+                // parse time, which would defeat the theme's lazy-loader
+                // and eager-load every below-the-fold image. The lazy
+                // <img> still gets imgproxy delivery via the src rewrite
+                // above; AVIF for lazy images (via a lazy-loader-specific
+                // data-srcset) is a future enhancement. Native
+                // loading="lazy" on a plain src <img> is unaffected — it
+                // is honored on the inner <img> inside the <picture>.
+                if (str_contains($prefix, 'data-src=')) {
+                    return $rewritten;
+                }
+
                 // Extract the ORIGINAL srcset from the full matched tag
                 // ($m[0]) — the buffer does NOT rewrite srcset, so the
                 // tag's srcset is still the pre-rewrite value. Pass '' when

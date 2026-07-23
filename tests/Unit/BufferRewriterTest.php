@@ -647,6 +647,37 @@ class BufferRewriterTest extends TestCase
         }
     }
 
+    public function test_picture_wrap_skips_data_src_lazy_image(): void
+    {
+        // A JS-lazy <img> (data-src with a placeholder data-URI src) must
+        // NOT be wrapped in <picture>: a <source srcset> is resolved
+        // EAGERLY by the browser at parse time, which would defeat the
+        // theme's JS lazy-loader and eager-load every below-the-fold
+        // image. The lazy <img> still gets imgproxy delivery via the
+        // data-src rewrite (the src-rewrite path is unaffected) — just no
+        // <picture>. Native loading="lazy" on a plain src <img> is
+        // unaffected (honored on the inner <img> inside <picture>).
+        $rewriter = $this->createBufferRewriterWithPicture();
+        $html = $this->wrap('<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="https://example.com/wp-content/uploads/lazy.jpg" width="800" height="600" alt="lazy">');
+        $result = $rewriter->rewrite($html);
+
+        // No <picture> wrapping for the lazy image.
+        $this->assertStringNotContainsString('<picture', $result);
+        // The data-src WAS still rewritten to a delivery URL — the lazy
+        // image keeps working + gets imgproxy delivery, just no <picture>.
+        $this->assertStringContainsString('imgproxy.test', $result);
+        $this->assertStringContainsString(
+            'data-src="https://imgproxy.test/',
+            $result,
+            'data-src must be rewritten to a delivery URL'
+        );
+        // The original data-src URL is gone (replaced by the delivery URL).
+        $this->assertStringNotContainsString(
+            'data-src="https://example.com/wp-content/uploads/lazy.jpg"',
+            $result
+        );
+    }
+
     public function test_picture_wrap_skips_img_already_inside_picture(): void
     {
         // An <img> already inside a <picture> in the source HTML must be
