@@ -1,13 +1,16 @@
 <?php
 /**
- * Uninstall handler — complete cleanup (#88).
+ * Uninstall handler — toggle-gated cleanup (#88).
  *
- * Removes EVERYTHING the plugin created: all options (the
- * oxpulse_imager_ prefix family + standalone keys), all cron events,
- * all transients (static + dynamic UUID-suffixed), the on-disk cache
- * directory (WP_CONTENT_DIR/cache/oxpulse/), the generated endpoint
- * file (oxpulse-img.php) + its cache .htaccess, and per-site cleanup
- * on multisite.
+ * ALWAYS removes ephemeral data: cron events, transients, the on-disk
+ * cache directory (WP_CONTENT_DIR/cache/oxpulse/), and the generated
+ * endpoint file (oxpulse-img.php) + its cache .htaccess.
+ *
+ * Removes persistent user CONFIG (the oxpulse_imager_ prefix option
+ * family + standalone keys — including key/salt/settings) ONLY when
+ * the user opted in via the oxpulse_imager_remove_on_uninstall toggle
+ * (default false = preserve for reinstall). Per-site cleanup on
+ * multisite applies the same split.
  *
  * Guarded by WP_UNINSTALL_PLUGIN (defined by WordPress only when the
  * user clicks "Delete" in the plugins admin). Direct access exits.

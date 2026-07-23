@@ -1,12 +1,18 @@
 <?php
 /**
- * Complete uninstall cleanup (#88).
+ * Uninstall cleanup (#88, #88-followup: toggle-gated).
  *
- * Removes EVERYTHING the plugin created on uninstall: all options
- * (the oxpulse_imager_ prefix family + standalone keys), all cron
- * events, all transients (static + dynamic UUID-suffixed), the on-disk
- * cache directory, the generated endpoint file + cache .htaccess, and
- * per-site cleanup on multisite.
+ * Splits ephemeral cleanup (ALWAYS run — cron events, transients, the
+ * on-disk cache directory, the generated endpoint file + .htaccess)
+ * from persistent user CONFIG deletion (GATED by the
+ * oxpulse_imager_remove_on_uninstall opt-in toggle, default false =
+ * preserve for reinstall).
+ *
+ * The toggle is read ONCE at the start of run(), BEFORE any deletion,
+ * so the false-path preserves the toggle option itself along with all
+ * other config (key/salt/settings). WordPress convention for a paid
+ * plugin: destroy persistent user data ONLY on explicit opt-in;
+ * otherwise preserve it so a reinstall restores the user's setup.
  *
  * Enumerated from a grep of every get_option/update_option/add_option/
  * get_transient/set_transient call in src/ — NOT hardcoded from a spec.
@@ -131,20 +137,39 @@ final class Uninstaller
     ];
 
     /**
-     * Run the complete uninstall cleanup.
+     * Run the uninstall cleanup.
      *
-     * Removes all options, cron events, transients, the on-disk cache,
-     * and the generated endpoint artifacts. On multisite, iterates
-     * every site for per-site options + cron; the cache dir and
-     * endpoint file are shared (network-wide) and cleaned once.
+     * Splits ephemeral cleanup (always run — cron, transients, on-disk
+     * cache, generated endpoint file) from persistent user CONFIG
+     * deletion (gated by the oxpulse_imager_remove_on_uninstall opt-in
+     * toggle, default false = preserve for reinstall).
+     *
+     * The toggle is read ONCE at the start, BEFORE any deletion — so
+     * the false-path preserves the toggle option itself along with all
+     * other config (key/salt/settings). WordPress convention for a paid
+     * plugin: destroy persistent user data ONLY on explicit opt-in;
+     * otherwise preserve it so a reinstall restores the user's setup.
+     *
+     * On multisite, the per-site split is applied for every blog; the
+     * cache dir and endpoint file are shared (network-wide) and cleaned
+     * once.
      */
     public static function run(): void
     {
+        // Read the opt-in ONCE, before any deletion. Default false =
+        // preserve persistent config (key/salt/settings) for reinstall.
+        $remove = (bool) get_option('oxpulse_imager_remove_on_uninstall', false);
+
         if (function_exists('is_multisite') && is_multisite()) {
-            self::cleanMultisite();
+            self::cleanMultisite($remove);
         } else {
-            self::deleteOptions();
+            // Ephemeral — always.
+            self::deleteTransients();
             self::clearCronEvents();
+            // Persistent config — only on opt-in.
+            if ($remove) {
+                self::deleteOptions();
+            }
         }
 
         // Shared resources — cleaned once regardless of multisite.
@@ -153,11 +178,16 @@ final class Uninstaller
     }
 
     /**
-     * Delete every known option + transient + prefix-scan.
+     * Delete every known persistent CONFIG option + prefix-scan.
      *
-     * Explicit delete_option for each enumerated key (deterministic,
-     * works without $wpdb — e.g. unit-test stub env), PLUS a $wpdb
-     * prefix-scan as a production safety net for future keys.
+     * GATED by the remove_on_uninstall toggle — only called when the
+     * user opted into data removal. Explicit delete_option for each
+     * enumerated key (deterministic, works without $wpdb — e.g.
+     * unit-test stub env), PLUS a $wpdb prefix-scan as a production
+     * safety net for future keys.
+     *
+     * Does NOT delete transients — those are ephemeral and always
+     * cleaned via deleteTransients() regardless of the toggle.
      */
     private static function deleteOptions(): void
     {
@@ -176,6 +206,21 @@ final class Uninstaller
             }
         }
 
+        // Production safety-net: prefix-scan for any oxpulse_imager_
+        // options we might have missed (future keys).
+        self::prefixScanDelete('oxpulse_imager_');
+    }
+
+    /**
+     * Delete every known transient — static enumerated keys + the
+     * dynamic UUID-suffixed prefix family via $wpdb scan.
+     *
+     * ALWAYS run on uninstall (ephemeral / regenerable / orphan-risk):
+     * transients hold no persistent user value and an orphan transient
+     * row in the options table is pure litter after the plugin is gone.
+     */
+    private static function deleteTransients(): void
+    {
         // Known static transients.
         foreach (self::TRANSIENTS as $transient) {
             delete_transient($transient);
@@ -183,10 +228,6 @@ final class Uninstaller
 
         // Dynamic UUID-suffixed transients — scan + delete via $wpdb.
         self::deleteTransientPrefixes();
-
-        // Production safety-net: prefix-scan for any oxpulse_imager_
-        // options we might have missed (future keys).
-        self::prefixScanDelete('oxpulse_imager_');
     }
 
     /**
@@ -335,13 +376,20 @@ final class Uninstaller
     }
 
     /**
-     * Multisite cleanup: iterate every site, switch_to_blog, delete
-     * that site's options + cron events, restore_current_blog.
+     * Multisite cleanup: iterate every site, switch_to_blog, run the
+     * ephemeral/persistent split per site, restore_current_blog.
+     *
+     * Per site: transients + cron are ALWAYS cleaned (ephemeral);
+     * persistent config options are deleted ONLY when the user opted
+     * in via remove_on_uninstall ($remove === true).
      *
      * The cache dir and endpoint file are shared (network-wide) and
      * cleaned once in run(), NOT per-site.
+     *
+     * @param bool $remove Whether the user opted into persistent-data
+     *                     removal (read once in run() before deletion).
      */
-    private static function cleanMultisite(): void
+    private static function cleanMultisite(bool $remove): void
     {
         if (!function_exists('get_sites') || !function_exists('switch_to_blog')) {
             return;
@@ -358,8 +406,13 @@ final class Uninstaller
                 continue;
             }
             switch_to_blog((int) $blogId);
-            self::deleteOptions();
+            // Ephemeral — always.
+            self::deleteTransients();
             self::clearCronEvents();
+            // Persistent config — only on opt-in.
+            if ($remove) {
+                self::deleteOptions();
+            }
             if (function_exists('restore_current_blog')) {
                 restore_current_blog();
             }
