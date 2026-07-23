@@ -59,6 +59,31 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.5](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.4...v0.1.5) (2026-07-23)
+
+
+### Added
+
+* add LicenseGate seam + OpenLicenseGate default (inert) ([#102](https://github.com/anatolykoptev/oxpulse-imager/issues/102)) ([cb8aa8f](https://github.com/anatolykoptev/oxpulse-imager/commit/cb8aa8fe66588b4d9c5651b029e27f088fc957cb))
+* admin notices for degraded delivery and active path readout ([#99](https://github.com/anatolykoptev/oxpulse-imager/issues/99)) ([2b2b4a7](https://github.com/anatolykoptev/oxpulse-imager/commit/2b2b4a77af46f5af945247a27b10057655dfc91c))
+* bound LocalBackend cache with scheduled LRU eviction (Closes [#93](https://github.com/anatolykoptev/oxpulse-imager/issues/93)) ([#101](https://github.com/anatolykoptev/oxpulse-imager/issues/101)) ([463c60e](https://github.com/anatolykoptev/oxpulse-imager/commit/463c60e7cf7b482beeedeacfca2a9a83dc5eca91))
+* modular ranked delivery-backend registry (health-gated selection) ([#80](https://github.com/anatolykoptev/oxpulse-imager/issues/80)) ([c4b5ba7](https://github.com/anatolykoptev/oxpulse-imager/commit/c4b5ba7256578e348523261a4b217de0b1ba6b14))
+
+
+### Fixed
+
+* complete + opt-in-aware uninstall cleanup (Closes [#88](https://github.com/anatolykoptev/oxpulse-imager/issues/88)) ([#98](https://github.com/anatolykoptev/oxpulse-imager/issues/98)) ([96b5aa7](https://github.com/anatolykoptev/oxpulse-imager/commit/96b5aa7d93fca08ea13f797043b9670ffa7c2707))
+* detect disabled WP-cron for async prewarm, surface instead of silent no-op (Closes [#92](https://github.com/anatolykoptev/oxpulse-imager/issues/92)) ([#100](https://github.com/anatolykoptev/oxpulse-imager/issues/100)) ([2fcbea5](https://github.com/anatolykoptev/oxpulse-imager/commit/2fcbea5115511a4ce7f47b7d112ce1b5d4325746))
+* durable imgproxy health verdict (persistent option + hourly re-probe cron) ([#84](https://github.com/anatolykoptev/oxpulse-imager/issues/84)) ([f8bdcc0](https://github.com/anatolykoptev/oxpulse-imager/commit/f8bdcc085cf0781ec01b5bc9d9344026000d8324))
+* gate LocalBackend off on multisite + admin notice ([#87](https://github.com/anatolykoptev/oxpulse-imager/issues/87)) ([#97](https://github.com/anatolykoptev/oxpulse-imager/issues/97)) ([31bd62d](https://github.com/anatolykoptev/oxpulse-imager/commit/31bd62d72aa911fb926400a707e1a7c305100765))
+* guard cache-dir .htaccess php_flag with IfModule (Apache+php-fpm 500) ([#94](https://github.com/anatolykoptev/oxpulse-imager/issues/94)) ([17ffb4f](https://github.com/anatolykoptev/oxpulse-imager/commit/17ffb4f82b265381c6cbb88c1102d68def61b26c))
+* route CLI/REST URL producers through health-gated backend factory ([#95](https://github.com/anatolykoptev/oxpulse-imager/issues/95)) ([7b4edf6](https://github.com/anatolykoptev/oxpulse-imager/commit/7b4edf69eef7586357e064e69782c3b9aab0be03))
+
+
+### Performance
+
+* consolidate per-request config reads via in-request memo + autoload flip (Closes [#91](https://github.com/anatolykoptev/oxpulse-imager/issues/91)) ([#103](https://github.com/anatolykoptev/oxpulse-imager/issues/103)) ([ba30b33](https://github.com/anatolykoptev/oxpulse-imager/commit/ba30b3384c15ea053671123f8a229322d7716d40))
+
 ## [0.1.4](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.3...v0.1.4) (2026-07-23)
 
 
