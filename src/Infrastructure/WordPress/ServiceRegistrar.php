@@ -90,6 +90,7 @@ final class ServiceRegistrar
         self::registerLocalCacheInvalidation($plugin);
         self::registerLocalDeliverySettingsSync($plugin);
         self::maybeReprobeOnVersionUpdate();
+        self::maybeMigrateAutoload();
     }
 
     /**
@@ -710,6 +711,43 @@ final class ServiceRegistrar
         self::recheckRewriteCapability();
         self::recheckImgproxyHealth();
         $repository->saveProbeVersion(OXPULSE_IMAGER_VERSION);
+    }
+
+    /**
+     * #91: one-time, forward-only upgrade that flips the hot
+     * render-path options to autoload=yes on EXISTING installs.
+     *
+     * Fresh installs get autoload=yes directly in the activation hook.
+     * But installs activated before #91 stored enabled / endpoint /
+     * allowed_sources / diagnostic_level with autoload=no (the old
+     * activation default), so each of those options required a
+     * separate SELECT on every request on sites without a persistent
+     * object cache. wp_set_options_autoload (WP 6.4+; plugin requires
+     * 6.7) flips the autoload flag in a single UPDATE without touching
+     * the stored values — no data migration, no dual source of truth.
+     *
+     * Gated on OPTION_SCHEMA_VERSION < 2 so it runs at most once per
+     * install, then stamps schema_version=2. Admin-only (the flip is
+     * a one-time housekeeping write, never on the front-end read path).
+     * Idempotent: a re-run after schema_version=2 is a no-op.
+     */
+    private static function maybeMigrateAutoload(): void
+    {
+        if (!is_admin()) {
+            return;
+        }
+        if (!function_exists('wp_set_options_autoload')) {
+            return;
+        }
+
+        $repository = new OptionSettingsRepository();
+        $schemaVersion = (int) get_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 1);
+        if ($schemaVersion >= 2) {
+            return;
+        }
+
+        wp_set_options_autoload(OptionSettingsRepository::AUTOLOAD_OPTION_KEYS, true);
+        update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 2);
     }
 
     /**
