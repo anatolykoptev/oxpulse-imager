@@ -16,6 +16,7 @@ declare(strict_types=1);
 namespace OXPulse\Imager\Integration\WordPress\Admin;
 
 use OXPulse\Imager\Application\Delivery\UrlRewriterFactory;
+use OXPulse\Imager\Application\Diagnostics\DiagnosticLoggerInterface;
 use OXPulse\Imager\Application\Prewarm\AsyncPrewarmService;
 use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
@@ -26,6 +27,7 @@ use OXPulse\Imager\Infrastructure\Imgproxy\HmacSigner;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyPathBuilder;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyUrlGenerator;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
+use OXPulse\Imager\Infrastructure\WordPress\WordPressDiagnosticLogger;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -33,11 +35,23 @@ use WP_REST_Server;
 
 final class PrewarmRestController
 {
-    private OptionSettingsRepository $repository;
+    /**
+     * #92: Transient flag set when an async pre-warm is attempted while
+     * WP-Cron is disabled, so AdminNotice can surface the limitation on
+     * the next admin page load (dismissable, 1h TTL — re-surfaces on a
+     * new blocked attempt after dismissal).
+     */
+    public const CRON_BLOCKED_TRANSIENT = 'oxpulse_prewarm_cron_blocked';
 
-    public function __construct(OptionSettingsRepository $repository)
-    {
+    private OptionSettingsRepository $repository;
+    private DiagnosticLoggerInterface $logger;
+
+    public function __construct(
+        OptionSettingsRepository $repository,
+        ?DiagnosticLoggerInterface $logger = null,
+    ) {
         $this->repository = $repository;
+        $this->logger = $logger ?? new WordPressDiagnosticLogger();
     }
 
     public function register(): void
@@ -196,6 +210,30 @@ final class PrewarmRestController
         // Async mode: create a job, schedule cron processing, return
         // the job ID immediately. The client polls GET /prewarm/<jobId>.
         if ($async) {
+            // #92: WP-Cron disabled (Kinsta/WPE/Pantheon set
+            // DISABLE_WP_CRON) → a scheduled job would NEVER fire.
+            // Do NOT enqueue a dead job; report the limitation and
+            // point the operator at the synchronous CLI / system-cron
+            // alternatives. Log + set a transient flag so the admin
+            // notice can surface it on the next admin page load.
+            if (AsyncPrewarmService::isWpCronDisabled()) {
+                $this->logger->warning(
+                    'Background pre-warm requested but WP-Cron is disabled (DISABLE_WP_CRON); '
+                    . 'no job scheduled. Operator should use `wp oxpulse warm` (WP-CLI) '
+                    . 'or a system cron hitting wp-cron.php.'
+                );
+                set_transient(self::CRON_BLOCKED_TRANSIENT, true, 3600);
+
+                return new WP_Error(
+                    'oxpulse_prewarm_cron_disabled',
+                    __(
+                        'Background pre-warm is unavailable because WP-Cron is disabled on this site (DISABLE_WP_CRON). Run it via WP-CLI (`wp oxpulse warm`) or enable a system cron hitting wp-cron.php.',
+                        'oxpulse-imager'
+                    ),
+                    ['status' => 503]
+                );
+            }
+
             $asyncService = new AsyncPrewarmService($service, new \OXPulse\Imager\Application\Prewarm\PrewarmJobStore());
             $jobId = $asyncService->createJob($urls, $widths);
 

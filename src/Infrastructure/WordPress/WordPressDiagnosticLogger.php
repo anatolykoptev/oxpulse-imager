@@ -173,6 +173,22 @@ final class WordPressDiagnosticLogger implements DiagnosticLoggerInterface
     }
 
     /**
+     * #92: Record a one-shot operational warning. Written to error_log
+     * immediately (not accumulated/deferred), gated on the diagnostic
+     * level being non-'off'. Used for operational events that are not
+     * per-URL rewrite decisions (e.g. async pre-warm blocked because
+     * WP-Cron is disabled).
+     */
+    public function warning(string $message): void
+    {
+        if ($this->level() === 'off') {
+            return;
+        }
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- plugin diagnostic logger's intended sink.
+        error_log('OXPulse Imager: ' . $message);
+    }
+
+    /**
      * Redact URL components from log entries — same pattern as the
      * HTTP clients. Never leak full source URLs into error_log.
      */

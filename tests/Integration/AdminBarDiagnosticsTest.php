@@ -129,4 +129,6 @@ class RecordingLogger implements DiagnosticLoggerInterface
     }
 
     public function flush(): void {}
+
+    public function warning(string $message): void {}
 }
