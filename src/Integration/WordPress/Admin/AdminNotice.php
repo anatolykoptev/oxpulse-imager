@@ -48,6 +48,8 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Admin;
 
+use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 
 final class AdminNotice
@@ -93,7 +95,19 @@ final class AdminNotice
      */
     public const MULTISITE_KEY = 'multisite_local_unsupported';
 
+    /**
+     * #90: notice key for the "no image encoder available" warning.
+     */
+    public const NO_ENCODER_KEY = 'no_encoder';
+
+    /**
+     * #90: notice key for the "configured imgproxy endpoint is down" warning.
+     */
+    public const IMGPROXY_DOWN_KEY = 'imgproxy_down';
+
     private OptionSettingsRepository $repository;
+    private ImageTransformer $imageTransformer;
+    private ImgproxyHealthCache $imgproxyHealthCache;
 
     /**
      * Tracks whether the inline JS has been emitted once per request
@@ -101,9 +115,14 @@ final class AdminNotice
      */
     private static bool $scriptEmitted = false;
 
-    public function __construct(?OptionSettingsRepository $repository = null)
-    {
+    public function __construct(
+        ?OptionSettingsRepository $repository = null,
+        ?ImageTransformer $imageTransformer = null,
+        ?ImgproxyHealthCache $imgproxyHealthCache = null,
+    ) {
         $this->repository = $repository ?? new OptionSettingsRepository();
+        $this->imageTransformer = $imageTransformer ?? new ImageTransformer();
+        $this->imgproxyHealthCache = $imgproxyHealthCache ?? new ImgproxyHealthCache();
     }
 
     public function register(): void
@@ -137,6 +156,17 @@ final class AdminNotice
         if ($noticeKey === self::MULTISITE_KEY) {
             return self::NOTICE_STATE_ACTIVE;
         }
+        // #90: the no-encoder notice is capability-independent (it is about
+        // the host's encoder extensions, not the rewrite capability).
+        if ($noticeKey === self::NO_ENCODER_KEY) {
+            return self::NOTICE_STATE_ACTIVE;
+        }
+        // #90: the imgproxy-down notice is keyed on the live health state
+        // so the render gate can auto-clear the dismissal when health
+        // recovers to 'up'.
+        if ($noticeKey === self::IMGPROXY_DOWN_KEY) {
+            return 'down';
+        }
         return $repository->loadRewriteCapability();
     }
 
@@ -168,12 +198,17 @@ final class AdminNotice
         }
 
         if (!$delivery->isLocalBackendActive()) {
-            // Imgproxy backend — the capability notice is irrelevant.
-            // Still render the co-install notice (it applies regardless
-            // of the delivery backend).
+            // Imgproxy backend — the capability/encoder notices are irrelevant.
+            // Render imgproxy-down warning if health is 'down', then the
+            // co-install notice (it applies regardless of delivery backend).
+            $this->maybeRenderImgproxyDownNotice();
             $this->maybeRenderCoInstallNotice();
             return;
         }
+
+        // #90: LocalBackend needs a local encoder. Warn when neither WebP
+        // nor AVIF encoding is available (independent of rewrite capability).
+        $this->maybeRenderNoEncoderNotice();
 
         $capability = $this->repository->loadRewriteCapabilityOrNull();
         // Render ONLY when capability is NOT 'yes' ('no' or null/unknown).
@@ -378,6 +413,115 @@ location ~* ^{$cachePath}/([0-9a-f]+)/(.+)\.(webp|avif)$ {
             . '</div>';
 
         return ['key' => self::MULTISITE_KEY, 'class' => 'info', 'html' => $html];
+    }
+
+    /**
+     * #90: Build the no-encoder notice. Warns when LocalBackend is active
+     * but the host cannot encode WebP or AVIF, so images are served
+     * unoptimized. Dismissable, keyed NO_ENCODER_KEY.
+     *
+     * @return array{key:string,class:string,html:string}
+     */
+    public function buildNoEncoderNotice(): array
+    {
+        $dismissUrl = rest_url('oxpulse/v1/capability/dismiss');
+        $nonce = function_exists('wp_create_nonce') ? wp_create_nonce('wp_rest') : '';
+
+        $heading = __(
+            'OXPulse Imager: no image encoder (Imagick or GD with WebP/AVIF support) is available on this server, so images are served unoptimized. Ask your host to enable the Imagick or GD PHP extension.',
+            'oxpulse-imager'
+        );
+
+        $html = '<div class="notice notice-warning is-dismissible oxpulse-notice" '
+            . 'data-oxpulse-notice-key="' . esc_attr(self::NO_ENCODER_KEY) . '" '
+            . 'data-oxpulse-dismiss-url="' . esc_url($dismissUrl) . '" '
+            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '">'
+            . '<p><strong>' . esc_html__('OXPulse Imager', 'oxpulse-imager') . '</strong> — '
+            . esc_html($heading) . '</p>'
+            . '</div>';
+
+        return ['key' => self::NO_ENCODER_KEY, 'class' => 'warning', 'html' => $html];
+    }
+
+    /**
+     * #90: Build the imgproxy-unreachable notice. Warns when an imgproxy
+     * endpoint is configured but the cached health is 'down'. Dismissable,
+     * keyed IMGPROXY_DOWN_KEY, but the dismissal is auto-cleared when health
+     * returns to 'up' so a later outage re-notifies.
+     *
+     * @return array{key:string,class:string,html:string}
+     */
+    public function buildImgproxyDownNotice(): array
+    {
+        $dismissUrl = rest_url('oxpulse/v1/capability/dismiss');
+        $nonce = function_exists('wp_create_nonce') ? wp_create_nonce('wp_rest') : '';
+
+        $heading = __(
+            'OXPulse Imager: the configured imgproxy endpoint is currently unreachable; original images are being served until it recovers.',
+            'oxpulse-imager'
+        );
+
+        $html = '<div class="notice notice-warning is-dismissible oxpulse-notice" '
+            . 'data-oxpulse-notice-key="' . esc_attr(self::IMGPROXY_DOWN_KEY) . '" '
+            . 'data-oxpulse-dismiss-url="' . esc_url($dismissUrl) . '" '
+            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '">'
+            . '<p><strong>' . esc_html__('OXPulse Imager', 'oxpulse-imager') . '</strong> — '
+            . esc_html($heading) . '</p>'
+            . '</div>';
+
+        return ['key' => self::IMGPROXY_DOWN_KEY, 'class' => 'warning', 'html' => $html];
+    }
+
+    /**
+     * #90: Render the no-encoder notice when LocalBackend is active and the
+     * host can encode neither webp nor avif.
+     */
+    private function maybeRenderNoEncoderNotice(): void
+    {
+        if ($this->imageTransformer->supportsWebp() || $this->imageTransformer->supportsAvif()) {
+            return;
+        }
+        $notice = $this->buildNoEncoderNotice();
+        $stateForDismiss = self::noticeDismissState($notice['key'], $this->repository);
+        if (!$this->repository->isNoticeDismissed($notice['key'], $stateForDismiss)) {
+            echo wp_kses_post($notice['html']);
+            $this->emitInlineScript();
+        }
+    }
+
+    /**
+     * #90: Render the imgproxy-down notice when an endpoint is configured
+     * and the cached health is 'down'. Auto-clears any stored dismissal
+     * when health recovers to 'up' so a later outage re-notifies.
+     */
+    private function maybeRenderImgproxyDownNotice(): void
+    {
+        if ($this->imgproxyHealthCache->read() === 'down') {
+            $notice = $this->buildImgproxyDownNotice();
+            $stateForDismiss = self::noticeDismissState($notice['key'], $this->repository);
+            if (!$this->repository->isNoticeDismissed($notice['key'], $stateForDismiss)) {
+                echo wp_kses_post($notice['html']);
+                $this->emitInlineScript();
+            }
+            return;
+        }
+
+        // Health recovered (or was never down) — clear any imgproxy-down
+        // dismissal so the next outage re-notifies.
+        $this->clearImgproxyDownDismissal();
+    }
+
+    /**
+     * #90: Remove a stored imgproxy-down dismissal. Called by the render
+     * path when ImgproxyHealthCache::read() is no longer 'down'.
+     */
+    private function clearImgproxyDownDismissal(): void
+    {
+        $dismissed = $this->repository->loadDismissedNotices();
+        if (isset($dismissed[self::IMGPROXY_DOWN_KEY])) {
+            unset($dismissed[self::IMGPROXY_DOWN_KEY]);
+            update_option(OptionSettingsRepository::OPTION_ADMIN_NOTICE_DISMISSED, $dismissed);
+        }
     }
 
     // ─── environment-specific notice builders ────────────────────────

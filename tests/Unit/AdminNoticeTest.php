@@ -24,6 +24,8 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Tests\Unit;
 
+use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminNotice;
 use OXPulse\Imager\Integration\WordPress\Admin\CapabilityRestController;
@@ -486,11 +488,155 @@ class AdminNoticeTest extends TestCase
         $this->assertTrue($hooked, 'register() must hook admin_notices');
     }
 
+    // ─── #90: no-encoder + imgproxy-down notices ─────────────────────
+
+    /**
+     * #90: no-encoder notice renders when LocalBackend is active and the
+     * host has neither WebP nor AVIF encode support.
+     */
+    public function test_render_no_encoder_notice_when_local_backend_active_and_no_encoder(): void
+    {
+        $this->localBackendActive();
+        $transformer = new class extends ImageTransformer {
+            public function supportsWebp(): bool { return false; }
+            public function supportsAvif(): bool { return false; }
+        };
+
+        $out = $this->captureRender($transformer);
+
+        $this->assertStringContainsString('no_encoder', $out);
+        $this->assertStringContainsString('no image encoder', $out);
+        $this->assertStringContainsString('notice-warning', $out);
+    }
+
+    /**
+     * #90: no-encoder notice must NOT render when an imgproxy endpoint is
+     * configured — the server-side imgproxy encodes, local encoder irrelevant.
+     */
+    public function test_no_encoder_notice_not_rendered_when_imgproxy_configured(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://imgproxy.example.com');
+        $transformer = new class extends ImageTransformer {
+            public function supportsWebp(): bool { return false; }
+            public function supportsAvif(): bool { return false; }
+        };
+
+        $out = $this->captureRender($transformer);
+
+        $this->assertStringNotContainsString('no_encoder', $out);
+    }
+
+    /**
+     * #90: no-encoder notice must NOT render when at least one encoder
+     * (WebP or AVIF) is available.
+     */
+    public function test_no_encoder_notice_not_rendered_when_encoder_exists(): void
+    {
+        $this->localBackendActive();
+        $transformer = new class extends ImageTransformer {
+            public function supportsWebp(): bool { return true; }
+            public function supportsAvif(): bool { return false; }
+        };
+
+        $out = $this->captureRender($transformer);
+
+        $this->assertStringNotContainsString('no_encoder', $out);
+    }
+
+    /**
+     * #90: a dismissed no-encoder notice stays hidden (keyed-dismiss, cap-
+     * ability-independent ACTIVE marker like co-install/multisite).
+     */
+    public function test_no_encoder_notice_dismissed_stays_hidden(): void
+    {
+        $this->localBackendActive();
+        $transformer = new class extends ImageTransformer {
+            public function supportsWebp(): bool { return false; }
+            public function supportsAvif(): bool { return false; }
+        };
+        $repo = new OptionSettingsRepository();
+        $repo->dismissNotice('no_encoder', AdminNotice::noticeDismissState('no_encoder', $repo));
+
+        $out = $this->captureRender($transformer);
+
+        $this->assertStringNotContainsString('no_encoder', $out);
+    }
+
+    /**
+     * #90: imgproxy-down notice renders when an endpoint is configured and
+     * the cached health is 'down'.
+     */
+    public function test_render_imgproxy_down_notice_when_endpoint_set_and_health_down(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://imgproxy.example.com');
+        update_option(ImgproxyHealthCache::OPTION, 'down');
+
+        $out = $this->captureRender();
+
+        $this->assertStringContainsString('imgproxy_down', $out);
+        $this->assertStringContainsString('endpoint is currently unreachable', $out);
+        $this->assertStringContainsString('notice-warning', $out);
+    }
+
+    /**
+     * #90: imgproxy-down notice must NOT render when health is 'up'.
+     */
+    public function test_imgproxy_down_notice_not_rendered_when_health_up(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://imgproxy.example.com');
+        update_option(ImgproxyHealthCache::OPTION, 'up');
+
+        $out = $this->captureRender();
+
+        $this->assertStringNotContainsString('imgproxy_down', $out);
+    }
+
+    /**
+     * #90: imgproxy-down notice must NOT render when LocalBackend is active
+     * (no imgproxy endpoint) regardless of health.
+     */
+    public function test_imgproxy_down_notice_not_rendered_when_no_endpoint(): void
+    {
+        $this->localBackendActive();
+        update_option(ImgproxyHealthCache::OPTION, 'down');
+
+        $out = $this->captureRender();
+
+        $this->assertStringNotContainsString('imgproxy_down', $out);
+    }
+
+    /**
+     * #90: imgproxy-down dismissal auto-clears when health returns to 'up'
+     * so a later outage re-notifies (non-permanent dismiss keyed on live
+     * 'down' state).
+     */
+    public function test_imgproxy_down_notice_auto_clears_on_recovery_and_renotifies(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://imgproxy.example.com');
+        update_option(ImgproxyHealthCache::OPTION, 'down');
+
+        $repo = new OptionSettingsRepository();
+        $repo->dismissNotice('imgproxy_down', AdminNotice::noticeDismissState('imgproxy_down', $repo));
+
+        // Dismissed while down → hidden.
+        $out = $this->captureRender();
+        $this->assertStringNotContainsString('imgproxy_down', $out);
+
+        // Health recovers → the next render clears the imgproxy_down dismissal.
+        update_option(ImgproxyHealthCache::OPTION, 'up');
+        $this->captureRender();
+
+        // New outage → notice re-appears.
+        update_option(ImgproxyHealthCache::OPTION, 'down');
+        $out = $this->captureRender();
+        $this->assertStringContainsString('imgproxy_down', $out);
+    }
+
     // ─── helper: capture render() output ───────────────────────────────
 
-    private function captureRender(): string
+    private function captureRender(?ImageTransformer $transformer = null): string
     {
-        $notice = new AdminNotice();
+        $notice = new AdminNotice(null, $transformer);
         ob_start();
         $notice->render();
         return (string) ob_get_clean();
