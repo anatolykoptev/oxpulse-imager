@@ -76,6 +76,15 @@ final class OptionSettingsRepository
     // re-surfaces the notice. Stored as [noticeKey => stateAtDismiss].
     public const OPTION_ADMIN_NOTICE_DISMISSED = 'oxpulse_imager_admin_notice_dismissed';
 
+    // #93: LocalBackend on-disk cache size cap in megabytes. Bounds the
+    // unbounded cache (one file per transform variant) via scheduled LRU
+    // eviction. Default-only + the oxpulse_cache_max_mb filter — NO SPA
+    // field (a partial SPA save would clobber; mirrors the picture_enabled
+    // Phase-1 default+filter pattern). A filter/option value <= 0 disables
+    // eviction entirely (CacheJanitor treats a non-positive cap as a no-op).
+    public const OPTION_CACHE_MAX_MB = 'oxpulse_imager_cache_max_mb';
+    public const DEFAULT_CACHE_MAX_MB = 512;
+
     /**
      * Delivery-relevant option keys whose change requires re-installing
      * local delivery. Single source of truth for the settings-save
@@ -584,5 +593,19 @@ final class OptionSettingsRepository
             }
         }
         return $out;
+    }
+
+    /**
+     * #93: Load the LocalBackend cache size cap (MB).
+     *
+     * Reads the stored option (default 512), applies the
+     * oxpulse_cache_max_mb filter so an operator can override without a
+     * UI field. A value <= 0 disables eviction entirely (CacheJanitor
+     * treats a non-positive cap as a no-op).
+     */
+    public function loadCacheMaxMb(): int
+    {
+        $stored = (int) get_option(self::OPTION_CACHE_MAX_MB, self::DEFAULT_CACHE_MAX_MB);
+        return (int) apply_filters('oxpulse_cache_max_mb', $stored);
     }
 }
