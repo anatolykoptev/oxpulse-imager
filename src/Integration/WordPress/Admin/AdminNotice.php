@@ -84,6 +84,15 @@ final class AdminNotice
      */
     public const NOTICE_STATE_ACTIVE = 'active';
 
+    /**
+     * #87: notice key for the multisite LocalBackend-unsupported notice.
+     * Capability-independent (the notice is about the install being
+     * multisite, not the rewrite capability), so its dismissal is stored
+     * against NOTICE_STATE_ACTIVE — mirroring the co-install keyed-dismiss
+     * pattern.
+     */
+    public const MULTISITE_KEY = 'multisite_local_unsupported';
+
     private OptionSettingsRepository $repository;
 
     /**
@@ -123,6 +132,11 @@ final class AdminNotice
         if (str_starts_with($noticeKey, self::COINSTALL_KEY_PREFIX)) {
             return self::NOTICE_STATE_ACTIVE;
         }
+        // #87: the multisite notice is capability-independent — dismiss
+        // against the fixed ACTIVE marker (same shape as co-install).
+        if ($noticeKey === self::MULTISITE_KEY) {
+            return self::NOTICE_STATE_ACTIVE;
+        }
         return $repository->loadRewriteCapability();
     }
 
@@ -141,6 +155,18 @@ final class AdminNotice
         }
 
         $delivery = $this->repository->loadDeliveryConfig();
+
+        // #87: multisite + LocalBackend-active (endpoint empty → LocalBackend
+        // would be the tier) → render the multisite-unsupported notice and
+        // skip the capability/encoder notice (LocalBackend won't run on
+        // multisite). The co-install notice still applies (competing plugins
+        // are relevant regardless of the delivery backend).
+        if (function_exists('is_multisite') && is_multisite() && $delivery->isLocalBackendActive()) {
+            $this->maybeRenderMultisiteNotice();
+            $this->maybeRenderCoInstallNotice();
+            return;
+        }
+
         if (!$delivery->isLocalBackendActive()) {
             // Imgproxy backend — the capability notice is irrelevant.
             // Still render the co-install notice (it applies regardless
@@ -324,6 +350,36 @@ location ~* ^{$cachePath}/([0-9a-f]+)/(.+)\.(webp|avif)$ {
         return ['key' => $key, 'class' => 'info', 'html' => $html];
     }
 
+    /**
+     * #87: Build the multisite LocalBackend-unsupported notice. Mirrors
+     * buildLitespeedNotice() — a dismissable info notice — but WITHOUT a
+     * "Re-test capability" button (the fix is "configure an imgproxy
+     * endpoint", not a re-probe). Keyed MULTISITE_KEY, capability-
+     * independent dismissal (NOTICE_STATE_ACTIVE, like co-install).
+     *
+     * @return array{key:string,class:string,html:string}
+     */
+    public function buildMultisiteNotice(): array
+    {
+        $dismissUrl = rest_url('oxpulse/v1/capability/dismiss');
+        $nonce = function_exists('wp_create_nonce') ? wp_create_nonce('wp_rest') : '';
+
+        $heading = __(
+            'OXPulse Imager: LocalBackend delivery is not supported on WordPress Multisite. Configure an imgproxy endpoint to enable optimized delivery.',
+            'oxpulse-imager'
+        );
+
+        $html = '<div class="notice notice-info is-dismissible oxpulse-notice" '
+            . 'data-oxpulse-notice-key="' . esc_attr(self::MULTISITE_KEY) . '" '
+            . 'data-oxpulse-dismiss-url="' . esc_url($dismissUrl) . '" '
+            . 'data-oxpulse-nonce="' . esc_attr($nonce) . '">'
+            . '<p><strong>' . esc_html__('OXPulse Imager', 'oxpulse-imager') . '</strong> — '
+            . esc_html($heading) . '</p>'
+            . '</div>';
+
+        return ['key' => self::MULTISITE_KEY, 'class' => 'info', 'html' => $html];
+    }
+
     // ─── environment-specific notice builders ────────────────────────
 
     private function buildNginxNotice(string $capability, string $restUrl, string $dismissUrl, string $nonce): array
@@ -456,6 +512,20 @@ location ~* ^{$cachePath}/([0-9a-f]+)/(.+)\.(webp|avif)$ {
         // state is the capability-independent NOTICE_STATE_ACTIVE
         // marker (resolved via noticeDismissState()) so a set change
         // (new key) re-notifies automatically.
+        if (!$this->repository->isNoticeDismissed($notice['key'], self::noticeDismissState($notice['key'], $this->repository))) {
+            echo wp_kses_post($notice['html']);
+            $this->emitInlineScript();
+        }
+    }
+
+    /**
+     * #87: Render the multisite LocalBackend-unsupported notice when not
+     * already dismissed. Capability-independent dismissal (NOTICE_STATE_ACTIVE),
+     * mirroring maybeRenderCoInstallNotice().
+     */
+    private function maybeRenderMultisiteNotice(): void
+    {
+        $notice = $this->buildMultisiteNotice();
         if (!$this->repository->isNoticeDismissed($notice['key'], self::noticeDismissState($notice['key'], $this->repository))) {
             echo wp_kses_post($notice['html']);
             $this->emitInlineScript();

@@ -53,10 +53,23 @@ final class LocalBackendProvider implements DeliveryBackendProvider
      * miss-endpoint can't resolve (see DeliveryBackendFactory parity
      * comment). imgproxy + sourceMode='local' is handled by the
      * imgproxy provider.
+     *
+     * #87: NOT applicable on WordPress Multisite. LocalBackend bakes ONE
+     * shared oxpulse-img.php endpoint with a single blog's per-site
+     * values (key/salt/uploadsBasedir/uploadsBaseurl/avifQuality); on a
+     * multisite every other blog's images fail (HMAC mismatch → 400,
+     * PathGuard reject → 404). The registry falls through to Passthrough
+     * (or ImgproxyBackend when an endpoint is configured). Per-site
+     * multisite LocalBackend is a separate followup.
      */
     public function isApplicable(DeliveryConfig $config, ?SigningConfig $signing): bool
     {
-        return $signing !== null && $config->sourceMode !== 'local';
+        if ($signing === null || $config->sourceMode === 'local') {
+            return false;
+        }
+        // function_exists guard: is_multisite() is available in WP, but
+        // the unit-test stub environment may load this class without it.
+        return !function_exists('is_multisite') || !is_multisite();
     }
 
     /**

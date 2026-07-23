@@ -37,6 +37,7 @@ class AdminNoticeTest extends TestCase
         $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_actions'] = [];
         $GLOBALS['__oxpulse_is_admin'] = true;
+        $GLOBALS['__oxpulse_is_multisite'] = false;
         $GLOBALS['__oxpulse_current_user_can'] = ['manage_options' => true];
         $GLOBALS['__oxpulse_active_plugins'] = [];
         unset($_SERVER['SERVER_SOFTWARE']);
@@ -48,6 +49,7 @@ class AdminNoticeTest extends TestCase
             $GLOBALS['__oxpulse_options'],
             $GLOBALS['__oxpulse_actions'],
             $GLOBALS['__oxpulse_is_admin'],
+            $GLOBALS['__oxpulse_is_multisite'],
             $GLOBALS['__oxpulse_current_user_can'],
             $GLOBALS['__oxpulse_active_plugins'],
         );
@@ -374,6 +376,98 @@ class AdminNoticeTest extends TestCase
         $out = $this->captureRender();
         $this->assertStringContainsString('Converter for Media', $out, 'co-install notice renders regardless of capability state');
         $this->assertStringNotContainsString('oxpulse-nginx-snippet', $out, 'capability notice suppressed when yes');
+    }
+
+    // ─── #87: multisite LocalBackend-unsupported notice ───────────────
+
+    /**
+     * #87: buildMultisiteNotice() mirrors buildLitespeedNotice() — a
+     * dismissable info notice, keyed `multisite_local_unsupported`, with
+     * NO "Re-test capability" button (the fix is "configure imgproxy",
+     * not a re-probe).
+     */
+    public function test_build_multisite_notice_is_dismissable_info_without_retest_button(): void
+    {
+        $notice = new AdminNotice();
+        $built = $notice->buildMultisiteNotice();
+        $this->assertNotNull($built);
+        $this->assertSame('multisite_local_unsupported', $built['key']);
+        $this->assertSame('info', $built['class']);
+        $this->assertStringContainsString('notice-info', $built['html']);
+        $this->assertStringContainsString('is-dismissible', $built['html'], 'multisite notice must be dismissable');
+        $this->assertStringContainsString('Multisite', $built['html']);
+        $this->assertStringContainsString('imgproxy', $built['html']);
+        $this->assertStringNotContainsString('Re-test capability', $built['html'], 'multisite notice must NOT have a Re-test button');
+        $this->assertStringNotContainsString('oxpulse-retest-btn', $built['html'], 'multisite notice must NOT have a retest button class');
+    }
+
+    /**
+     * #87: on multisite + LocalBackend-active (endpoint empty), render()
+     * emits the multisite notice and skips the capability notice.
+     */
+    public function test_render_emits_multisite_notice_when_multisite_and_local_backend_active(): void
+    {
+        $GLOBALS['__oxpulse_is_multisite'] = true;
+        $this->localBackendActive();
+        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, 'no');
+        $_SERVER['SERVER_SOFTWARE'] = 'nginx/1.25';
+
+        $out = $this->captureRender();
+        $this->assertStringContainsString('multisite_local_unsupported', $out, 'multisite notice must render on multisite + LocalBackend active');
+        $this->assertStringContainsString('Multisite', $out);
+        // The capability notice must be SKIPPED in the multisite branch.
+        $this->assertStringNotContainsString('oxpulse-nginx-snippet', $out, 'capability notice must NOT render on multisite');
+        $this->assertStringNotContainsString('Re-test capability', $out, 'capability Re-test button must NOT render on multisite');
+    }
+
+    /**
+     * #87: single-site + LocalBackend-active → the multisite notice must
+     * NOT render (unchanged behavior — the capability notice path runs).
+     */
+    public function test_render_no_multisite_notice_on_single_site(): void
+    {
+        $GLOBALS['__oxpulse_is_multisite'] = false;
+        $this->localBackendActive();
+        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, 'no');
+        $_SERVER['SERVER_SOFTWARE'] = 'nginx/1.25';
+
+        $out = $this->captureRender();
+        $this->assertStringNotContainsString('multisite_local_unsupported', $out, 'multisite notice must NOT render on single-site');
+        $this->assertStringContainsString('oxpulse-nginx-snippet', $out, 'capability notice still renders on single-site (unchanged)');
+    }
+
+    /**
+     * #87: multisite + imgproxy configured (LocalBackend NOT active) →
+     * no multisite notice (the operator already has a supported backend).
+     */
+    public function test_render_no_multisite_notice_when_imgproxy_configured_on_multisite(): void
+    {
+        $GLOBALS['__oxpulse_is_multisite'] = true;
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://imgproxy.example.com');
+        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, 'no');
+        $_SERVER['SERVER_SOFTWARE'] = 'nginx/1.25';
+
+        $out = $this->captureRender();
+        $this->assertStringNotContainsString('multisite_local_unsupported', $out, 'no multisite notice when imgproxy is configured');
+    }
+
+    /**
+     * #87: the multisite notice is dismissable (keyed dismiss, capability-
+     * independent like co-install). After dismissing, render() must NOT
+     * re-emit it.
+     */
+    public function test_multisite_notice_dismissed_stays_hidden(): void
+    {
+        $GLOBALS['__oxpulse_is_multisite'] = true;
+        $this->localBackendActive();
+        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, 'no');
+        $_SERVER['SERVER_SOFTWARE'] = 'nginx/1.25';
+
+        $repo = new OptionSettingsRepository();
+        $repo->dismissNotice('multisite_local_unsupported', AdminNotice::noticeDismissState('multisite_local_unsupported', $repo));
+
+        $out = $this->captureRender();
+        $this->assertStringNotContainsString('multisite_local_unsupported', $out, 'dismissed multisite notice must NOT render');
     }
 
     // ─── register() hooks admin_notices ────────────────────────────────

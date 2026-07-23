@@ -31,6 +31,18 @@ class LocalBackendProviderTest extends TestCase
     private const SALT_HEX = '68656C6C6F';
     private const ALLOWED = 'https://example.com/wp-content/uploads/';
 
+    protected function setUp(): void
+    {
+        // #87: single-site is the production default; tests flip this
+        // to true to exercise the multisite LocalBackend gate.
+        $GLOBALS['__oxpulse_is_multisite'] = false;
+    }
+
+    protected function tearDown(): void
+    {
+        unset($GLOBALS['__oxpulse_is_multisite']);
+    }
+
     private function delivery(string $endpoint = '', string $sourceMode = 'http'): DeliveryConfig
     {
         return new DeliveryConfig(
@@ -78,6 +90,37 @@ class LocalBackendProviderTest extends TestCase
     {
         $provider = new LocalBackendProvider(new ProviderStubTransformer(true, false));
         $this->assertFalse($provider->isApplicable($this->delivery('', 'local'), $this->signing()));
+    }
+
+    // ─── #87: multisite gate ─────────────────────────────────────────
+
+    /**
+     * #87: LocalBackend is NOT applicable on WordPress Multisite — one
+     * shared oxpulse-img.php endpoint baked per-blog breaks every other
+     * blog (HMAC mismatch / PathGuard reject). The registry falls
+     * through to Passthrough (or ImgproxyBackend when an endpoint is
+     * configured).
+     */
+    public function test_is_not_applicable_on_multisite(): void
+    {
+        $GLOBALS['__oxpulse_is_multisite'] = true;
+        $provider = new LocalBackendProvider(new ProviderStubTransformer(true, false));
+        $this->assertFalse(
+            $provider->isApplicable($this->delivery(), $this->signing()),
+            'LocalBackend must NOT be applicable on multisite (#87)',
+        );
+    }
+
+    /**
+     * #87: the multisite gate must NOT regress the single-site path —
+     * LocalBackend stays applicable on a single-site install with
+     * signing + http source mode.
+     */
+    public function test_is_applicable_on_single_site_unchanged(): void
+    {
+        $GLOBALS['__oxpulse_is_multisite'] = false;
+        $provider = new LocalBackendProvider(new ProviderStubTransformer(true, false));
+        $this->assertTrue($provider->isApplicable($this->delivery(), $this->signing()));
     }
 
     // ─── health() ────────────────────────────────────────────────────

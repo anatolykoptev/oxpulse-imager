@@ -50,6 +50,9 @@ class DeliveryBackendRegistryTest extends TestCase
         $GLOBALS['__oxpulse_filters'] = [];
         $GLOBALS['__oxpulse_transients'] = [];
         $GLOBALS['__oxpulse_options'] = [];
+        // #87: single-site is the production default; the multisite
+        // registry tests flip this to true.
+        $GLOBALS['__oxpulse_is_multisite'] = false;
     }
 
     protected function tearDown(): void
@@ -57,6 +60,7 @@ class DeliveryBackendRegistryTest extends TestCase
         unset($GLOBALS['__oxpulse_filters']);
         unset($GLOBALS['__oxpulse_transients']);
         unset($GLOBALS['__oxpulse_options']);
+        unset($GLOBALS['__oxpulse_is_multisite']);
     }
 
     private function delivery(string $endpoint = self::ENDPOINT, string $sourceMode = 'http'): DeliveryConfig
@@ -309,6 +313,39 @@ class DeliveryBackendRegistryTest extends TestCase
             $backend instanceof LocalBackend || $backend === null,
             'must fall through to LocalBackend or passthrough (null), not imgproxy',
         );
+    }
+
+    // ─── #87: multisite — LocalBackend gated off, registry falls through ─
+
+    /**
+     * #87: on multisite with NO imgproxy endpoint, LocalBackend is not
+     * applicable (isApplicable() gates on !is_multisite()) → the registry
+     * falls through to Passthrough (build()=null → select returns null).
+     * Pre-fix this selected LocalBackend (the broken multisite path).
+     */
+    public function test_multisite_no_endpoint_yields_passthrough_null(): void
+    {
+        $GLOBALS['__oxpulse_is_multisite'] = true;
+
+        $registry = DeliveryBackendRegistry::default($this->delivery(''), $this->signing());
+        $backend = $registry->select($this->delivery(''), $this->signing());
+
+        $this->assertNull($backend, 'multisite + no imgproxy endpoint → Passthrough (null), NOT LocalBackend');
+        $this->assertNotInstanceOf(LocalBackend::class, $backend, 'LocalBackend must NOT be selected on multisite');
+    }
+
+    /**
+     * #87: on multisite WITH an imgproxy endpoint, ImgproxyBackend is
+     * selected — imgproxy is unaffected by the multisite LocalBackend gate.
+     */
+    public function test_multisite_with_endpoint_yields_imgproxy_backend(): void
+    {
+        $GLOBALS['__oxpulse_is_multisite'] = true;
+
+        $registry = DeliveryBackendRegistry::default($this->delivery(), $this->signing());
+        $backend = $registry->select($this->delivery(), $this->signing());
+
+        $this->assertInstanceOf(ImgproxyBackend::class, $backend, 'multisite + imgproxy endpoint → ImgproxyBackend (unaffected by the gate)');
     }
 }
 
