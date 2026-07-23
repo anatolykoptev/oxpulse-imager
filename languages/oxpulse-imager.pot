@@ -152,6 +152,12 @@ msgstr ""
 msgid "OXPulse Imager"
 msgstr ""
 
+msgid "OXPulse Imager: no image encoder (Imagick or GD with WebP/AVIF support) is available on this server, so images are served unoptimized. Ask your host to enable the Imagick or GD PHP extension."
+msgstr ""
+
+msgid "OXPulse Imager: the configured imgproxy endpoint is currently unreachable; original images are being served until it recovers."
+msgstr ""
+
 msgid "OXPulse Imager is serving optimized images via a PHP fallback. For best performance, add this nginx rule to your server block and reload nginx:"
 msgstr ""
 
@@ -211,6 +217,30 @@ msgid "Job not found. It may have expired (jobs are kept for 1 hour)."
 msgstr ""
 
 msgid "You do not have permission to access this page."
+msgstr ""
+
+msgid "Active delivery:"
+msgstr ""
+
+msgid "Active delivery: LocalBackend clean-URL (.webp/.avif)"
+msgstr ""
+
+msgid "Active delivery: LocalBackend ?k= fallback"
+msgstr ""
+
+msgid "Active delivery: Passthrough (no optimization)"
+msgstr ""
+
+msgid "Active delivery: imgproxy (AVIF)"
+msgstr ""
+
+msgid "Active delivery: imgproxy (WebP)"
+msgstr ""
+
+msgid "Active delivery: imgproxy (JPEG)"
+msgstr ""
+
+msgid "Active delivery: imgproxy (AVIF via Accept)"
 msgstr ""
 
 msgid "OXPulse Imager admin failed to load. Try a hard refresh; if it still does not load, check for caching plugins or contact your site administrator."

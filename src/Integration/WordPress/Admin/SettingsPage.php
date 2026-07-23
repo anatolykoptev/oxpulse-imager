@@ -20,13 +20,35 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Admin;
 
+use OXPulse\Imager\Domain\Config\DeliveryConfig;
+use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
+use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\WordPress\AssetManifest;
+use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 
 final class SettingsPage
 {
     public const PAGE_SLUG = 'oxpulse-imager';
     public const NONCE_ACTION = 'oxpulse_imager_settings';
     public const OPTION_GROUP = 'oxpulse_imager_settings_group';
+
+    private OptionSettingsRepository $repository;
+    private ImageTransformer $imageTransformer;
+    private ImgproxyHealthCache $imgproxyHealthCache;
+    private CapabilityTester $capabilityTester;
+
+    public function __construct(
+        ?OptionSettingsRepository $repository = null,
+        ?ImageTransformer $imageTransformer = null,
+        ?ImgproxyHealthCache $imgproxyHealthCache = null,
+        ?CapabilityTester $capabilityTester = null,
+    ) {
+        $this->repository = $repository ?? new OptionSettingsRepository();
+        $this->imageTransformer = $imageTransformer ?? new ImageTransformer();
+        $this->imgproxyHealthCache = $imgproxyHealthCache ?? new ImgproxyHealthCache();
+        $this->capabilityTester = $capabilityTester ?? new CapabilityTester(null, $this->repository);
+    }
 
     public function register(): void
     {
@@ -46,7 +68,9 @@ final class SettingsPage
     }
 
     /**
-     * Render the settings page — just a mount root for the React SPA.
+     * Render the settings page — mount root for the React SPA plus a
+     * PHP-rendered active-delivery status line (so the operator can see
+     * the chosen backend/health path before the SPA loads).
      *
      * An `<h1>` precedes the root div (a11y): a bare mount root leaves
      * no heading landmark for a screen reader to orient on before the
@@ -60,8 +84,61 @@ final class SettingsPage
         }
         ?>
         <h1 class="screen-reader-text"><?php echo esc_html(get_admin_page_title()); ?></h1>
+        <p class="oxpulse-delivery-status">
+            <strong><?php echo esc_html__('Active delivery:', 'oxpulse-imager'); ?></strong>
+            <?php echo esc_html($this->buildDeliveryStatusLine()); ?>
+        </p>
         <div id="oxpulse-admin-root"></div>
         <?php
+    }
+
+    /**
+     * #90: Build the one-line active delivery-path label for the admin
+     * settings page. Uses cached health + capability signals only (no
+     * network I/O on the render path).
+     *
+     * Possible labels:
+     *   - Active delivery: imgproxy (AVIF via Accept)
+     *   - Active delivery: imgproxy (AVIF)
+     *   - Active delivery: imgproxy (WebP)
+     *   - Active delivery: LocalBackend clean-URL (.webp/.avif)
+     *   - Active delivery: LocalBackend ?k= fallback
+     *   - Active delivery: Passthrough (no optimization)
+     */
+    public function buildDeliveryStatusLine(): string
+    {
+        $delivery = $this->repository->loadDeliveryConfig();
+        $signing = $this->repository->loadSigningConfig();
+
+        if (!$delivery->isLocalBackendActive() && $this->imgproxyHealthCache->read() === 'up') {
+            return $this->imgproxyLabel($delivery);
+        }
+
+        $localApplicable = $signing !== null
+            && $delivery->sourceMode === 'http'
+            && (!function_exists('is_multisite') || !is_multisite());
+
+        if ($localApplicable && ($this->imageTransformer->supportsWebp() || $this->imageTransformer->supportsAvif())) {
+            return $this->capabilityTester->rewriteAvailable()
+                ? __('Active delivery: LocalBackend clean-URL (.webp/.avif)', 'oxpulse-imager')
+                : __('Active delivery: LocalBackend ?k= fallback', 'oxpulse-imager');
+        }
+
+        return __('Active delivery: Passthrough (no optimization)', 'oxpulse-imager');
+    }
+
+    private function imgproxyLabel(DeliveryConfig $delivery): string
+    {
+        switch ($delivery->outputFormat) {
+            case 'avif':
+                return __('Active delivery: imgproxy (AVIF)', 'oxpulse-imager');
+            case 'webp':
+                return __('Active delivery: imgproxy (WebP)', 'oxpulse-imager');
+            case 'jpeg':
+                return __('Active delivery: imgproxy (JPEG)', 'oxpulse-imager');
+            default:
+                return __('Active delivery: imgproxy (AVIF via Accept)', 'oxpulse-imager');
+        }
     }
 
     /**
