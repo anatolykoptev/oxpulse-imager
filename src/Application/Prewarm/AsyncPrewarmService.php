@@ -41,6 +41,26 @@ final class AsyncPrewarmService
     }
 
     /**
+     * #92: Detect whether WP-Cron is disabled on this host.
+     *
+     * Kinsta, WP Engine, Pantheon and similar hosts set
+     * `define('DISABLE_WP_CRON', true);` and run wp-cron.php via a
+     * real system cron (or not at all). When disabled, any job
+     * scheduled via wp_schedule_single_event() will NEVER fire from
+     * traffic — so an async pre-warm job would be enqueued and
+     * silently never run. This is the deterministic signal; a
+     * "likely-dead" WP-Cron (no traffic) is not detectable reliably.
+     *
+     * Mirrors the check WP core itself uses to short-circuit
+     * wp-cron.php. Truthy values (bool true, string 'true') count
+     * as disabled; `define('DISABLE_WP_CRON', false)` does NOT.
+     */
+    public static function isWpCronDisabled(): bool
+    {
+        return defined('DISABLE_WP_CRON') && constant('DISABLE_WP_CRON');
+    }
+
+    /**
      * Create a new async pre-warm job and schedule the first batch.
      *
      * @param array<int,string> $sourceUrls
@@ -51,6 +71,16 @@ final class AsyncPrewarmService
     {
         $jobId = $this->generateJobId();
         $this->store->create($jobId, $sourceUrls, $widths);
+
+        // #92: Do NOT schedule a cron event when WP-Cron is disabled
+        // (DISABLE_WP_CRON) — it would never fire and the job would
+        // silently sit 'pending' forever. The REST controller checks
+        // this BEFORE calling createJob and returns a 503 pointing to
+        // the CLI/system-cron alternative; this guard is defensive so
+        // a direct caller also never queues a dead event.
+        if (self::isWpCronDisabled()) {
+            return $jobId;
+        }
 
         // Schedule the first batch processing.
         if (function_exists('wp_schedule_single_event')) {

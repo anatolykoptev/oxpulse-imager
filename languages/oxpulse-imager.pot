@@ -158,6 +158,9 @@ msgstr ""
 msgid "OXPulse Imager: the configured imgproxy endpoint is currently unreachable; original images are being served until it recovers."
 msgstr ""
 
+msgid "OXPulse Imager: background pre-warm requires WP-Cron, which is disabled on this site (DISABLE_WP_CRON). Run it via WP-CLI (`wp oxpulse warm`) or enable a system cron hitting wp-cron.php."
+msgstr ""
+
 msgid "OXPulse Imager is serving optimized images via a PHP fallback. For best performance, add this nginx rule to your server block and reload nginx:"
 msgstr ""
 
@@ -205,6 +208,9 @@ msgid "No imgproxy endpoint configured."
 msgstr ""
 
 msgid "No signing secrets configured."
+msgstr ""
+
+msgid "Background pre-warm is unavailable because WP-Cron is disabled on this site (DISABLE_WP_CRON). Run it via WP-CLI (`wp oxpulse warm`) or enable a system cron hitting wp-cron.php."
 msgstr ""
 
 msgid "Pre-warm job created. Poll GET /oxpulse/v1/prewarm/<jobId> for progress."

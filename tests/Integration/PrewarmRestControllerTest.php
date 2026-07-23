@@ -172,6 +172,133 @@ class PrewarmRestControllerTest extends TestCase
         $GLOBALS['__oxpulse_options']['oxpulse_imager_salt'] = bin2hex(random_bytes(16));
     }
 
+    // ─── #92: async prewarm + DISABLE_WP_CRON ───────────────────────
+
+    /**
+     * A spy DiagnosticLoggerInterface that records warning() calls so
+     * the controller's "blocked prewarm" log path can be asserted
+     * without touching error_log or the diagnostic-level option.
+     */
+    private function spyLogger(): object
+    {
+        return new class implements \OXPulse\Imager\Application\Diagnostics\DiagnosticLoggerInterface {
+            public array $warnings = [];
+            public array $entries = [];
+            public function log(\OXPulse\Imager\Domain\Diagnostics\LogEntry $entry): void { $this->entries[] = $entry; }
+            public function getEntries(): array { return $this->entries; }
+            public function getSummary(): array { return ['rewritten' => 0, 'preserved' => 0, 'total' => count($this->entries)]; }
+            public function flush(): void {}
+            public function warning(string $message): void { $this->warnings[] = $message; }
+        };
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_handle_prewarm_async_reports_unavailability_when_cron_disabled(): void
+    {
+        define('DISABLE_WP_CRON', true);
+        $this->setupFullConfig();
+        $GLOBALS['__oxpulse_transients'] = [];
+        $GLOBALS['__oxpulse_scheduled_events'] = [];
+
+        $logger = $this->spyLogger();
+        $controller = new PrewarmRestController($this->repository, $logger);
+        $request = new WP_REST_Request([
+            'urls'  => ['https://example.com/uploads/photo.jpg'],
+            'async' => true,
+        ]);
+
+        $response = $controller->handlePrewarm($request);
+
+        // Must be a WP_Error — NOT a silent success with a jobId.
+        $this->assertInstanceOf(WP_Error::class, $response);
+        $this->assertSame('oxpulse_prewarm_cron_disabled', array_key_first($response->errors));
+        $this->assertSame(503, $response->get_error_data()['status'] ?? null);
+
+        // The message must point the operator at BOTH alternatives:
+        // the WP-CLI command and the system-cron path.
+        $msg = $response->get_error_message();
+        $this->assertStringContainsString('WP-Cron', $msg);
+        $this->assertStringContainsString('wp oxpulse warm', $msg);
+        $this->assertStringContainsString('wp-cron.php', $msg);
+
+        // No cron event scheduled (no dead job queued).
+        $this->assertCount(0, $GLOBALS['__oxpulse_scheduled_events'] ?? []);
+
+        // The blocked-attempt transient flag is set so AdminNotice can
+        // surface the limitation on the next admin page load.
+        $this->assertTrue($GLOBALS['__oxpulse_transients'][\OXPulse\Imager\Integration\WordPress\Admin\PrewarmRestController::CRON_BLOCKED_TRANSIENT] ?? false);
+
+        // The diagnostic logger received a warning (no silent drop).
+        $this->assertCount(1, $logger->warnings);
+        $this->assertStringContainsString('DISABLE_WP_CRON', $logger->warnings[0]);
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_handle_prewarm_async_creates_job_when_cron_enabled(): void
+    {
+        // DISABLE_WP_CRON intentionally NOT defined → cron enabled.
+        $this->setupFullConfig();
+        $GLOBALS['__oxpulse_transients'] = [];
+        $GLOBALS['__oxpulse_scheduled_events'] = [];
+
+        $logger = $this->spyLogger();
+        $controller = new PrewarmRestController($this->repository, $logger);
+        $request = new WP_REST_Request([
+            'urls'  => ['https://example.com/uploads/photo.jpg'],
+            'async' => true,
+        ]);
+
+        $response = $controller->handlePrewarm($request);
+
+        // Unchanged behavior: a job is created and a cron event scheduled.
+        $this->assertNotInstanceOf(WP_Error::class, $response);
+        $data = $response->get_data();
+        $this->assertNotEmpty($data['jobId']);
+        $this->assertSame('pending', $data['status']);
+        $this->assertCount(1, $GLOBALS['__oxpulse_scheduled_events']);
+        // No blocked-attempt flag when cron is healthy.
+        $this->assertArrayNotHasKey(
+            \OXPulse\Imager\Integration\WordPress\Admin\PrewarmRestController::CRON_BLOCKED_TRANSIENT,
+            $GLOBALS['__oxpulse_transients'] ?? []
+        );
+        // No warning logged when cron is healthy.
+        $this->assertCount(0, $logger->warnings);
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_handle_prewarm_sync_still_works_when_cron_disabled(): void
+    {
+        // Sync mode (async=false/default) must NOT be blocked by
+        // DISABLE_WP_CRON — sync runs inline, no WP-Cron needed.
+        define('DISABLE_WP_CRON', true);
+        $this->setupFullConfig();
+        $GLOBALS['__oxpulse_transients'] = [];
+        $GLOBALS['__oxpulse_scheduled_events'] = [];
+
+        $controller = new PrewarmRestController($this->repository, $this->spyLogger());
+        $request = new WP_REST_Request([
+            'urls'  => ['https://example.com/uploads/photo.jpg'],
+            'async' => false,
+        ]);
+
+        $response = $controller->handlePrewarm($request);
+
+        // Sync path is unaffected — runs inline, returns a result.
+        $this->assertNotInstanceOf(WP_Error::class, $response);
+        $data = $response->get_data();
+        $this->assertSame(1, $data['total']);
+        $this->assertCount(0, $GLOBALS['__oxpulse_scheduled_events']);
+    }
+
     // ─── #82: health-gated REST prewarm URL producer ──────────────
 
     public function test_handle_prewarm_does_not_emit_imgproxy_urls_when_health_down(): void

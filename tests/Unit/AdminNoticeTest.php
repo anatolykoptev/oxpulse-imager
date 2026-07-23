@@ -38,6 +38,7 @@ class AdminNoticeTest extends TestCase
     {
         $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_actions'] = [];
+        $GLOBALS['__oxpulse_transients'] = [];
         $GLOBALS['__oxpulse_is_admin'] = true;
         $GLOBALS['__oxpulse_is_multisite'] = false;
         $GLOBALS['__oxpulse_current_user_can'] = ['manage_options' => true];
@@ -50,6 +51,7 @@ class AdminNoticeTest extends TestCase
         unset(
             $GLOBALS['__oxpulse_options'],
             $GLOBALS['__oxpulse_actions'],
+            $GLOBALS['__oxpulse_transients'],
             $GLOBALS['__oxpulse_is_admin'],
             $GLOBALS['__oxpulse_is_multisite'],
             $GLOBALS['__oxpulse_current_user_can'],
@@ -640,5 +642,92 @@ class AdminNoticeTest extends TestCase
         ob_start();
         $notice->render();
         return (string) ob_get_clean();
+    }
+
+    // ─── #92: cron-disabled (DISABLE_WP_CRON) prewarm notice ────────
+
+    /**
+     * #92: buildCronDisabledNotice() is a dismissable warning, keyed
+     * prewarm_cron_disabled, pointing at BOTH alternatives (WP-CLI +
+     * system cron). No "Re-test" button — the fix is operational, not
+     * a re-probe.
+     */
+    public function test_build_cron_disabled_notice_is_dismissable_warning_with_cli_pointer(): void
+    {
+        $notice = new AdminNotice();
+        $built = $notice->buildCronDisabledNotice();
+        $this->assertSame('prewarm_cron_disabled', $built['key']);
+        $this->assertSame('warning', $built['class']);
+        $this->assertStringContainsString('notice-warning', $built['html']);
+        $this->assertStringContainsString('is-dismissible', $built['html'], 'cron-disabled notice must be dismissable');
+        $this->assertStringContainsString('WP-Cron', $built['html']);
+        $this->assertStringContainsString('wp oxpulse warm', $built['html'], 'must point at the WP-CLI alternative');
+        $this->assertStringContainsString('wp-cron.php', $built['html'], 'must point at the system-cron alternative');
+        $this->assertStringNotContainsString('Re-test capability', $built['html'], 'no Re-test button — fix is operational');
+        $this->assertStringNotContainsString('oxpulse-retest-btn', $built['html']);
+    }
+
+    /**
+     * #92: the notice renders ONLY when the CRON_BLOCKED_TRANSIENT flag
+     * is set (a blocked attempt occurred) AND not dismissed.
+     */
+    public function test_render_cron_disabled_notice_when_blocked_flag_set(): void
+    {
+        // imgproxy configured (non-LocalBackend branch) — the notice
+        // must render regardless of delivery backend because cron config
+        // is independent of it.
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://imgproxy.example.com');
+        set_transient(AdminNotice::CRON_BLOCKED_TRANSIENT, true, 3600);
+
+        $out = $this->captureRender();
+
+        $this->assertStringContainsString('prewarm_cron_disabled', $out);
+        $this->assertStringContainsString('WP-Cron', $out);
+    }
+
+    /**
+     * #92: without the blocked-attempt flag, the notice must NOT render
+     * — it surfaces right after a blocked attempt, not permanently.
+     */
+    public function test_render_no_cron_disabled_notice_when_flag_unset(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://imgproxy.example.com');
+        // No transient set.
+        $out = $this->captureRender();
+        $this->assertStringNotContainsString('prewarm_cron_disabled', $out);
+    }
+
+    /**
+     * #92: the notice renders in the LocalBackend branch too — WP-Cron
+     * config is independent of the delivery backend.
+     */
+    public function test_render_cron_disabled_notice_in_local_backend_branch(): void
+    {
+        $this->localBackendActive();
+        update_option(OptionSettingsRepository::OPTION_REWRITE_CAPABILITY, 'no');
+        $_SERVER['SERVER_SOFTWARE'] = 'nginx/1.25';
+        set_transient(AdminNotice::CRON_BLOCKED_TRANSIENT, true, 3600);
+
+        $out = $this->captureRender();
+        $this->assertStringContainsString('prewarm_cron_disabled', $out, 'cron-disabled notice renders in LocalBackend branch too');
+    }
+
+    /**
+     * #92: a dismissed cron-disabled notice stays hidden while the
+     * flag is still live (capability-independent ACTIVE dismissal).
+     */
+    public function test_cron_disabled_notice_dismissed_stays_hidden(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://imgproxy.example.com');
+        set_transient(AdminNotice::CRON_BLOCKED_TRANSIENT, true, 3600);
+
+        $repo = new OptionSettingsRepository();
+        $repo->dismissNotice(
+            AdminNotice::CRON_DISABLED_KEY,
+            AdminNotice::noticeDismissState(AdminNotice::CRON_DISABLED_KEY, $repo)
+        );
+
+        $out = $this->captureRender();
+        $this->assertStringNotContainsString('prewarm_cron_disabled', $out, 'dismissed cron-disabled notice must NOT render');
     }
 }
