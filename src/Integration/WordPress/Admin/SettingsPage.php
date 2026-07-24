@@ -232,6 +232,25 @@ final class SettingsPage
     }
 
     /**
+     * Build the client-side capability status object localized to the
+     * SPA as window.oxpulseAdmin.webpCapable. The free-first
+     * OnboardingWizard Step 1 uses this to pick the welcome message
+     * kind ('ready' when the server can encode WebP, 'unsupported'
+     * when it cannot — a non-blocking heads-up).
+     *
+     * Mirrors buildLicenseData()'s shape: a plain array, read from the
+     * real ImageTransformer (the ctor-injected seam), so the SPA never
+     * disagrees with the backend on what the host can encode. No
+     * network I/O on the render path — supportsWebp() is memoized.
+     *
+     * @return array{webpCapable: bool}
+     */
+    public function buildClientStatus(): array
+    {
+        return ['webpCapable' => $this->imageTransformer->supportsWebp()];
+    }
+
+    /**
      * Enqueue the React admin bundle on this page only.
      */
     public function enqueueAdminAssets(string $hook): void
@@ -294,6 +313,7 @@ final class SettingsPage
                     'oxpulse-imager'
                 ),
                 'license'   => $this->buildLicenseData(),
+                'webpCapable' => $this->buildClientStatus()['webpCapable'],
             ]
         );
 

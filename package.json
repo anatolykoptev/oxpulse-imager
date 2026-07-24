@@ -14,7 +14,7 @@
     "make-pot": "node build/make-pot.mjs",
     "make-json": "node build/make-json.mjs",
     "i18n": "npm run make-pot && npm run make-json",
-    "test": "node --test tests/admin/options-store.test.mjs tests/admin/license.test.mjs",
+    "test": "node --test tests/admin/options-store.test.mjs tests/admin/license.test.mjs tests/admin/onboarding-flow.test.mjs",
     "lint": "eslint 'src/admin/**/*.{js,jsx}'"
   },
   "dependencies": {

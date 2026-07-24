@@ -899,48 +899,6 @@ msgstr ""
 msgid "Step"
 msgstr ""
 
-msgid "Failed to save settings."
-msgstr ""
-
-msgid "Please enter a valid HTTPS endpoint URL."
-msgstr ""
-
-msgid "Please enter both key and salt, or generate them."
-msgstr ""
-
-msgid "Key and salt must be at least 16 bytes (32 hex characters)."
-msgstr ""
-
-msgid "Failed to save secrets."
-msgstr ""
-
-msgid "Generated 32-byte key + salt. You can copy these before continuing — they will not be shown again after save."
-msgstr ""
-
-msgid "Health check failed. Verify the endpoint URL and that imgproxy is running."
-msgstr ""
-
-msgid "Health check request failed."
-msgstr ""
-
-msgid "Please add at least one allowed source origin."
-msgstr ""
-
-msgid "Added uploads URL to allowed sources."
-msgstr ""
-
-msgid "Uploads URL is already in allowed sources."
-msgstr ""
-
-msgid "Could not auto-detect uploads URL. Please enter it manually."
-msgstr ""
-
-msgid "AVIF is not supported by your imgproxy build. The plugin will fall back to WebP. You can continue."
-msgstr ""
-
-msgid "AVIF check request failed."
-msgstr ""
-
 msgid "Failed to enable delivery."
 msgstr ""
 
@@ -950,82 +908,70 @@ msgstr ""
 msgid "Skip for now"
 msgstr ""
 
-msgid "Enter the base URL of your self-hosted imgproxy instance. HTTPS is required in production."
+msgid "Welcome"
 msgstr ""
 
-msgid "No trailing slash. Example: https://imgproxy.yourdomain.com"
+msgid "OXPulse Imager optimizes your images as WebP automatically — right on your server. No external service, no keys, no setup."
 msgstr ""
 
-msgid "imgproxy requires a key + salt to sign transformed image URLs. Generate random 32-byte secrets, or paste your own hex-encoded values."
+msgid "Ready — WebP supported"
 msgstr ""
 
-msgid "Generate random key + salt"
+msgid "Your server's image library can't produce WebP yet. Images are served unchanged until that's available — nothing else to do here."
 msgstr ""
 
-msgid "64 hex characters (32 bytes)"
+msgid "WebP not available yet"
 msgstr ""
 
-msgid "Verify that imgproxy is reachable and responding at the endpoint you configured."
+msgid "Tuning"
 msgstr ""
 
-msgid "Endpoint:"
+msgid "Default quality 80 works for most sites."
 msgstr ""
 
-msgid "Testing…"
+msgid "Fine-tune formats & per-format quality anytime in Settings → Format."
 msgstr ""
 
-msgid "Connected — imgproxy is responding."
+msgid "Unlock Pro"
 msgstr ""
 
-msgid "Only images whose URL starts with one of these prefixes will be rewritten. Add your wp-content/uploads/ URL."
+msgid "AVIF (~30% smaller than WebP)"
 msgstr ""
 
-msgid "Auto-detect uploads URL"
+msgid "Self-hosted imgproxy delivery"
 msgstr ""
 
-msgid "Check whether your imgproxy build supports AVIF output. If not, the plugin falls back to WebP automatically."
+msgid "Cache control"
 msgstr ""
 
-msgid "Test AVIF"
+msgid "Upgrade"
 msgstr ""
 
-msgid "AVIF supported — your imgproxy can serve AVIF."
+msgid "Available on Pro"
 msgstr ""
 
-msgid "AVIF not supported — will fall back to WebP."
+msgid "Maybe later"
 msgstr ""
 
-msgid "Everything is configured. Enable delivery to start rewriting image URLs to signed imgproxy URLs on the frontend."
-msgstr ""
-
-msgid "Allowed sources:"
-msgstr ""
-
-msgid "AVIF:"
-msgstr ""
-
-msgid "Supported"
-msgstr ""
-
-msgid "Not supported (WebP fallback)"
-msgstr ""
-
-msgid "Delivery:"
-msgstr ""
-
-msgid "Will be enabled on finish"
+msgid "You're on Pro — configure AVIF & imgproxy in Settings → Connection"
 msgstr ""
 
 msgid "Back"
 msgstr ""
 
-msgid "Saving…"
+msgid "Turn on optimization"
+msgstr ""
+
+msgid "Skip"
 msgstr ""
 
 msgid "Next"
 msgstr ""
 
-msgid "Enabling…"
+msgid "Finishing…"
+msgstr ""
+
+msgid "Finish"
 msgstr ""
 
 msgid "Included in your Pro plan"
@@ -1038,9 +984,6 @@ msgid "PRO"
 msgstr ""
 
 msgid "Available on Pro — Upgrade"
-msgstr ""
-
-msgid "Available on Pro"
 msgstr ""
 
 msgid "Collapse section"
@@ -1061,6 +1004,9 @@ msgstr ""
 msgid "Settings saved."
 msgstr ""
 
+msgid "Failed to save settings."
+msgstr ""
+
 msgid "Settings sections"
 msgstr ""
 
@@ -1071,6 +1017,9 @@ msgid "Upgrade to Pro"
 msgstr ""
 
 msgid "Unsaved changes"
+msgstr ""
+
+msgid "Saving…"
 msgstr ""
 
 msgid "Save"
