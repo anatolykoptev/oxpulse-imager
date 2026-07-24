@@ -107,6 +107,14 @@ function oxpulse_imager_activate(): void {
         // or by the "Skip" link. Re-activation does NOT reset this —
         // only a fresh install (no option in DB) gets the wizard.
         OXPULSE_IMAGER_OPTION_PREFIX . 'onboarded' => false,
+        // Freemius integration: sentinel marking "born on the Freemius
+        // version". Set on fresh activation ONLY (add_option skips when
+        // the option already exists). The grandfather detector uses its
+        // ABSENCE to identify pre-Freemius installs upgrading to this
+        // version. A fresh install on this version must NOT be
+        // grandfathered; an upgrade from a pre-Freemius version (which
+        // never set this sentinel) must be.
+        'oxpulse_born_version' => OXPULSE_IMAGER_VERSION,
     ];
 
     // #91: hot render-path options (read on every page load via
@@ -208,6 +216,65 @@ if (!oxpulse_imager_runtime_supported()) {
     return;
 }
 
+/**
+ * Freemius WordPress SDK initialization.
+ *
+ * Loads the bundled SDK (freemius/start.php) and initializes the
+ * Freemius instance with the plugin's public credentials. The SDK
+ * must load BEFORE src/Plugin.php / Plugin::load() so Freemius hooks
+ * (opt-in screens, license sync, upgrade prompts) are registered
+ * before any plugin service wiring.
+ *
+ * Credentials are PUBLIC (id + public_key) — there is no secret_key
+ * in the plugin-side SDK init. The secret_key lives only on the
+ * Freemius dashboard/server and is never shipped in the plugin.
+ *
+ * The `oxpulse_fs()` function is the single accessor for the Freemius
+ * instance. All callers MUST guard with function_exists('oxpulse_fs')
+ * in case the SDK failed to load. The FreemiusLicenseGate uses this
+ * accessor to check can_use_premium_code().
+ */
+if (!function_exists('oxpulse_fs')) {
+    function oxpulse_fs()
+    {
+        global $oxpulse_fs;
+
+        if (!isset($oxpulse_fs)) {
+            require_once dirname(__FILE__) . '/freemius/start.php';
+
+            $oxpulse_fs = fs_dynamic_init([
+                'id'                  => '35418',
+                'slug'                => 'oxpulse-imager',
+                'type'                => 'plugin',
+                'public_key'          => 'pk_8e7a13516790ff0fb71ed6a16a3b2',
+                'is_premium'          => false,
+                'is_premium_only'     => false,
+                'has_paid_plans'      => true,
+                'has_premium_version' => true,
+                'is_org_compliant'    => true,
+                'has_addons'          => false,
+                'premium_suffix'      => 'Pro',
+                'trial'               => [
+                    'days'               => 14,
+                    'is_require_payment' => false,
+                ],
+                'menu'                => [
+                    'slug'   => 'oxpulse-imager',
+                    'parent' => [
+                        'slug' => 'options-general.php',
+                    ],
+                    'support' => false,
+                ],
+            ]);
+        }
+
+        return $oxpulse_fs;
+    }
+
+    oxpulse_fs();
+    do_action('oxpulse_fs_loaded');
+}
+
 require_once OXPULSE_IMAGER_DIR . 'src/Plugin.php';
 
 // Self-heal: grant the capability on every load if missing. This handles
@@ -253,8 +320,8 @@ if (!function_exists('oxpulse_thumb_url')) {
  * Public helper: resolve the shared LicenseGate.
  *
  * #89: the single seam through which the plugin asks "is this a paying
- * (Pro) customer?". Returns the OpenLicenseGate (everything unlocked)
- * until a Freemius-backed gate is wired in ServiceRegistrar. Sibling
+ * (Pro) customer?". Returns the FreemiusLicenseGate (backed by the
+ * Freemius SDK + grandfather flag) wired in ServiceRegistrar. Sibling
  * code and tests use this instead of touching ServiceRegistrar directly,
  * mirroring the oxpulse_thumb_url() helper shape.
  *

@@ -61,6 +61,11 @@ jobs:
         uses: wordpress/plugin-check-action@v1.1.7
         with:
           build-dir: plugincheck-dist/oxpulse-imager
+          # freemius/ is the vendored third-party Freemius SDK (bundled for
+          # licensing/updates); it is not our code and is reviewed separately
+          # by wordpress.org — exclude it from our gate (mirrors test.yml).
+          exclude-directories: |
+            freemius
           # Legitimate false positives (reviewed):
           # - ExceptionNotEscaped : exception messages are not HTML output.
           # - parse_url_parse_url : Domain/Application layer (UrlRewriter,

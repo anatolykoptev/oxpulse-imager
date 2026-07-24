@@ -25,6 +25,7 @@ namespace OXPulse\Imager\Tests\Unit;
 
 use OXPulse\Imager\Domain\License\LicenseGate;
 use OXPulse\Imager\Domain\License\ProFeatures;
+use OXPulse\Imager\Infrastructure\License\FreemiusLicenseGate;
 use OXPulse\Imager\Infrastructure\License\OpenLicenseGate;
 use OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar;
 use PHPUnit\Framework\TestCase;
@@ -35,6 +36,8 @@ class LicenseGateTest extends TestCase
     {
         parent::setUp();
         $GLOBALS['__oxpulse_filters'] = [];
+        $GLOBALS['__oxpulse_options'] = [];
+        $GLOBALS['__oxpulse_fs_stub'] = null;
         $this->resetLicenseGate();
     }
 
@@ -42,6 +45,8 @@ class LicenseGateTest extends TestCase
     {
         parent::tearDown();
         $GLOBALS['__oxpulse_filters'] = [];
+        $GLOBALS['__oxpulse_options'] = [];
+        $GLOBALS['__oxpulse_fs_stub'] = null;
         $this->resetLicenseGate();
     }
 
@@ -142,10 +147,10 @@ class LicenseGateTest extends TestCase
         $this->assertSame($a, $b);
     }
 
-    public function test_service_registrar_license_gate_returns_open_gate_by_default(): void
+    public function test_service_registrar_license_gate_returns_freemius_gate_by_default(): void
     {
         $gate = ServiceRegistrar::licenseGate();
-        $this->assertInstanceOf(OpenLicenseGate::class, $gate);
+        $this->assertInstanceOf(FreemiusLicenseGate::class, $gate);
         $this->assertInstanceOf(LicenseGate::class, $gate);
     }
 
