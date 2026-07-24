@@ -31,6 +31,11 @@ final readonly class TransformRequest
      * @param Watermark|null $watermark Watermark configuration, or null to skip.
      * @param array<string,int> $formatQuality Per-format quality overrides, e.g. ['avif' => 70, 'webp' => 80]. Empty = use global quality.
      * @param string $sourceMode Source addressing: 'http' (sourceUrl is a URL) or 'local' (sourceUrl is a filesystem path).
+     * @param bool $extensionFormat When true, ImgproxyPathBuilder emits the
+     *        format suffix as a dot-extension (`.jpg` for jpeg) instead of
+     *        the imgproxy-native `@format` suffix. Used for social-safe
+     *        og:image URLs so RankMath's wp_check_filetype() accepts the
+     *        URL. Default false = current `@format` behaviour everywhere.
      */
     public function __construct(
         public string $sourceUrl,
@@ -44,7 +49,8 @@ final readonly class TransformRequest
         public float $blur = 0,
         public ?Watermark $watermark = null,
         public array $formatQuality = [],
-        public string $sourceMode = 'http'
+        public string $sourceMode = 'http',
+        public bool $extensionFormat = false
     ) {
         if ($width < 0 || $width > 10000) {
             throw new \InvalidArgumentException('Width must be between 0 and 10000.');
