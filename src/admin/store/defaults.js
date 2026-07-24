@@ -21,6 +21,15 @@ export const defaultOptions = {
   dprEnabled: false,
   dprVariants: [1, 2, 3],
   watermark: null,
+  // <picture> element wrapping (Phase 1) — Pro-gated (PICTURE_ELEMENT).
+  // Default OFF; the backend oxpulse_picture_enabled filter at PHP_INT_MAX
+  // is the real gate (enforces false under free).
+  pictureEnabled: false,
+  // LocalBackend cache size cap (MB) — Pro-gated (CACHE_MANAGEMENT).
+  // Default 512; under free the backend loadCacheMaxMb() returns this
+  // default regardless of the stored value. The SPA locks the field
+  // under free (janitor still runs — do NOT imply caching is off).
+  cacheMaxMb: 512,
   // Diagnostics
   diagnosticLevel: 'off',
   devHttpOverride: false,

@@ -312,4 +312,77 @@ class SettingsValidatorTest extends TestCase
         $this->assertNull($result['values']['watermark']);
         $this->assertNotEmpty($result['errors']['watermark_position']);
     }
+
+    // ─── cache_max_mb: int coercion + bounds clamping ────────────────
+
+    public function test_cache_max_mb_coerces_string_int(): void
+    {
+        $result = $this->validator->validate(['cache_max_mb' => '1024']);
+        $this->assertArrayNotHasKey('cache_max_mb', $result['errors']);
+        $this->assertSame(1024, $result['values']['cache_max_mb']);
+    }
+
+    public function test_cache_max_mb_clamps_below_zero_to_zero(): void
+    {
+        $result = $this->validator->validate(['cache_max_mb' => -1]);
+        // Out-of-range → error reported AND value clamped to MIN (0).
+        $this->assertArrayHasKey('cache_max_mb', $result['errors']);
+        $this->assertSame(
+            SettingsValidator::MIN_CACHE_MAX_MB,
+            $result['values']['cache_max_mb'],
+        );
+    }
+
+    public function test_cache_max_mb_clamps_above_max_to_max(): void
+    {
+        $result = $this->validator->validate(['cache_max_mb' => 20000]);
+        $this->assertArrayHasKey('cache_max_mb', $result['errors']);
+        $this->assertSame(
+            SettingsValidator::MAX_CACHE_MAX_MB,
+            $result['values']['cache_max_mb'],
+        );
+    }
+
+    public function test_cache_max_mb_accepts_boundary_min_and_max(): void
+    {
+        $min = $this->validator->validate(['cache_max_mb' => SettingsValidator::MIN_CACHE_MAX_MB]);
+        $this->assertArrayNotHasKey('cache_max_mb', $min['errors']);
+        $this->assertSame(SettingsValidator::MIN_CACHE_MAX_MB, $min['values']['cache_max_mb']);
+
+        $max = $this->validator->validate(['cache_max_mb' => SettingsValidator::MAX_CACHE_MAX_MB]);
+        $this->assertArrayNotHasKey('cache_max_mb', $max['errors']);
+        $this->assertSame(SettingsValidator::MAX_CACHE_MAX_MB, $max['values']['cache_max_mb']);
+    }
+
+    // ─── picture_enabled: bool coercion (!empty semantics) ───────────
+
+    public function test_picture_enabled_string_one_coerces_true(): void
+    {
+        $result = $this->validator->validate(['picture_enabled' => '1']);
+        $this->assertTrue($result['values']['picture_enabled']);
+    }
+
+    public function test_picture_enabled_bool_true_coerces_true(): void
+    {
+        $result = $this->validator->validate(['picture_enabled' => true]);
+        $this->assertTrue($result['values']['picture_enabled']);
+    }
+
+    public function test_picture_enabled_string_zero_coerces_false(): void
+    {
+        $result = $this->validator->validate(['picture_enabled' => '0']);
+        $this->assertFalse($result['values']['picture_enabled']);
+    }
+
+    public function test_picture_enabled_empty_string_coerces_false(): void
+    {
+        $result = $this->validator->validate(['picture_enabled' => '']);
+        $this->assertFalse($result['values']['picture_enabled']);
+    }
+
+    public function test_picture_enabled_absent_defaults_false(): void
+    {
+        $result = $this->validator->validate([]);
+        $this->assertFalse($result['values']['picture_enabled']);
+    }
 }

@@ -20,6 +20,7 @@ declare(strict_types=1);
 namespace OXPulse\Imager\Integration\WordPress\Admin;
 
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
+use OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar;
 use OXPulse\Imager\Infrastructure\WordPress\SettingsValidator;
 use WP_Error;
 use WP_REST_Request;
@@ -100,6 +101,24 @@ final class OptionsRestController
             'dpr_variants'      => $delivery->dprVariants,
             'format_quality'    => $delivery->formatQuality,
             'watermark'         => $this->watermarkToArray($delivery->watermark),
+            // <picture> element wrapping (Phase 1) — Pro-gated. The GET
+            // value is gated by ServiceRegistrar::isPro() so the SPA
+            // renders the toggle OFF under free even when the stored
+            // option is true (e.g. a site that enabled <picture> while
+            // Pro then downgraded on trial expiry). Mirrors the
+            // cache_max_mb GET-gating via loadCacheMaxMb(). The backend
+            // oxpulse_picture_enabled filter at PHP_INT_MAX remains the
+            // real runtime gate; this guards the READ value only.
+            'picture_enabled'   => ServiceRegistrar::isPro()
+                ? (bool) get_option(
+                    OptionSettingsRepository::OPTION_PICTURE_ENABLED,
+                    false
+                )
+                : false,
+            // LocalBackend cache cap (MB) — Pro-gated. loadCacheMaxMb()
+            // returns the default (512) under free regardless of the
+            // stored value, so the SPA shows 512 + locked under free.
+            'cache_max_mb'      => $this->repository->loadCacheMaxMb(),
             'diagnostic_level'  => (string) get_option(
                 OptionSettingsRepository::OPTION_DIAGNOSTIC_LEVEL,
                 'off'

@@ -301,12 +301,23 @@ final class OptionSettingsRepository
             update_option(self::OPTION_BUFFER_REWRITING_ENABLED, (bool) $values['buffer_rewriting_enabled']);
         }
 
-        // NOTE: <picture> element wrapping (Phase 1) has NO save branch
-        // here — SettingsValidator::validate() never emits 'picture_enabled',
-        // so a branch would be dead code. The full UI toggle (React field +
-        // OptionsMapper entry + validator producer + save branch) lands as a
-        // cohesive unit with the SPA integration. Phase-1 enablement is the
-        // oxpulse_picture_enabled filter or a direct update_option.
+        // <picture> element wrapping (Phase 1) — Pro-gated (PICTURE_ELEMENT).
+        // The SPA toggle + OptionsMapper entry + validator producer + this
+        // save branch land as a cohesive unit with the license UI. The
+        // oxpulse_picture_enabled filter at PHP_INT_MAX is the real gate
+        // (enforces false under free regardless of the stored option).
+        if (array_key_exists('picture_enabled', $values)) {
+            update_option(self::OPTION_PICTURE_ENABLED, (bool) $values['picture_enabled']);
+        }
+
+        // LocalBackend cache size cap (MB) — Pro-gated (CACHE_MANAGEMENT).
+        // Under free, loadCacheMaxMb() ignores the stored value and returns
+        // the default (512); the SPA locks the field under free. Saving the
+        // value here is harmless under free (the read gate ignores it), and
+        // correct under Pro (the read gate returns the stored value).
+        if (array_key_exists('cache_max_mb', $values)) {
+            update_option(self::OPTION_CACHE_MAX_MB, (int) $values['cache_max_mb']);
+        }
 
         // RankMath compatibility (Ф3).
         if (array_key_exists('rankmath_compatibility', $values)) {

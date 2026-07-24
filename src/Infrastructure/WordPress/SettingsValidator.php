@@ -16,6 +16,7 @@ declare(strict_types=1);
 namespace OXPulse\Imager\Infrastructure\WordPress;
 
 use OXPulse\Imager\Domain\Transform\Watermark;
+use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 
 final class SettingsValidator
 {
@@ -29,6 +30,8 @@ final class SettingsValidator
     public const MIN_DPR = 1;
     public const MAX_DPR = 8;
     public const ALLOWED_FORMAT_QUALITY_KEYS = ['avif', 'webp', 'jpeg', 'png'];
+    public const MIN_CACHE_MAX_MB = 0;
+    public const MAX_CACHE_MAX_MB = 10240;
 
     /**
      * Validate and sanitize all settings from a form submission.
@@ -159,6 +162,25 @@ final class SettingsValidator
 
         // Watermark.
         $values['watermark'] = $this->parseWatermark($input['watermark'] ?? [], $errors);
+
+        // <picture> element wrapping (Phase 1) — boolean toggle, Pro-gated
+        // (PICTURE_ELEMENT). The SPA locks this under free; the backend
+        // oxpulse_picture_enabled filter at PHP_INT_MAX is the real gate.
+        $values['picture_enabled'] = !empty($input['picture_enabled']);
+
+        // LocalBackend cache size cap (MB) — Pro-gated (CACHE_MANAGEMENT).
+        // 0 disables eviction (CacheJanitor treats non-positive as no-op).
+        // The SPA locks this under free; loadCacheMaxMb() is the real gate.
+        $cacheMaxMb = (int) ($input['cache_max_mb'] ?? OptionSettingsRepository::DEFAULT_CACHE_MAX_MB);
+        if ($cacheMaxMb < self::MIN_CACHE_MAX_MB || $cacheMaxMb > self::MAX_CACHE_MAX_MB) {
+            $errors['cache_max_mb'] = sprintf(
+                /* translators: 1: minimum, 2: maximum. */
+                __('Cache size cap must be between %1$d and %2$d MB.', 'oxpulse-imager'),
+                self::MIN_CACHE_MAX_MB,
+                self::MAX_CACHE_MAX_MB
+            );
+        }
+        $values['cache_max_mb'] = max(self::MIN_CACHE_MAX_MB, min(self::MAX_CACHE_MAX_MB, $cacheMaxMb));
 
         // --- Ф1: Source addressing mode ---
 
