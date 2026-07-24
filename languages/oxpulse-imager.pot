@@ -899,6 +899,9 @@ msgstr ""
 msgid "Step"
 msgstr ""
 
+msgid "Failed to enable optimization."
+msgstr ""
+
 msgid "Failed to enable delivery."
 msgstr ""
 
@@ -950,16 +953,19 @@ msgstr ""
 msgid "Available on Pro"
 msgstr ""
 
-msgid "Maybe later"
-msgstr ""
-
 msgid "You're on Pro — configure AVIF & imgproxy in Settings → Connection"
 msgstr ""
 
 msgid "Back"
 msgstr ""
 
+msgid "Turning on…"
+msgstr ""
+
 msgid "Turn on optimization"
+msgstr ""
+
+msgid "Continue"
 msgstr ""
 
 msgid "Skip"

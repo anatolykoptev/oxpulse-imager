@@ -899,6 +899,9 @@ msgstr "По одному URL-префиксу на строку. Перепис
 msgid "Step"
 msgstr "Шаг"
 
+msgid "Failed to enable optimization."
+msgstr "Не удалось включить оптимизацию."
+
 msgid "Failed to enable delivery."
 msgstr "Не удалось включить доставку."
 
@@ -950,17 +953,20 @@ msgstr "Обновить"
 msgid "Available on Pro"
 msgstr "Доступно в Pro"
 
-msgid "Maybe later"
-msgstr "Может быть позже"
-
 msgid "You're on Pro — configure AVIF & imgproxy in Settings → Connection"
 msgstr "У вас Pro — настройте AVIF и imgproxy в Настройки → Подключение"
 
 msgid "Back"
 msgstr "Назад"
 
+msgid "Turning on…"
+msgstr "Включение…"
+
 msgid "Turn on optimization"
 msgstr "Включить оптимизацию"
+
+msgid "Continue"
+msgstr "Продолжить"
 
 msgid "Skip"
 msgstr "Пропустить"
