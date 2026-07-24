@@ -211,6 +211,7 @@ jobs:
             build
             .github
             .git
+            freemius
           # Legitimate false positives (reviewed):
           # - ExceptionNotEscaped : exception messages are not HTML output.
           # - parse_url_parse_url : Domain/Application layer (UrlRewriter,

@@ -32,7 +32,7 @@ use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\Local\CacheJanitor;
 use OXPulse\Imager\Infrastructure\Local\HttpRequester;
 use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
-use OXPulse\Imager\Infrastructure\License\OpenLicenseGate;
+use OXPulse\Imager\Infrastructure\License\FreemiusLicenseGate;
 use OXPulse\Imager\Infrastructure\Local\WpRemoteHttpRequester;
 use OXPulse\Imager\Domain\License\LicenseGate;
 use OXPulse\Imager\Integration\WordPress\Admin\AdminBarDiagnostics;
@@ -85,10 +85,10 @@ final class ServiceRegistrar
     /**
      * Shared LicenseGate instance. #89: the single seam through which
      * the plugin asks "is this a paying (Pro) customer?". Lazy-
-     * initialized to the OpenLicenseGate (everything unlocked — zero
-     * behavior change for every existing install). A Freemius-backed
-     * gate replaces this once credentials exist; the swap happens here
-     * only, so no feature code is aware of the provider.
+     * initialized to the FreemiusLicenseGate (backed by the Freemius
+     * SDK + grandfather flag). OpenLicenseGate remains available as
+     * the inert everything-unlocked default for tests/QA; the swap
+     * happens here only, so no feature code is aware of the provider.
      */
     private static ?LicenseGate $licenseGate = null;
 
@@ -105,6 +105,7 @@ final class ServiceRegistrar
         self::registerLocalDeliverySettingsSync($plugin);
         self::maybeReprobeOnVersionUpdate();
         self::maybeMigrateAutoload();
+        self::maybeGrandfatherPreFreemiusInstalls();
     }
 
     /**
@@ -136,17 +137,18 @@ final class ServiceRegistrar
      * Get the shared LicenseGate instance (lazy-initialized).
      *
      * #89: the single seam through which any feature asks "is this a
-     * Pro customer?". Defaults to OpenLicenseGate (everything unlocked
-     * — zero behavior change for every existing install, including
-     * imgproxy/AVIF sites). A Freemius-backed gate replaces the default
-     * here once credentials exist; the swap is local to this accessor
-     * so no feature code is aware of the provider. Exposed publicly via
-     * the oxpulse_license_gate() global helper.
+     * Pro customer?". Defaults to FreemiusLicenseGate (backed by the
+     * Freemius SDK + grandfather flag — reflects the real license
+     * state while preserving the oxpulse_is_pro filter contract).
+     * OpenLicenseGate remains available as the inert everything-unlocked
+     * default for tests/QA. The swap is local to this accessor so no
+     * feature code is aware of the provider. Exposed publicly via the
+     * oxpulse_license_gate() global helper.
      */
     public static function licenseGate(): LicenseGate
     {
         if (self::$licenseGate === null) {
-            self::$licenseGate = new OpenLicenseGate();
+            self::$licenseGate = new FreemiusLicenseGate();
         }
         return self::$licenseGate;
     }
@@ -858,6 +860,54 @@ final class ServiceRegistrar
 
         wp_set_options_autoload(OptionSettingsRepository::AUTOLOAD_OPTION_KEYS, true);
         update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 2);
+    }
+
+    /**
+     * Grandfather pre-Freemius installs on upgrade.
+     *
+     * register_activation_hook does NOT fire on plugin UPDATE, so this
+     * detector runs on every admin load (idempotent — returns early
+     * once the grandfathered flag is set or the born_version sentinel
+     * is present). An install that existed BEFORE Freemius (has prior-
+     * install markers: schema_version/onboarded present) AND lacks the
+     * oxpulse_born_version sentinel (set only on fresh activation on
+     * the Freemius version) gets oxpulse_grandfathered=1 so no
+     * previously-working feature is lost once Phase-B gating lands.
+     *
+     * A FRESH install on this version has born_version set by the
+     * activation hook → not grandfathered. The flag is stored
+     * autoload=no (not on the hot render path). Admin-only (one-time
+     * housekeeping write, never on the front-end read path). Mirrors
+     * the maybeMigrateAutoload / maybeReprobeOnVersionUpdate pattern.
+     */
+    private static function maybeGrandfatherPreFreemiusInstalls(): void
+    {
+        if (!is_admin()) {
+            return;
+        }
+
+        // Already grandfathered → idempotent no-op.
+        if (get_option('oxpulse_grandfathered', null) !== null) {
+            return;
+        }
+
+        // Fresh install on the Freemius version: the activation hook
+        // set born_version. This install was never pre-Freemius.
+        if (get_option('oxpulse_born_version', null) !== null) {
+            return;
+        }
+
+        // Prior-install markers: an install activated on a pre-Freemius
+        // version has schema_version and/or onboarded in the DB (set by
+        // the old activation hook). If neither exists, this is not an
+        // upgrade from a pre-Freemius version — don't grandfather.
+        $hasPriorMarkers = get_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, null) !== null
+            || get_option(OptionSettingsRepository::OPTION_ONBOARDED, null) !== null;
+        if (!$hasPriorMarkers) {
+            return;
+        }
+
+        update_option('oxpulse_grandfathered', 1, false);
     }
 
     /**

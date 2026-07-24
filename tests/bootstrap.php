@@ -157,6 +157,11 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('update_option')) {
         function update_option($option, $value, $autoload = null) {
             $GLOBALS['__oxpulse_options'][$option] = $value;
+            // When autoload is explicitly set (not null), mirror real
+            // WP: update the autoload flag alongside the value.
+            if ($autoload !== null) {
+                $GLOBALS['__oxpulse_autoload'][$option] = (bool) $autoload;
+            }
             return true;
         }
     }
@@ -812,6 +817,19 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
         function delete_site_option($option) {
             unset($GLOBALS['__oxpulse_network_options'][$option]);
             return true;
+        }
+    }
+
+    // Freemius SDK stub — the real SDK (freemius/start.php) is NOT
+    // loaded in unit tests. The main plugin file's oxpulse_fs() init
+    // block is gated on `!function_exists('oxpulse_fs')`, so defining
+    // the stub here BEFORE the plugin loads prevents the SDK require
+    // and the fs_dynamic_init() HTTP-bound call from running. Tests
+    // that exercise FreemiusLicenseGate set $GLOBALS['__oxpulse_fs_stub']
+    // to an object with can_use_premium_code(); null = SDK not loaded.
+    if (!function_exists('oxpulse_fs')) {
+        function oxpulse_fs() {
+            return $GLOBALS['__oxpulse_fs_stub'] ?? null;
         }
     }
 
