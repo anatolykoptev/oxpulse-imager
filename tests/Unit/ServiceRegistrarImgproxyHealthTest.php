@@ -381,4 +381,9 @@ class RecordingHeadRequester implements HttpRequester
         $this->lastHeadUrl = $url;
         return ['status' => $this->status, 'body' => '', 'error' => $this->error];
     }
+
+    public function getImage(string $url): array
+    {
+        return ['status' => $this->status, 'content_type' => '', 'error' => $this->error];
+    }
 }

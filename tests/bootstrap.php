@@ -535,6 +535,24 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return [];
         }
     }
+    if (!function_exists('wp_remote_retrieve_header')) {
+        function wp_remote_retrieve_header($response, $header) {
+            if (is_array($response) && isset($response['headers'])) {
+                // Headers may be keyed lower-case or case-insensitive;
+                // mirror real WP which lowercases header names.
+                $headers = $response['headers'];
+                if (is_array($headers)) {
+                    $lower = strtolower($header);
+                    foreach ($headers as $key => $value) {
+                        if (strtolower((string) $key) === $lower) {
+                            return is_array($value) ? implode(', ', $value) : (string) $value;
+                        }
+                    }
+                }
+            }
+            return '';
+        }
+    }
     if (!function_exists('wp_remote_retrieve_body')) {
         function wp_remote_retrieve_body($response) {
             if (is_array($response) && isset($response['body'])) {

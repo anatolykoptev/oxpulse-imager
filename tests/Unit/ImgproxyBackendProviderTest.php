@@ -26,9 +26,11 @@ namespace OXPulse\Imager\Tests\Unit;
 use OXPulse\Imager\Application\Delivery\BackendHealth;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
+use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackendProvider;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
+use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityCache;
 use OXPulse\Imager\Infrastructure\Local\HttpRequester;
 use PHPUnit\Framework\TestCase;
 
@@ -144,6 +146,50 @@ class ImgproxyBackendProviderTest extends TestCase
         $backend = $provider->build($this->delivery(), $this->signing());
 
         $this->assertInstanceOf(ImgproxyBackend::class, $backend);
+    }
+
+    // ─── T5: wiring lock — provider-built backend is ALWAYS conservative ─
+
+    private function localRequest(): TransformRequest
+    {
+        return new TransformRequest(
+            sourceUrl: 'wp-content/uploads/2026/07/photo.webp',
+            width: 1200,
+            height: 630,
+            resize: 'fill',
+            format: 'jpeg',
+            sourceMode: 'local',
+            extensionFormat: true,
+        );
+    }
+
+    public function test_provider_built_backend_capability_unset_returns_null(): void
+    {
+        // WIRING LOCK: a provider-built backend with capability UNSET →
+        // socialSafeUrl(local) returns null (→ webp). This guards the gate
+        // being dropped from build() — if build() stops injecting the
+        // capability cache, this test REDS (the backend would produce a URL).
+        $provider = new ImgproxyBackendProvider(new RecordingHttpRequester(), new ImgproxyHealthCache());
+        $backend = $provider->build($this->delivery(), $this->signing());
+
+        $url = $backend->socialSafeUrl($this->localRequest());
+
+        $this->assertNull($url, 'provider-built backend with capability unset must return null (conservative)');
+    }
+
+    public function test_provider_built_backend_capability_ok_health_up_returns_jpg(): void
+    {
+        $health = new ImgproxyHealthCache();
+        $health->write('up');
+        $capability = new SocialJpegCapabilityCache();
+        $capability->write('ok');
+        $provider = new ImgproxyBackendProvider(new RecordingHttpRequester(), $health, $capability);
+        $backend = $provider->build($this->delivery(), $this->signing());
+
+        $url = $backend->socialSafeUrl($this->localRequest());
+
+        $this->assertNotNull($url, 'provider-built backend with capability ok + health up must produce .jpg');
+        $this->assertStringEndsWith('.jpg', $url);
     }
 
     // ─── recheck() — write-time bounded probe ────────────────────────
@@ -284,11 +330,14 @@ class RecordingHttpRequester implements HttpRequester
 {
     public int $headCalls = 0;
     public int $getCalls = 0;
+    public int $getImageCalls = 0;
     public string $lastHeadUrl = '';
+    public string $lastGetImageUrl = '';
 
     public function __construct(
         private int $status = 200,
         private ?string $error = null,
+        private string $contentType = '',
     ) {}
 
     public function get(string $url): array
@@ -302,5 +351,12 @@ class RecordingHttpRequester implements HttpRequester
         $this->headCalls++;
         $this->lastHeadUrl = $url;
         return ['status' => $this->status, 'body' => '', 'error' => $this->error];
+    }
+
+    public function getImage(string $url): array
+    {
+        $this->getImageCalls++;
+        $this->lastGetImageUrl = $url;
+        return ['status' => $this->status, 'content_type' => $this->contentType, 'error' => $this->error];
     }
 }

@@ -832,4 +832,58 @@ class UrlRewriterTest extends TestCase
         $this->assertSame('no_signing_config', $result->reason);
         $this->assertSame(self::SOCIAL_SOURCE, $result->url);
     }
+
+    /**
+     * Defense-in-depth: when NO backend is injected (the lazy path),
+     * the lazily-constructed ImgproxyBackend MUST still carry the
+     * conservative capability gate. With the capability option UNSET
+     * (unproven endpoint), rewriteSocialImage on a local .webp source
+     * must DEGRADE to the preserved webp URL — never emit a .jpg URL
+     * that might 403. An ungated lazy backend would bypass the gate
+     * and silently emit an unproven .jpg.
+     */
+    public function test_lazy_backend_social_path_gated_when_capability_unset(): void
+    {
+        // Ensure the WP option store is clean — capability option UNSET.
+        $GLOBALS['__oxpulse_options'] = [];
+
+        $tmpDir = sys_get_temp_dir() . '/oxpulse-rewriter-lazy-social-' . uniqid();
+        $subDir = $tmpDir . '/wp-content/uploads/2026/07';
+        mkdir($subDir, 0755, true);
+        $imagePath = $subDir . '/photo.webp';
+        file_put_contents($imagePath, 'fake-webp');
+
+        try {
+            $delivery = new DeliveryConfig(
+                enabled: true,
+                endpoint: '/imgproxy',
+                allowedSources: ['https://piter.now/wp-content/uploads/'],
+                sourceMode: 'local',
+                localBasePath: $tmpDir,
+            );
+            // NO backend injected — exercises the lazy backend() path.
+            $rewriter = new UrlRewriter(
+                new SourcePolicy(),
+                $delivery,
+                SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX)
+            );
+
+            $source = 'https://piter.now/wp-content/uploads/2026/07/photo.webp';
+            $result = $rewriter->rewriteSocialImage($source, 1200, 630);
+
+            // Capability unproven → socialSafeUrl returns null → degrade
+            // to the preserved webp URL, NOT a .jpg URL.
+            $this->assertFalse($result->rewritten, 'Lazy backend must gate the social path — unproven capability must degrade, not emit .jpg');
+            $this->assertSame($source, $result->url);
+            $this->assertStringNotContainsString('.jpg', $result->url);
+        } finally {
+            unlink($imagePath);
+            rmdir($subDir);
+            rmdir($tmpDir . '/wp-content/uploads/2026');
+            rmdir($tmpDir . '/wp-content/uploads');
+            rmdir($tmpDir . '/wp-content');
+            rmdir($tmpDir);
+            unset($GLOBALS['__oxpulse_options']);
+        }
+    }
 }
