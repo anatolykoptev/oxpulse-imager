@@ -162,7 +162,20 @@ final class OptionsRestController
             $params = [];
         }
 
-        $result = $this->validator->validate(OptionsMapper::toSnake($params));
+        // snake_case keys ACTUALLY present in the POST body. The
+        // validator below sanitizes the FULL field set (filling absent
+        // keys with defaults so a partial POST still validates cleanly),
+        // so $result['values'] contains EVERY key — not just the
+        // submitted ones. To honor the docblock's partial-merge promise
+        // ("a partial POST never resets unmentioned options"), persist
+        // ONLY the keys the client actually sent. Without this gate the
+        // validator-emitted defaults would overwrite unmentioned options
+        // (e.g. a {enabled:true} onboarding POST would reset
+        // diagnostic_level to 'off').
+        $submittedSnake = OptionsMapper::toSnake($params);
+        $submittedKeys = array_keys($submittedSnake);
+
+        $result = $this->validator->validate($submittedSnake);
 
         if (!empty($result['errors'])) {
             return new WP_Error(
@@ -175,7 +188,15 @@ final class OptionsRestController
             );
         }
 
-        $values = $result['values'];
+        // Restrict the sanitized values to the keys the client actually
+        // submitted, so the repository's array_key_exists() writes below
+        // only fire for mentioned options (partial-merge).
+        $values = [];
+        foreach ($submittedKeys as $key) {
+            if (array_key_exists($key, $result['values'])) {
+                $values[$key] = $result['values'][$key];
+            }
+        }
 
         $this->repository->saveDeliverySettings($values);
 

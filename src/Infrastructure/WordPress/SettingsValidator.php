@@ -106,7 +106,13 @@ final class SettingsValidator
         }
         $values['salt'] = $saltHex;
 
-        // Allowed sources (array of URL prefixes).
+        // Allowed sources. The classic admin form sends a textarea
+        // STRING (one URL per line); the REST/SPA path sends an ARRAY
+        // of URL strings (the GET response returns an array, the SPA
+        // store keeps it as an array, saveOptions() posts it back as
+        // an array). parseAllowedSources normalizes both shapes so the
+        // shared validator serves both callers — a typed `string` here
+        // threw a TypeError on the SPA's array body (#123).
         $rawSources = $input['allowed_sources'] ?? '';
         $sources = $this->parseAllowedSources($rawSources);
         foreach ($sources as $i => $source) {
@@ -153,7 +159,12 @@ final class SettingsValidator
         }
         $values['lqip_blur'] = (float) max(self::MIN_LQIP_BLUR, min(self::MAX_LQIP_BLUR, $lqipBlur));
 
-        // DPR variants.
+        // DPR variants. Same dual-shape contract as allowed_sources:
+        // the form sends a comma-separated STRING ("1,2,3"); the SPA
+        // sends an ARRAY of ints ([1,2,3]). parseDprVariants normalizes
+        // both — a typed `string` here threw a TypeError on the SPA's
+        // array body (masked only because parseAllowedSources throws
+        // first earlier in validate()).
         $values['dpr_enabled'] = !empty($input['dpr_enabled']);
         $values['dpr_variants'] = $this->parseDprVariants($input['dpr_variants'] ?? '');
 
@@ -255,18 +266,39 @@ final class SettingsValidator
     }
 
     /**
-     * Parse allowed sources from a textarea (one URL per line).
+     * Parse allowed sources from either a textarea string (one URL per
+     * line — the classic admin form shape) or an array of URL strings
+     * (the REST/SPA shape: the GET response returns an array, the SPA
+     * store keeps it as an array, saveOptions() posts it back as an
+     * array). Both shapes are normalized to the same flat array of
+     * URL strings with a trailing slash.
      *
      * Each source is normalized to end with a trailing slash so that
      * prefix matching enforces a path boundary (e.g. an allowed source
      * of "https://example.com/uploads" does NOT match
      * "https://example.com/uploads-private/secret.jpg").
      *
-     * @param string $raw
+     * @param string|array $raw
      * @return array<string>
      */
-    private function parseAllowedSources(string $raw): array
+    private function parseAllowedSources(string|array $raw): array
     {
+        // SPA/REST shape: already an array of URL strings.
+        if (is_array($raw)) {
+            $sources = [];
+            foreach ($raw as $line) {
+                $line = trim((string) $line);
+                if ($line !== '') {
+                    if (!str_ends_with($line, '/')) {
+                        $line .= '/';
+                    }
+                    $sources[] = $line;
+                }
+            }
+            return $sources;
+        }
+
+        // Classic form shape: textarea string, one URL per line.
         $lines = preg_split('/\r\n|\r|\n/', $raw) ?: [];
         $sources = [];
         foreach ($lines as $line) {
@@ -287,17 +319,36 @@ final class SettingsValidator
     }
 
     /**
-     * Parse DPR variants from a comma-separated string (e.g. "1,2,3").
+     * Parse DPR variants from either a comma-separated string
+     * (e.g. "1,2,3" — the classic admin form shape) or an array of
+     * ints (e.g. [1,2,3] — the REST/SPA shape: the GET response returns
+     * an int array, the SPA store keeps it, saveOptions() posts it
+     * back as an array).
      *
      * Each value must be an integer between MIN_DPR and MAX_DPR. Values
      * are deduplicated and sorted ascending. Empty input → empty array
      * (DPR variants disabled).
      *
-     * @param string $raw
+     * @param string|array $raw
      * @return array<int>
      */
-    private function parseDprVariants(string $raw): array
+    private function parseDprVariants(string|array $raw): array
     {
+        // SPA/REST shape: already an array of ints (or numeric strings).
+        if (is_array($raw)) {
+            $variants = [];
+            foreach ($raw as $part) {
+                $val = (int) $part;
+                if ($val >= self::MIN_DPR && $val <= self::MAX_DPR) {
+                    $variants[$val] = $val;
+                }
+            }
+            $variants = array_values($variants);
+            sort($variants);
+            return $variants;
+        }
+
+        // Classic form shape: comma-separated string.
         if (trim($raw) === '') {
             return [];
         }
