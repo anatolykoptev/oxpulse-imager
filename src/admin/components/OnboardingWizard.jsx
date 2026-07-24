@@ -221,8 +221,8 @@ const OnboardingWizard = () => {
                 name="defaultQuality"
                 type="number"
                 label={__('Default quality', 'oxpulse-imager')}
-                value={options.defaultQuality}
-                onChange={(v) => setOption('defaultQuality', v)}
+                value={String(options.defaultQuality)}
+                onChange={(v) => setOption('defaultQuality', parseInt(v, 10) || 80)}
               />
               <p className="oxp-mt-2 oxp-text-sm oxp-text-gray-600">
                 {__('Fine-tune formats & per-format quality anytime in Settings → Format.', 'oxpulse-imager')}
@@ -239,9 +239,6 @@ const OnboardingWizard = () => {
               <div className="oxp-mb-4">
                 <div className="oxp-mb-3 oxp-flex oxp-items-center oxp-gap-2">
                   <ProBadge />
-                  <span className="oxp-text-sm oxp-font-semibold oxp-text-gray-900">
-                    {__('Unlock Pro', 'oxpulse-imager')}
-                  </span>
                 </div>
                 <ul className="oxp-list-disc oxp-pl-5 oxp-text-sm oxp-text-gray-700 oxp-space-y-1">
                   <li>{__('AVIF (~30% smaller than WebP)', 'oxpulse-imager')}</li>
@@ -266,9 +263,6 @@ const OnboardingWizard = () => {
                       {__('Available on Pro', 'oxpulse-imager')}
                     </span>
                   )}
-                  <span className="oxp-text-sm oxp-text-gray-500">
-                    {__('Maybe later', 'oxpulse-imager')}
-                  </span>
                 </div>
               ) : (
                 <p className="oxp-mb-4 oxp-text-sm oxp-text-gray-700">
