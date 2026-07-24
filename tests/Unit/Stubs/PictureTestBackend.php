@@ -50,4 +50,9 @@ final class PictureTestBackend implements DeliveryBackend
         $base = basename(parse_url($request->sourceUrl, PHP_URL_PATH) ?: '');
         return 'https://imgproxy.test/' . $fmt . '/' . $base . '@' . $fmt;
     }
+
+    public function socialSafeUrl(TransformRequest $request, ?string $filename = null): ?string
+    {
+        return null;
+    }
 }

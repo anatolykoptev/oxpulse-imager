@@ -53,4 +53,15 @@ final class ImgproxyBackend implements DeliveryBackend
     {
         return $this->generator->generate($request, $filename);
     }
+
+    public function socialSafeUrl(TransformRequest $request, ?string $filename = null): ?string
+    {
+        // The .jpg encoded-source form is reliable for local:// sources
+        // (imgproxy reads the file directly and transcodes to jpeg).
+        // For http sources the .jpg extension-form is unreliable →
+        // answer null so the caller degrades to the direct URL.
+        return $request->sourceMode === 'local'
+            ? $this->generator->generate($request, $filename)
+            : null;
+    }
 }

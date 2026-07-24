@@ -51,4 +51,33 @@ interface DeliveryBackend
      *        (ImgproxyBackend) delivery URL.
      */
     public function generate(TransformRequest $request, ?string $filename = null): string;
+
+    /**
+     * Produce a servable social-safe raster (jpeg) URL for the given
+     * transform request, or null when this backend cannot produce one.
+     *
+     * "Social-safe" = the URL ends in a social-platform-recognised
+     * raster extension (`.jpg`, `.png`, `.gif`) so RankMath's
+     * wp_check_filetype() accepts it and social networks/messengers
+     * (VK, some Telegram, older parsers) can render the preview. The
+     * request carries extensionFormat=true so imgproxy emits a
+     * dot-extension instead of the @format suffix.
+     *
+     * The backend answers HONESTLY: returning null signals "I cannot
+     * produce a servable social raster for this request" and the
+     * caller degrades to the direct (e.g. .webp) URL — never breaks.
+     * Concretely:
+     * - ImgproxyBackend: local source → non-null signed .jpg URL;
+     *   http source → null (the .jpg encoded-source form is unreliable
+     *   for http sources).
+     * - LocalBackend: null — jpeg is not in
+     *   MissEndpointHandler::ALLOWED_FORMATS, so a .jpg local cache
+     *   URL would be unservable.
+     *
+     * @param TransformRequest $request Transform to deliver (format
+     *        typically 'jpeg', extensionFormat true).
+     * @param string|null $filename Optional Content-Disposition filename.
+     * @return string|null Absolute/relative social-safe URL, or null.
+     */
+    public function socialSafeUrl(TransformRequest $request, ?string $filename = null): ?string;
 }

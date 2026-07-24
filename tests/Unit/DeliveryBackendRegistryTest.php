@@ -418,4 +418,9 @@ class StubBackend implements DeliveryBackend
     {
         return '';
     }
+
+    public function socialSafeUrl(\OXPulse\Imager\Domain\Transform\TransformRequest $request, ?string $filename = null): ?string
+    {
+        return null;
+    }
 }
