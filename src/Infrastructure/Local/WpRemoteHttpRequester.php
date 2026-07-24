@@ -66,4 +66,35 @@ class WpRemoteHttpRequester implements HttpRequester
 
         return ['status' => $status, 'body' => '', 'error' => null];
     }
+
+    /**
+     * GET request for the social-jpeg capability probe (write-time only).
+     *
+     * Security constraints enforced HERE, not by the caller (mirrors head()):
+     * - timeout 5s (bounded — the probe downloads a small jpeg response).
+     * - redirection = 0 (never follow a redirect — the probe touches
+     *   ONLY the admin-configured endpoint host, no SSRF / open-redirect
+     *   surface).
+     * - sslverify true (do not silently downgrade to insecure).
+     *
+     * Returns the status code + Content-Type header so the probe can
+     * verify imgproxy served a valid image/jpeg (not a 200-with-error-HTML).
+     */
+    public function getImage(string $url): array
+    {
+        $response = wp_remote_get($url, [
+            'timeout' => 5,
+            'redirection' => 0,
+            'sslverify' => true,
+        ]);
+
+        if (is_wp_error($response)) {
+            return ['status' => 0, 'content_type' => '', 'error' => $response->get_error_message()];
+        }
+
+        $status = (int) wp_remote_retrieve_response_code($response);
+        $contentType = (string) wp_remote_retrieve_header($response, 'content-type');
+
+        return ['status' => $status, 'content_type' => $contentType, 'error' => null];
+    }
 }

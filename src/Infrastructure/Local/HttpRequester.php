@@ -47,4 +47,21 @@ interface HttpRequester
      *   - error:  non-null when a transport error occurred.
      */
     public function head(string $url): array;
+
+    /**
+     * Issue an HTTP GET and return the status + content-type header.
+     * Used by the social-jpeg capability probe — verifies imgproxy
+     * actually serves a valid image/jpeg for the .jpg transcoded form.
+     *
+     * Security constraints enforced by the implementation (mirrors
+     * head()): bounded timeout, redirection = 0, sslverify = true.
+     * The caller passes ONLY the admin-configured endpoint-derived URL.
+     *
+     * @param string $url
+     * @return array{status: int, content_type: string, error: ?string}
+     *   - status:        HTTP response code, or 0 on transport failure.
+     *   - content_type:  the Content-Type header value, or '' when absent.
+     *   - error:         non-null when a transport error occurred.
+     */
+    public function getImage(string $url): array;
 }

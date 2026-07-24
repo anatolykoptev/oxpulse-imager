@@ -602,4 +602,9 @@ class NullHttpRequesterForFallback implements HttpRequester
     {
         return ['status' => 0, 'body' => '', 'error' => 'null'];
     }
+
+    public function getImage(string $url): array
+    {
+        return ['status' => 0, 'content_type' => '', 'error' => 'null'];
+    }
 }

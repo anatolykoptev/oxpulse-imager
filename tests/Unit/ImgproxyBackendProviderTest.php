@@ -284,11 +284,14 @@ class RecordingHttpRequester implements HttpRequester
 {
     public int $headCalls = 0;
     public int $getCalls = 0;
+    public int $getImageCalls = 0;
     public string $lastHeadUrl = '';
+    public string $lastGetImageUrl = '';
 
     public function __construct(
         private int $status = 200,
         private ?string $error = null,
+        private string $contentType = '',
     ) {}
 
     public function get(string $url): array
@@ -302,5 +305,12 @@ class RecordingHttpRequester implements HttpRequester
         $this->headCalls++;
         $this->lastHeadUrl = $url;
         return ['status' => $this->status, 'body' => '', 'error' => $this->error];
+    }
+
+    public function getImage(string $url): array
+    {
+        $this->getImageCalls++;
+        $this->lastGetImageUrl = $url;
+        return ['status' => $this->status, 'content_type' => $this->contentType, 'error' => $this->error];
     }
 }
