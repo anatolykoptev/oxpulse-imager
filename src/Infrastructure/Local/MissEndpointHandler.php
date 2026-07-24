@@ -61,6 +61,15 @@ final class MissEndpointHandler
         private string $cacheDir,
         private string $uploadsBasedir,
         private ?int $avifQualityOverride = null,
+        // Gate 1 (ProFeatures::AVIF): when false (free tier), AVIF is
+        // NOT an eligible output format — auto negotiation resolves to
+        // WebP (or original), and a direct .avif request downgrades to
+        // WebP or original, never avif, never fatal. Baked into the
+        // generated endpoint as OXPULSE_AVIF_ALLOWED from
+        // ServiceRegistrar::isPro() at generation time. Default true
+        // preserves the ungated behavior for callers that do not pass
+        // it (the gate is applied at the generation site).
+        private bool $avifAllowed = true,
     ) {}
 
     /**
@@ -115,14 +124,27 @@ final class MissEndpointHandler
                 return $this->serveOriginal($sourcePath);
             }
         } else {
-            // Explicit format: client must accept the exact format,
-            // else serve original (the URL is format-specific — a
-            // non-accepting client gets the original, not a different
-            // format, so the static file matches the next Apache hit).
-            if (!$this->acceptsFormat($accept, $formatLower)) {
+            // Gate 1: a direct .avif request under free is NOT eligible
+            // for avif. Downgrade to WebP when the client accepts it
+            // and the host can encode it, else serve original — never
+            // avif, never fatal (no 400). The URL stays .avif but the
+            // served bytes are WebP/original; the next Apache hit for
+            // the same clean URL re-enters here and downgrades again.
+            if ($formatLower === 'avif' && !$this->avifAllowed) {
+                if ($this->transformer->supportsWebp() && $this->acceptsFormat($accept, 'webp')) {
+                    $format = 'webp';
+                } else {
+                    return $this->serveOriginal($sourcePath);
+                }
+            } elseif (!$this->acceptsFormat($accept, $formatLower)) {
+                // Explicit format: client must accept the exact format,
+                // else serve original (the URL is format-specific — a
+                // non-accepting client gets the original, not a different
+                // format, so the static file matches the next Apache hit).
                 return $this->serveOriginal($sourcePath);
+            } else {
+                $format = $formatLower;
             }
-            $format = $formatLower;
         }
 
         // 4. Cache hit?
@@ -161,7 +183,13 @@ final class MissEndpointHandler
      */
     private function negotiate(string $accept): string
     {
-        if (str_contains($accept, 'image/avif') && $this->transformer->supportsAvif()) {
+        // Gate 1: AVIF is not an eligible output format under free —
+        // skip the avif branch so negotiation resolves to WebP (or
+        // original), never avif, even if the client Accepts avif.
+        if ($this->avifAllowed
+            && str_contains($accept, 'image/avif')
+            && $this->transformer->supportsAvif()
+        ) {
             return 'avif';
         }
         if (str_contains($accept, 'image/webp') && $this->transformer->supportsWebp()) {

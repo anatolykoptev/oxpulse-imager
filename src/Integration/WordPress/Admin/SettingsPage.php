@@ -26,6 +26,7 @@ use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\WordPress\AssetManifest;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
+use OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar;
 
 final class SettingsPage
 {
@@ -107,6 +108,14 @@ final class SettingsPage
      */
     public function buildDeliveryStatusLine(): string
     {
+        // Gate 5 (ProFeatures::ADMIN_STATUS): under free, the detailed
+        // delivery-status readout is Pro — replace it with a basic line
+        // so the settings page still renders + works; only the detailed
+        // status is Pro. Cosmetic — must not break the page. No nag.
+        if (!ServiceRegistrar::isPro()) {
+            return __('Active delivery: active', 'oxpulse-imager');
+        }
+
         $delivery = $this->repository->loadDeliveryConfig();
         $signing = $this->repository->loadSigningConfig();
 

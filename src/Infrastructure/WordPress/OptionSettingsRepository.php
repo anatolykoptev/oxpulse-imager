@@ -667,9 +667,23 @@ final class OptionSettingsRepository
      * oxpulse_cache_max_mb filter so an operator can override without a
      * UI field. A value <= 0 disables eviction entirely (CacheJanitor
      * treats a non-positive cap as a no-op).
+     *
+     * Gate 4 (ProFeatures::CACHE_MANAGEMENT): under free, the
+     * user-configurable cap is Pro-locked — the stored option AND the
+     * oxpulse_cache_max_mb filter are ignored and the DEFAULT cap
+     * (512MB) is returned. The CacheJanitor cron itself is NOT gated
+     * (disk safety runs for everyone); only the admin cap control is
+     * Pro. Free uses the default which the janitor still enforces.
      */
     public function loadCacheMaxMb(): int
     {
+        // Gate 4: free tier cannot change the cache cap — lock to the
+        // default so the janitor still bounds disk growth for free
+        // sites without exposing the Pro cap control.
+        if (!ServiceRegistrar::isPro()) {
+            return self::DEFAULT_CACHE_MAX_MB;
+        }
+
         $stored = (int) get_option(self::OPTION_CACHE_MAX_MB, self::DEFAULT_CACHE_MAX_MB);
         return (int) apply_filters('oxpulse_cache_max_mb', $stored);
     }

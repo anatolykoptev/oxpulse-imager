@@ -103,6 +103,8 @@ final class ServiceRegistrar
         self::registerCacheCleanupCron($plugin);
         self::registerLocalCacheInvalidation($plugin);
         self::registerLocalDeliverySettingsSync($plugin);
+        self::registerImgproxyDeliveryGate();
+        self::registerPictureGate();
         self::maybeReprobeOnVersionUpdate();
         self::maybeMigrateAutoload();
         self::maybeGrandfatherPreFreemiusInstalls();
@@ -151,6 +153,68 @@ final class ServiceRegistrar
             self::$licenseGate = new FreemiusLicenseGate();
         }
         return self::$licenseGate;
+    }
+
+    /**
+     * Centralized Pro-entitlement check — the single call every feature
+     * gate consults at use-time. Delegates to licenseGate()->isPro() so
+     * the provider (Freemius + grandfather + oxpulse_is_pro filter) is
+     * resolved once and every gate stays consistent + testable via the
+     * oxpulse_is_pro filter (add_filter('oxpulse_is_pro',
+     * '__return_true'/'__return_false')).
+     *
+     * Read at the point of use (not cached at bootstrap) so a license
+     * activation takes effect on the next isPro() call without a reload.
+     */
+    public static function isPro(): bool
+    {
+        return self::licenseGate()->isPro();
+    }
+
+    /**
+     * Gate 2 (ProFeatures::IMGPROXY_DELIVERY): under free, the imgproxy
+     * delivery backend is NOT selectable. Registered at bootstrap via
+     * the documented oxpulse_delivery_backends extension point so the
+     * strip applies to EVERY factory call site (frontend delivery,
+     * prewarm cron, WP-CLI, REST) without scattering isPro() checks.
+     *
+     * When !isPro(), the callback removes every ImgproxyBackendProvider
+     * from the provider list; the registry then falls through to
+     * LocalBackend (WebP) or Passthrough (preserve original URL) —
+     * delivery never breaks. When isPro(), the list passes through
+     * unchanged (imgproxy selectable as today).
+     */
+    private static function registerImgproxyDeliveryGate(): void
+    {
+        add_filter('oxpulse_delivery_backends', static function (array $providers): array {
+            if (self::isPro()) {
+                return $providers;
+            }
+            return array_values(array_filter(
+                $providers,
+                static fn($p): bool => !$p instanceof ImgproxyBackendProvider,
+            ));
+        }, 10, 1);
+    }
+
+    /**
+     * Gate 3 (ProFeatures::PICTURE_ELEMENT): under free, <picture>
+     * wrapping is forced OFF regardless of the stored option or any
+     * other oxpulse_picture_enabled filter callback — Pro is a
+     * prerequisite; a free user who flips the option or adds
+     * add_filter('oxpulse_picture_enabled','__return_true') still gets
+     * no <picture>. Registered at PHP_INT_MAX priority so it runs LAST
+     * in the apply_filters chain and wins over any earlier force-on.
+     *
+     * When isPro(), the filter passes the value through unchanged (the
+     * option + oxpulse_picture_enabled filter control wrapping as today).
+     * Free-fallback: no picture wrapping (unchanged default behavior).
+     */
+    private static function registerPictureGate(): void
+    {
+        add_filter('oxpulse_picture_enabled', static function ($enabled): bool {
+            return self::isPro() ? (bool) $enabled : false;
+        }, PHP_INT_MAX, 1);
     }
 
     /**

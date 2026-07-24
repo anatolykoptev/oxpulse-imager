@@ -27,6 +27,7 @@ namespace OXPulse\Imager\Infrastructure\Local;
 
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
+use OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar;
 
 final class LocalDeliveryInstaller
 {
@@ -82,6 +83,12 @@ final class LocalDeliveryInstaller
             cacheDir: $this->cacheDir,
             srcDir: $this->srcDir,
             avifQuality: $avifQuality,
+            // Gate 1 (ProFeatures::AVIF): bake the AVIF eligibility into
+            // the self-contained endpoint from the license seam at
+            // generation time. The endpoint has no WP access at request
+            // time, so the gate is resolved here. Re-installed on every
+            // settings-save + activation + version re-probe.
+            avifAllowed: ServiceRegistrar::isPro(),
         );
 
         // Cache dir .htaccess (miss → endpoint routing).

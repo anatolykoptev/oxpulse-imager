@@ -27,12 +27,19 @@ class SettingsPageTest extends TestCase
     protected function setUp(): void
     {
         $GLOBALS['__oxpulse_options'] = [];
+        $GLOBALS['__oxpulse_filters'] = [];
         $GLOBALS['__oxpulse_is_multisite'] = false;
+
+        // These tests exercise the detailed delivery-status readout
+        // (a Pro feature since the Gate 5 admin-status gate replaces it
+        // with a basic line under free). Opt into Pro so the detailed
+        // labels are produced by buildDeliveryStatusLine().
+        add_filter('oxpulse_is_pro', '__return_true');
     }
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['__oxpulse_options'], $GLOBALS['__oxpulse_is_multisite']);
+        unset($GLOBALS['__oxpulse_options'], $GLOBALS['__oxpulse_filters'], $GLOBALS['__oxpulse_is_multisite']);
     }
 
     private function signingOptions(): void
