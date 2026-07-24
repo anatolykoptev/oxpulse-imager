@@ -39,6 +39,7 @@ final class ImgproxyBackendProvider implements DeliveryBackendProvider
     public function __construct(
         private HttpRequester $requester,
         private ImgproxyHealthCache $cache,
+        private ?SocialJpegCapabilityCache $capability = null,
     ) {}
 
     public function id(): string
@@ -76,7 +77,14 @@ final class ImgproxyBackendProvider implements DeliveryBackendProvider
 
     public function build(DeliveryConfig $config, SigningConfig $signing): ?DeliveryBackend
     {
-        return new ImgproxyBackend($config, $signing);
+        // A provider-built backend is ALWAYS conservative: inject the
+        // health cache (cheap belt) + the capability cache (conservative
+        // gate). When capability is unset (null ctor arg), a real
+        // SocialJpegCapabilityCache is constructed so the gate is active
+        // — an unprobed endpoint defaults to readOk=false → degrade to
+        // webp, never a URL that might 403.
+        $capability = $this->capability ?? new SocialJpegCapabilityCache();
+        return new ImgproxyBackend($config, $signing, $this->cache, $capability);
     }
 
     /**
