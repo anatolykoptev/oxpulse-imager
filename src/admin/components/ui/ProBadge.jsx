@@ -25,6 +25,7 @@
 import clsx from 'clsx';
 import { __ } from '@utils/i18n';
 import { useLicenseStore } from '@store/useLicenseStore';
+import { isLocked } from '@utils/proGate';
 
 /**
  * Small "PRO" badge pill. Shown next to a Pro control's label for all
@@ -46,7 +47,7 @@ export const ProBadge = ({ className = '' }) => {
         className
       )}
       title={isPro
-        ? __('Pro feature (active)', 'oxpulse-imager')
+        ? __('Included in your Pro plan', 'oxpulse-imager')
         : __('Pro feature', 'oxpulse-imager')}
     >
       {__('PRO', 'oxpulse-imager')}
@@ -81,8 +82,12 @@ export const ProLock = ({ feature, children, className = '' }) => {
   const isGrandfathered = useLicenseStore((s) => s.isGrandfathered);
   const upgradeUrl = useLicenseStore((s) => s.upgradeUrl);
 
+  // Locked under free (not Pro, not grandfathered). The decision lives
+  // in the shared proGate helper so tests exercise the REAL logic.
+  const locked = isLocked({ isPro, isGrandfathered });
+
   // Pro or grandfathered → control works normally, no lock.
-  if (isPro || isGrandfathered) {
+  if (!locked) {
     return typeof children === 'function' ? children(false) : children;
   }
 

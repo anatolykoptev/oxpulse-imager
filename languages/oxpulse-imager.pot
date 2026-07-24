@@ -1028,7 +1028,7 @@ msgstr ""
 msgid "Enabling…"
 msgstr ""
 
-msgid "Pro feature (active)"
+msgid "Included in your Pro plan"
 msgstr ""
 
 msgid "Pro feature"

@@ -119,8 +119,12 @@ test('useLicenseStore degrades malformed license to free-safe', async () => {
 // ─── ProLock: locked under free, enabled under Pro ──────────────────
 //
 // ProLock uses a render-prop: children(true) under free, children(false)
-// under Pro. We test the render-prop callback directly (no React DOM
-// render needed — the lock decision is a pure function of the store).
+// under Pro. The lock DECISION lives in the shared proGate helper
+// (imported by ProBadge.jsx's ProLock), so we exercise the REAL logic
+// — not a reimplementation. These tests FAIL if the real decision
+// diverges from what the component renders.
+
+import { isLocked } from '../../src/admin/utils/proGate.js';
 
 test('ProLock render-prop receives locked=true under free', async () => {
   globalThis.window = { oxpulseAdmin: { restUrl: 'http://x.test', nonce: 'n' } };
@@ -128,10 +132,9 @@ test('ProLock render-prop receives locked=true under free', async () => {
   const storeMod = await import(`../../src/admin/store/useLicenseStore.js?t=${Date.now()}6`);
   const { useLicenseStore } = storeMod;
 
-  // Simulate the ProLock decision logic: free (not Pro, not grandfathered).
+  // Drive the decision through the REAL helper the component uses.
   const { isPro, isGrandfathered } = useLicenseStore.getState();
-  const locked = !isPro && !isGrandfathered;
-  assert.equal(locked, true, 'free tier must lock the control');
+  assert.equal(isLocked({ isPro, isGrandfathered }), true, 'free tier must lock the control');
 });
 
 test('ProLock render-prop receives locked=false under Pro', async () => {
@@ -147,8 +150,7 @@ test('ProLock render-prop receives locked=false under Pro', async () => {
   const { useLicenseStore } = storeMod;
 
   const { isPro, isGrandfathered } = useLicenseStore.getState();
-  const locked = !isPro && !isGrandfathered;
-  assert.equal(locked, false, 'Pro tier must NOT lock the control');
+  assert.equal(isLocked({ isPro, isGrandfathered }), false, 'Pro tier must NOT lock the control');
 });
 
 test('ProLock render-prop receives locked=false when grandfathered', async () => {
@@ -164,37 +166,34 @@ test('ProLock render-prop receives locked=false when grandfathered', async () =>
   const { useLicenseStore } = storeMod;
 
   const { isPro, isGrandfathered } = useLicenseStore.getState();
-  const locked = !isPro && !isGrandfathered;
-  assert.equal(locked, false, 'grandfathered must NOT lock the control');
+  assert.equal(isLocked({ isPro, isGrandfathered }), false, 'grandfathered must NOT lock the control');
 });
 
 // ─── TopNav: plan pill + CTA decision logic ─────────────────────────
 //
-// TopNav computes planPill + CTA from the license store. We test the
-// decision logic (the ternary chain) directly against store state,
-// mirroring the component's derivation.
+// TopNav computes planPill + CTA from the shared proGate helper
+// (imported by TopNav.jsx), so we exercise the REAL logic — not a
+// reimplementation. The helper returns a stable `kind` key + `cta`
+// kind; the component maps kind → StatusPill status + i18n label.
+// These tests FAIL if the real decision diverges.
 
-const computePlanPill = (isPro, isGrandfathered) => {
-  if (isPro && !isGrandfathered) return { pill: 'Pro', cta: 'manage' };
-  if (isPro && isGrandfathered) return { pill: 'Pro · included', cta: 'manage' };
-  return { pill: 'Free', cta: 'upgrade' };
-};
+import { planPill } from '../../src/admin/utils/proGate.js';
 
 test('TopNav shows Free + Upgrade CTA under free', () => {
-  const result = computePlanPill(false, false);
-  assert.equal(result.pill, 'Free');
+  const result = planPill({ isPro: false, isGrandfathered: false });
+  assert.equal(result.kind, 'free');
   assert.equal(result.cta, 'upgrade');
 });
 
 test('TopNav shows Pro + Manage CTA under Pro (not grandfathered)', () => {
-  const result = computePlanPill(true, false);
-  assert.equal(result.pill, 'Pro');
+  const result = planPill({ isPro: true, isGrandfathered: false });
+  assert.equal(result.kind, 'pro');
   assert.equal(result.cta, 'manage');
 });
 
 test('TopNav shows Pro · included under grandfathered', () => {
-  const result = computePlanPill(true, true);
-  assert.equal(result.pill, 'Pro · included');
+  const result = planPill({ isPro: true, isGrandfathered: true });
+  assert.equal(result.kind, 'pro-included');
   assert.equal(result.cta, 'manage');
 });
 

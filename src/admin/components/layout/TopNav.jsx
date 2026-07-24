@@ -11,6 +11,7 @@ import { __ } from '@utils/i18n';
 import { useUIStore } from '@store/useUIStore';
 import { useOptionsStore } from '@store/useOptionsStore';
 import { useLicenseStore } from '@store/useLicenseStore';
+import { planPill as computePlanPill } from '@utils/proGate';
 import Button from '@components/ui/Button';
 import StatusPill from '@components/ui/StatusPill';
 import { IconSave } from '@components/ui/icons';
@@ -38,10 +39,13 @@ const TopNav = ({ sections, version = '' }) => {
 
   // Plan pill: green "Pro" for paying, neutral "Pro · included" for
   // grandfathered (pre-Freemius installs keep every feature — no
-  // upsell), gray "Free" otherwise. Reuses the StatusPill idiom.
-  const planPill = isPro && !isGrandfathered
+  // upsell), gray "Free" otherwise. The kind/cta decision lives in
+  // the shared proGate helper (tested directly); this maps the kind
+  // to the StatusPill status + i18n label.
+  const { kind: planKind, cta: ctaKind } = computePlanPill({ isPro, isGrandfathered });
+  const planPill = planKind === 'pro'
     ? { status: 'ok', label: __('Pro', 'oxpulse-imager') }
-    : isPro && isGrandfathered
+    : planKind === 'pro-included'
       ? { status: 'empty', label: __('Pro · included', 'oxpulse-imager') }
       : { status: 'empty', label: __('Free', 'oxpulse-imager') };
 
@@ -81,7 +85,7 @@ const TopNav = ({ sections, version = '' }) => {
 
       <div className="oxp-flex oxp-items-center oxp-gap-3">
         <StatusPill status={planPill.status} label={planPill.label} />
-        {isPro ? (
+        {ctaKind === 'manage' ? (
           accountUrl && (
             <a
               href={accountUrl}
@@ -93,11 +97,17 @@ const TopNav = ({ sections, version = '' }) => {
             </a>
           )
         ) : (
+          // Upgrade CTA rendered as an <a> (Button anchor variant) so
+          // middle-click / open-in-new-tab / copy-link work — a
+          // <button onClick={window.open}> cannot. Hidden when
+          // upgradeUrl is empty (SDK absent).
           upgradeUrl && (
             <Button
               size="sm"
               variant="primary"
-              onClick={() => window.open(upgradeUrl, '_blank', 'noopener,noreferrer')}
+              href={upgradeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
             >
               {__('Upgrade to Pro', 'oxpulse-imager')}
             </Button>
