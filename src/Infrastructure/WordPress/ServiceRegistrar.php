@@ -98,6 +98,16 @@ final class ServiceRegistrar
     {
         self::registerHealthGate($plugin);
         self::registerAdminSettings($plugin);
+        // REST controllers serving /wp-json/oxpulse/v1/* MUST register
+        // unconditionally: is_admin() is FALSE on REST API requests, so
+        // gating them inside registerAdminSettings() (which is admin-only)
+        // left the routes unregistered for the very requests that need
+        // them — the SPA's POST /oxpulse/v1/options returned
+        // rest_no_route 404 on the first-run onboarding save (#120
+        // fix-round). Each controller hooks rest_api_init (fires only on
+        // REST requests), so registering them here adds no admin-side
+        // cost.
+        self::registerAdminRestControllers();
         self::registerCli($plugin);
         self::registerPerformanceIntegration($plugin);
         self::registerAsyncPrewarmCron($plugin);
@@ -395,10 +405,12 @@ final class ServiceRegistrar
     }
 
     /**
-     * Register the admin settings page (React SPA shell) + REST
-     * controllers backing it (options, health, prewarm). Only wired
-     * when is_admin() is true so the frontend never loads admin
-     * dependencies.
+     * Register the admin settings page (React SPA shell) + the
+     * "Settings" plugin action link + the admin capability notice.
+     * Only wired when is_admin() is true — these are wp-admin-screen
+     * concerns. The REST controllers backing the SPA are registered
+     * separately by registerAdminRestControllers() (unconditionally,
+     * because is_admin() is FALSE on /wp-json/ requests).
      */
     private static function registerAdminSettings(Plugin $plugin): void
     {
@@ -407,7 +419,6 @@ final class ServiceRegistrar
         }
 
         $repository = new OptionSettingsRepository();
-        $validator = new SettingsValidator();
 
         // React SPA shell — enqueues the admin bundle, mounts into
         // #oxpulse-admin-root.
@@ -428,6 +439,32 @@ final class ServiceRegistrar
             array_unshift($links, $settingsLink);
             return $links;
         });
+
+        // #43 Phase 5: admin notice — tells the operator when the host
+        // is on the ?k= PHP fallback (nginx / AllowOverride None /
+        // LiteSpeed / probe inconclusive) with the nginx snippet +
+        // perf quantification + Re-test button + co-install notice.
+        $adminNotice = new AdminNotice($repository);
+        $adminNotice->register();
+    }
+
+    /**
+     * Register the REST controllers backing the admin SPA
+     * (options, health, prewarm, status, diagnostics, capability).
+     *
+     * Registered UNCONDITIONALLY (not gated on is_admin()) because
+     * is_admin() returns FALSE on REST API requests (/wp-json/...).
+     * Gating these inside registerAdminSettings() left the routes
+     * unregistered for the very requests that need them — the SPA's
+     * POST /oxpulse/v1/options returned rest_no_route 404 on the
+     * first-run onboarding save. Each controller hooks rest_api_init
+     * (which fires only on REST requests), so registering them here
+     * adds no admin-side or frontend cost.
+     */
+    private static function registerAdminRestControllers(): void
+    {
+        $repository = new OptionSettingsRepository();
+        $validator = new SettingsValidator();
 
         // REST: GET|POST /oxpulse/v1/options — settings read/write.
         $optionsRest = new OptionsRestController($repository, $validator);
@@ -457,13 +494,6 @@ final class ServiceRegistrar
         // — the admin "Re-test capability" + notice-dismiss buttons.
         $capabilityRest = new CapabilityRestController();
         $capabilityRest->register();
-
-        // #43 Phase 5: admin notice — tells the operator when the host
-        // is on the ?k= PHP fallback (nginx / AllowOverride None /
-        // LiteSpeed / probe inconclusive) with the nginx snippet +
-        // perf quantification + Re-test button + co-install notice.
-        $adminNotice = new AdminNotice($repository);
-        $adminNotice->register();
     }
 
     /**
