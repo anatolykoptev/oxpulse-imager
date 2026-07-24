@@ -86,6 +86,7 @@ class WpRemoteHttpRequester implements HttpRequester
             'timeout' => 5,
             'redirection' => 0,
             'sslverify' => true,
+            'limit_response_size' => 2 * 1024 * 1024,
         ]);
 
         if (is_wp_error($response)) {
