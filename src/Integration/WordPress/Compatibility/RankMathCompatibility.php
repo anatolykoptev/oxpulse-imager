@@ -53,11 +53,22 @@ final class RankMathCompatibility
      * The url may already be a direct URL (when delivery is disabled or
      * the image was not rewritten) — in that case this is a no-op.
      *
-     * @param array $attachment
-     * @return array
+     * @param mixed $attachment
+     * @return mixed
      */
-    public function restoreDirectUrl(array $attachment): array
+    public function restoreDirectUrl(mixed $attachment): mixed
     {
+        // WordPress filter callbacks receive whatever value the filter
+        // carries — `apply_filters` is type-agnostic. RankMath (or
+        // another plugin earlier in the chain) can pass a non-array
+        // ('', a URL string, or false) to the image_array filter when
+        // no image is resolved. Under strict_types=1 the `array` hint
+        // throws a TypeError → 500. Pass non-array values through
+        // unchanged so the filter chain stays intact.
+        if (!is_array($attachment)) {
+            return $attachment;
+        }
+
         if (empty($attachment['url'])) {
             return $attachment;
         }

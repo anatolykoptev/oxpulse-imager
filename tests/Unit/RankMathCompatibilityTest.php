@@ -175,4 +175,32 @@ class RankMathCompatibilityTest extends TestCase
         $this->assertContains('rank_math/opengraph/facebook/image_array', $filterHooks);
         $this->assertContains('rank_math/opengraph/twitter/image_array', $filterHooks);
     }
+
+    /**
+     * WordPress filter callbacks must tolerate the actual value type
+     * they receive — `apply_filters` carries any type. RankMath (or
+     * another plugin earlier in the chain) can pass a non-array
+     * (empty string, URL string, or false) to the image_array filter
+     * when no image is resolved. Under strict_types=1 the `array`
+     * param hint throws a TypeError → 500. The callback must pass the
+     * non-array value through unchanged.
+     */
+    public function test_passes_empty_string_through_unchanged(): void
+    {
+        $result = $this->compat->restoreDirectUrl('');
+        $this->assertSame('', $result);
+    }
+
+    public function test_passes_url_string_through_unchanged(): void
+    {
+        $url = 'https://piter.now/wp-content/uploads/2025/04/x.jpg';
+        $result = $this->compat->restoreDirectUrl($url);
+        $this->assertSame($url, $result);
+    }
+
+    public function test_passes_false_through_unchanged(): void
+    {
+        $result = $this->compat->restoreDirectUrl(false);
+        $this->assertSame(false, $result);
+    }
 }
