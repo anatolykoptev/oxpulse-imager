@@ -28,6 +28,8 @@ use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackendProvider;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
+use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityCache;
+use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityProbe;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\Local\CacheJanitor;
 use OXPulse\Imager\Infrastructure\Local\HttpRequester;
@@ -552,6 +554,7 @@ final class ServiceRegistrar
     {
         add_action('oxpulse_imgproxy_health_recheck', static function (): void {
             self::recheckImgproxyHealth();
+            self::recheckSocialJpegCapability();
         });
 
         add_action('init', static function (): void {
@@ -856,6 +859,88 @@ final class ServiceRegistrar
     }
 
     /**
+     * Write-time social-jpeg capability probe trigger.
+     *
+     * Mirrors recheckImgproxyHealth(): self-guarding via
+     * isLocalBackendActive() (no-op when LocalBackend is active —
+     * endpoint empty). Resolves a relative endpoint to absolute (same
+     * as the frontend delivery path + recheckImgproxyHealth). Constructs
+     * a SocialJpegCapabilityProbe with the endpoint-resolved
+     * DeliveryConfig + signing config + injected requester/cache/
+     * sourceProvider, and calls run() which writes 'ok'/'no' to the
+     * SocialJpegCapabilityCache.
+     *
+     * The probe issues a single getImage() to the EXACT production .jpg
+     * URL — bounded 5s timeout, redirection = 0, sslverify = true
+     * (enforced by the HttpRequester impl). NEVER called on the
+     * front-end render path — wired to the same triggers as
+     * recheckImgproxyHealth (activation, settings-save, hourly cron,
+     * version-gated re-probe).
+     *
+     * Test seam: accepts injected HttpRequester + SocialJpegCapabilityCache
+     * + callable sourceProvider so tests can verify the trigger without
+     * a real HTTP round-trip. Production callers pass null → real deps
+     * are built. The default sourceProvider queries the newest image
+     * attachment via get_posts + AttachmentOriginResolver (bypasses the
+     * rewrite filter chain).
+     */
+    public static function recheckSocialJpegCapability(
+        ?HttpRequester $requester = null,
+        ?SocialJpegCapabilityCache $cache = null,
+        ?callable $sourceProvider = null,
+    ): void {
+        $repository = new OptionSettingsRepository();
+        $delivery = $repository->loadDeliveryConfig();
+
+        // Only probe when ImgproxyBackend is active (endpoint non-empty).
+        // Self-guarding — mirrors recheckImgproxyHealth().
+        if ($delivery->isLocalBackendActive()) {
+            return;
+        }
+
+        // Resolve relative endpoint to absolute (same as the frontend
+        // delivery path + recheckImgproxyHealth).
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
+
+        // Signing config is required to generate the .jpg probe URL.
+        // Without it, imgproxy URLs can't be signed → stay conservative
+        // (cache stays false → degrade to webp).
+        $signing = $repository->loadSigningConfig();
+        if ($signing === null) {
+            return;
+        }
+
+        $requester = $requester ?? new WpRemoteHttpRequester();
+        $cache = $cache ?? new SocialJpegCapabilityCache();
+
+        // Default sourceProvider: newest image attachment, bypassing
+        // the rewrite filter chain via AttachmentOriginResolver.
+        if ($sourceProvider === null) {
+            $sourceProvider = static function (): ?string {
+                $posts = get_posts([
+                    'post_type' => 'attachment',
+                    'post_mime_type' => 'image',
+                    'posts_per_page' => 1,
+                    'orderby' => 'date',
+                    'order' => 'DESC',
+                ]);
+                if (empty($posts)) {
+                    return null;
+                }
+                return \OXPulse\Imager\Integration\WordPress\Delivery\AttachmentOriginResolver::resolveOriginalUrl((int) $posts[0]->ID);
+            };
+        }
+
+        $probe = new SocialJpegCapabilityProbe($delivery, $signing, $requester, $cache, $sourceProvider);
+        $probe->run();
+
+        // Marker action for test assertions + observability.
+        do_action('oxpulse_recheck_social_jpeg');
+    }
+
+    /**
      * #43 Phase 1 review (MAJOR): OPTION_PROBE_VERSION-gated re-probe
      * on plugin update. When the stored probe version does not match
      * the current plugin version AND LocalBackend is active, re-run the
@@ -892,6 +977,7 @@ final class ServiceRegistrar
         // endpoint state.
         self::recheckRewriteCapability();
         self::recheckImgproxyHealth();
+        self::recheckSocialJpegCapability();
         $repository->saveProbeVersion(OXPULSE_IMAGER_VERSION);
     }
 
@@ -1110,6 +1196,12 @@ final class ServiceRegistrar
         $recheckImgproxy = static function (): void {
             self::recheckImgproxyHealth();
         };
+        // Social-jpeg capability probe: same trigger as imgproxy health.
+        // Self-guarding via isLocalBackendActive() — fires only when
+        // imgproxy is active (endpoint set).
+        $recheckSocialJpeg = static function (): void {
+            self::recheckSocialJpegCapability();
+        };
         // #43 Phase 4 (plan B.3 / D.4 #5): purge cache-plugin page
         // caches when delivery-relevant options change. Cached pages
         // have BAKED the old image URLs (clean vs ?k=); the purge
@@ -1119,7 +1211,7 @@ final class ServiceRegistrar
             (new CachePurger())->purge();
         };
 
-        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability, $recheckImgproxy, $purgeCaches): void {
+        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability, $recheckImgproxy, $recheckSocialJpeg, $purgeCaches): void {
             if (in_array($option, OptionSettingsRepository::DELIVERY_OPTION_KEYS, true)) {
                 $reinstall();
             }
@@ -1129,6 +1221,7 @@ final class ServiceRegistrar
                 // probe; endpoint empty → rewrite-capability probe).
                 $recheckCapability();
                 $recheckImgproxy();
+                $recheckSocialJpeg();
             }
             // Purge page caches on delivery-relevant option changes
             // (the delivery keys + OPTION_REWRITE_CAPABILITY, whose flip

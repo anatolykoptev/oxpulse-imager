@@ -193,6 +193,11 @@ function oxpulse_imager_activate(): void {
         // when LocalBackend is active. The bounded 2s HEAD is acceptable
         // in the activation context — never on the front-end read path.
         \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::recheckImgproxyHealth();
+        // Social-jpeg capability probe: same trigger as imgproxy health.
+        // Self-guarding via isLocalBackendActive() — fires only when
+        // imgproxy is active (endpoint set). The bounded 5s GET is
+        // acceptable in the activation context — never on the front-end.
+        \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::recheckSocialJpegCapability();
     }
 
     // #81: schedule the recurring imgproxy health re-probe cron so a
