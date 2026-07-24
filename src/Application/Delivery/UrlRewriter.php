@@ -29,6 +29,8 @@ use OXPulse\Imager\Domain\Diagnostics\LogEntry;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
+use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityCache;
 
 final class UrlRewriter
 {
@@ -450,8 +452,17 @@ final class UrlRewriter
 
         // Lazily construct the default ImgproxyBackend. The signing-null
         // guard in each rewrite method preserves the URL before this point
-        // is reached, so signing is guaranteed non-null here.
-        $this->backend = new ImgproxyBackend($this->delivery, $this->signing);
+        // is reached, so signing is guaranteed non-null here. Inject the
+        // same health + capability caches ImgproxyBackendProvider::build()
+        // injects, so the social path (socialSafeUrl) is conservatively
+        // gated even on the lazy path — an unproven endpoint degrades to
+        // webp, never emits a .jpg URL that might 403.
+        $this->backend = new ImgproxyBackend(
+            $this->delivery,
+            $this->signing,
+            new ImgproxyHealthCache(),
+            new SocialJpegCapabilityCache(),
+        );
         return $this->backend;
     }
 
