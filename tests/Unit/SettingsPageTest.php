@@ -302,4 +302,29 @@ class SettingsPageTest extends TestCase
         $this->assertSame('', $license['upgradeUrl']);
         $this->assertSame('', $license['accountUrl']);
     }
+
+    // ─── buildClientStatus: honest WebP capability for the wizard ────
+    //
+    // buildClientStatus() feeds window.oxpulseAdmin.webpCapable, which
+    // the free-first OnboardingWizard Step 1 uses to pick the welcome
+    // message kind ('ready' vs 'unsupported'). It MUST reflect the real
+    // ImageTransformer::supportsWebp() result — never a hardcoded true.
+
+    public function test_client_status_webp_capable_true_when_transformer_supports_webp(): void
+    {
+        $page = new SettingsPage(null, $this->webpTransformer());
+        $status = $page->buildClientStatus();
+
+        $this->assertArrayHasKey('webpCapable', $status);
+        $this->assertTrue($status['webpCapable']);
+    }
+
+    public function test_client_status_webp_capable_false_when_transformer_cannot_encode_webp(): void
+    {
+        $page = new SettingsPage(null, $this->noEncoderTransformer());
+        $status = $page->buildClientStatus();
+
+        $this->assertArrayHasKey('webpCapable', $status);
+        $this->assertFalse($status['webpCapable']);
+    }
 }
