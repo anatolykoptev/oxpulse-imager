@@ -28,6 +28,7 @@ export const normalizeOptions = (raw) => {
     'defaultQuality', 'lqipEnabled', 'lqipBlur', 'dprEnabled',
     'dprVariants', 'formatQuality', 'diagnosticLevel',
     'devHttpOverride', 'removeOnUninstall', 'onboarded', 'secretStatus',
+    'pictureEnabled', 'cacheMaxMb',
   ];
 
   for (const field of scalarFields) {

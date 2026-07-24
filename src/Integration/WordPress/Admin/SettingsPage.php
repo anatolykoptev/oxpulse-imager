@@ -188,6 +188,50 @@ final class SettingsPage
     }
 
     /**
+     * Build the license state object localized to the SPA as
+     * `window.oxpulseAdmin.license`. All reads are guarded so the SPA
+     * never breaks when the Freemius SDK is absent (deploy shipped
+     * without freemius/) — every field degrades to a free-safe default
+     * and no method is ever called on a null SDK instance.
+     *
+     * Fields:
+     *   - isPro           (bool)   — LicenseGate::isPro() (includes grandfathering).
+     *   - plan            (string) — 'pro' | 'free' (LicenseGate::planName()).
+     *   - upgradeUrl      (string) — Freemius checkout URL, '' when SDK absent.
+     *   - accountUrl      (string) — Freemius account URL, '' when SDK absent.
+     *   - isGrandfathered (bool)   — pre-Freemius install keeps every feature.
+     *
+     * The SPA uses isPro + isGrandfathered to pick the plan pill
+     * ("Pro" / "Pro · included" / "Free") and upgradeUrl/accountUrl for
+     * the CTA. This is UX only — the real enforcement is the backend
+     * isPro() gates (PR #110); this block only MIRRORS that state.
+     *
+     * @return array{isPro: bool, plan: string, upgradeUrl: string, accountUrl: string, isGrandfathered: bool}
+     */
+    public function buildLicenseData(): array
+    {
+        $gate = function_exists('oxpulse_license_gate') ? oxpulse_license_gate() : null;
+        $isPro = $gate !== null ? $gate->isPro() : false;
+        $plan = $gate !== null ? $gate->planName() : 'free';
+
+        $fs = function_exists('oxpulse_fs') ? oxpulse_fs() : null;
+        $upgradeUrl = ($fs !== null && method_exists($fs, 'get_upgrade_url'))
+            ? esc_url_raw($fs->get_upgrade_url())
+            : '';
+        $accountUrl = ($fs !== null && method_exists($fs, 'get_account_url'))
+            ? esc_url_raw($fs->get_account_url())
+            : '';
+
+        return [
+            'isPro'           => $isPro,
+            'plan'            => $plan,
+            'upgradeUrl'      => $upgradeUrl,
+            'accountUrl'      => $accountUrl,
+            'isGrandfathered' => (bool) get_option('oxpulse_grandfathered'),
+        ];
+    }
+
+    /**
      * Enqueue the React admin bundle on this page only.
      */
     public function enqueueAdminAssets(string $hook): void
@@ -249,6 +293,7 @@ final class SettingsPage
                     'OXPulse Imager admin failed to load. Try a hard refresh; if it still does not load, check for caching plugins or contact your site administrator.',
                     'oxpulse-imager'
                 ),
+                'license'   => $this->buildLicenseData(),
             ]
         );
 

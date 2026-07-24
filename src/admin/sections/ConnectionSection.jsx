@@ -14,6 +14,7 @@ import ToggleField from '@components/ui/ToggleField';
 import TextField from '@components/ui/TextField';
 import Textarea from '@components/ui/Textarea';
 import StatusPill from '@components/ui/StatusPill';
+import { ProBadge, ProLock } from '@components/ui/ProBadge';
 
 const ConnectionSection = () => {
   const options = useOptionsStore((s) => s.options);
@@ -53,20 +54,37 @@ const ConnectionSection = () => {
         />
       </Card>
 
-      <Card title={__('imgproxy endpoint', 'oxpulse-imager')}>
-        <TextField
-          name="endpoint"
-          type="url"
-          label={__('Endpoint URL', 'oxpulse-imager')}
-          placeholder="https://imgproxy.example.com"
-          help={__('Base URL of your self-hosted imgproxy instance. HTTPS required in production.', 'oxpulse-imager')}
-          value={options.endpoint}
-          onChange={(v) => setOption('endpoint', v)}
-        />
+      <Card
+        title={
+          <span className="oxp-flex oxp-items-center oxp-gap-1.5">
+            {__('imgproxy endpoint', 'oxpulse-imager')}
+            <ProBadge />
+          </span>
+        }
+      >
+        <ProLock feature="imgproxy_delivery">
+          {(locked) => (
+            <TextField
+              name="endpoint"
+              type="url"
+              label={__('Endpoint URL', 'oxpulse-imager')}
+              placeholder="https://imgproxy.example.com"
+              help={__('Base URL of your self-hosted imgproxy instance. HTTPS required in production.', 'oxpulse-imager')}
+              value={options.endpoint}
+              onChange={(v) => setOption('endpoint', v)}
+              disabled={locked}
+            />
+          )}
+        </ProLock>
       </Card>
 
       <Card
-        title={__('Signing secrets', 'oxpulse-imager')}
+        title={
+          <span className="oxp-flex oxp-items-center oxp-gap-1.5">
+            {__('Signing secrets', 'oxpulse-imager')}
+            <ProBadge />
+          </span>
+        }
         description={__('Hex-encoded imgproxy key + salt. Minimum 16 bytes after decoding. Never displayed after save — leave empty to keep existing.', 'oxpulse-imager')}
       >
         <div className="oxp-mb-4">
@@ -75,24 +93,32 @@ const ConnectionSection = () => {
             label={secretLabel[options.secretStatus] || secretLabel.empty}
           />
         </div>
-        <TextField
-          name="key"
-          type="password"
-          label={__('Signing key (hex)', 'oxpulse-imager')}
-          placeholder={__('Leave empty to keep existing', 'oxpulse-imager')}
-          value=""
-          onChange={(v) => setOption('key', v)}
-          inputClassName="oxp-font-mono"
-        />
-        <TextField
-          name="salt"
-          type="password"
-          label={__('Signing salt (hex)', 'oxpulse-imager')}
-          placeholder={__('Leave empty to keep existing', 'oxpulse-imager')}
-          value=""
-          onChange={(v) => setOption('salt', v)}
-          inputClassName="oxp-font-mono"
-        />
+        <ProLock feature="imgproxy_delivery">
+          {(locked) => (
+            <>
+              <TextField
+                name="key"
+                type="password"
+                label={__('Signing key (hex)', 'oxpulse-imager')}
+                placeholder={__('Leave empty to keep existing', 'oxpulse-imager')}
+                value=""
+                onChange={(v) => setOption('key', v)}
+                disabled={locked}
+                inputClassName="oxp-font-mono"
+              />
+              <TextField
+                name="salt"
+                type="password"
+                label={__('Signing salt (hex)', 'oxpulse-imager')}
+                placeholder={__('Leave empty to keep existing', 'oxpulse-imager')}
+                value=""
+                onChange={(v) => setOption('salt', v)}
+                disabled={locked}
+                inputClassName="oxp-font-mono"
+              />
+            </>
+          )}
+        </ProLock>
       </Card>
 
       <Card

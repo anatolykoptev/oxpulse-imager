@@ -10,7 +10,9 @@ import clsx from 'clsx';
 import { __ } from '@utils/i18n';
 import { useUIStore } from '@store/useUIStore';
 import { useOptionsStore } from '@store/useOptionsStore';
+import { useLicenseStore } from '@store/useLicenseStore';
 import Button from '@components/ui/Button';
+import StatusPill from '@components/ui/StatusPill';
 import { IconSave } from '@components/ui/icons';
 
 const TopNav = ({ sections, version = '' }) => {
@@ -22,7 +24,26 @@ const TopNav = ({ sections, version = '' }) => {
   const saveOptions = useOptionsStore((s) => s.saveOptions);
   const showNotification = useUIStore((s) => s.showNotification);
 
+  // License state — read once, drives the plan pill + CTA. Mirrors the
+  // backend isPro()/grandfather flag localized by SettingsPage. The
+  // pill is a passive indicator (no nag); the CTA opens the Freemius
+  // checkout/account URL in a new tab, or is hidden when the URL is
+  // empty (SDK absent).
+  const isPro = useLicenseStore((s) => s.isPro);
+  const isGrandfathered = useLicenseStore((s) => s.isGrandfathered);
+  const upgradeUrl = useLicenseStore((s) => s.upgradeUrl);
+  const accountUrl = useLicenseStore((s) => s.accountUrl);
+
   const hasErrors = Object.keys(fieldErrors).length > 0;
+
+  // Plan pill: green "Pro" for paying, neutral "Pro · included" for
+  // grandfathered (pre-Freemius installs keep every feature — no
+  // upsell), gray "Free" otherwise. Reuses the StatusPill idiom.
+  const planPill = isPro && !isGrandfathered
+    ? { status: 'ok', label: __('Pro', 'oxpulse-imager') }
+    : isPro && isGrandfathered
+      ? { status: 'empty', label: __('Pro · included', 'oxpulse-imager') }
+      : { status: 'empty', label: __('Free', 'oxpulse-imager') };
 
   const handleSave = async () => {
     const ok = await saveOptions();
@@ -59,6 +80,29 @@ const TopNav = ({ sections, version = '' }) => {
       </nav>
 
       <div className="oxp-flex oxp-items-center oxp-gap-3">
+        <StatusPill status={planPill.status} label={planPill.label} />
+        {isPro ? (
+          accountUrl && (
+            <a
+              href={accountUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="oxp-text-xs oxp-font-medium oxp-text-gray-500 hover:oxp-text-gray-700 hover:oxp-underline"
+            >
+              {__('Manage license', 'oxpulse-imager')}
+            </a>
+          )
+        ) : (
+          upgradeUrl && (
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => window.open(upgradeUrl, '_blank', 'noopener,noreferrer')}
+            >
+              {__('Upgrade to Pro', 'oxpulse-imager')}
+            </Button>
+          )
+        )}
         {version && (
           <span className="oxp-text-xs oxp-text-gray-400">v{version}</span>
         )}

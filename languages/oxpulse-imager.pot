@@ -95,6 +95,10 @@ msgstr ""
 msgid "LQIP blur must be between %1$s and %2$s."
 msgstr ""
 
+#. translators: 1: minimum, 2: maximum.
+msgid "Cache size cap must be between %1$d and %2$d MB."
+msgstr ""
+
 msgid "Local base path is not readable by the web server."
 msgstr ""
 
@@ -691,10 +695,22 @@ msgstr ""
 msgid "Smart"
 msgstr ""
 
+msgid "<picture> element"
+msgstr ""
+
+msgid "Wrap eligible content images in a <picture> element with per-format <source> tags (AVIF/WebP) for progressive enhancement. Pro-gated (PICTURE_ELEMENT)."
+msgstr ""
+
+msgid "Wrap images in <picture> with per-format sources"
+msgstr ""
+
+msgid "When enabled, content <img> tags are wrapped in <picture><source type=\"image/avif\"><source type=\"image/webp\"><img></picture> for browser-negotiated format delivery."
+msgstr ""
+
 msgid "LQIP placeholders"
 msgstr ""
 
-msgid "Low-quality image placeholders — tiny blurred previews via imgproxy that reduce Cumulative Layout Shift (CLS). Falls back to inline SVG when imgproxy is unreachable."
+msgid "Low-quality image placeholders — tiny blurred previews via imgproxy that reduce Cumulative Layout Shift (CLS). Falls back to inline SVG when imgproxy is unreachable. Pro-gated (imgproxy-native)."
 msgstr ""
 
 msgid "Emit data-placeholder on img tags"
@@ -709,7 +725,7 @@ msgstr ""
 msgid "DPR-aware srcset"
 msgstr ""
 
-msgid "For img tags with width but no srcset, generates 1x/2x/3x x-descriptor variants via imgproxy dpr: option. Images that already have w-descriptor srcset are left alone."
+msgid "For img tags with width but no srcset, generates 1x/2x/3x x-descriptor variants via imgproxy dpr: option. Images that already have w-descriptor srcset are left alone. Pro-gated (imgproxy-native)."
 msgstr ""
 
 msgid "Generate DPR variants for images without srcset"
@@ -724,7 +740,7 @@ msgstr ""
 msgid "Watermark"
 msgstr ""
 
-msgid "Applies imgproxy native watermark (wm: option). The watermark image is configured server-side via IMGPROXY_WATERMARK_PATH/URL — this setting controls placement only."
+msgid "Applies imgproxy native watermark (wm: option). The watermark image is configured server-side via IMGPROXY_WATERMARK_PATH/URL — this setting controls placement only. Pro-gated (imgproxy-native)."
 msgstr ""
 
 msgid "Apply watermark"
@@ -778,10 +794,25 @@ msgstr ""
 msgid "Changes take effect on the next page load. The admin bar item (frontend) shows live counts for the current page."
 msgstr ""
 
+msgid "Cache size cap"
+msgstr ""
+
+msgid "Maximum disk space the LocalBackend image cache may use before the janitor evicts oldest entries. The janitor runs for everyone (disk safety); only the cap control is Pro. Under free, the default 512 MB cap is enforced."
+msgstr ""
+
+msgid "Cache cap (MB)"
+msgstr ""
+
+msgid "0 disables eviction (unlimited). Default 512. The janitor cron runs regardless — this only controls the cap."
+msgstr ""
+
 msgid "Recent log entries"
 msgstr ""
 
-msgid "Recent diagnostic entries from the last few requests. Entries are kept for 1 hour. Source URLs are redacted (host + truncated path only)."
+msgid "Recent diagnostic entries from the last few requests. Entries are kept for 1 hour. Source URLs are redacted (host + truncated path only). Pro-gated (ADMIN_STATUS)."
+msgstr ""
+
+msgid "The active delivery status is shown at the top of this page. Detailed per-URL diagnostics are available on Pro."
 msgstr ""
 
 msgid "Loading…"
@@ -997,16 +1028,46 @@ msgstr ""
 msgid "Enabling…"
 msgstr ""
 
+msgid "Pro feature (active)"
+msgstr ""
+
+msgid "Pro feature"
+msgstr ""
+
+msgid "PRO"
+msgstr ""
+
+msgid "Available on Pro — Upgrade"
+msgstr ""
+
+msgid "Available on Pro"
+msgstr ""
+
 msgid "Collapse section"
 msgstr ""
 
 msgid "Expand section"
 msgstr ""
 
+msgid "Pro"
+msgstr ""
+
+msgid "Pro · included"
+msgstr ""
+
+msgid "Free"
+msgstr ""
+
 msgid "Settings saved."
 msgstr ""
 
 msgid "Settings sections"
+msgstr ""
+
+msgid "Manage license"
+msgstr ""
+
+msgid "Upgrade to Pro"
 msgstr ""
 
 msgid "Unsaved changes"

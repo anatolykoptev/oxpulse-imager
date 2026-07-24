@@ -193,4 +193,113 @@ class SettingsPageTest extends TestCase
         $this->assertStringContainsString('oxpulse-delivery-status', $out);
         $this->assertStringContainsString('Active delivery:', $out);
     }
+
+    // ─── License localize block (Part A) ───────────────────────────────
+    //
+    // buildLicenseData() feeds window.oxpulseAdmin.license. It MUST be
+    // present with all 5 keys and degrade to free-safe defaults when the
+    // Freemius SDK is absent (oxpulse_fs returns null) — never fatal.
+
+    /**
+     * Stub Freemius instance with controllable premium flag + URLs,
+     * mirroring FreemiusLicenseGateTest's fsStub shape.
+     */
+    private function licenseFsStub(bool $premium, string $upgradeUrl = '', string $accountUrl = ''): object
+    {
+        return new class($premium, $upgradeUrl, $accountUrl) {
+            private bool $premium;
+            private string $upgradeUrl;
+            private string $accountUrl;
+            public function __construct(bool $premium, string $upgradeUrl, string $accountUrl)
+            {
+                $this->premium = $premium;
+                $this->upgradeUrl = $upgradeUrl;
+                $this->accountUrl = $accountUrl;
+            }
+            public function can_use_premium_code(): bool { return $this->premium; }
+            public function get_upgrade_url(): string { return $this->upgradeUrl; }
+            public function get_account_url(): string { return $this->accountUrl; }
+        };
+    }
+
+    public function test_license_block_has_all_keys_when_sdk_absent(): void
+    {
+        $GLOBALS['__oxpulse_fs_stub'] = null;
+        $GLOBALS['__oxpulse_filters'] = [];
+
+        $page = new SettingsPage();
+        $license = $page->buildLicenseData();
+
+        $this->assertArrayHasKey('isPro', $license);
+        $this->assertArrayHasKey('plan', $license);
+        $this->assertArrayHasKey('upgradeUrl', $license);
+        $this->assertArrayHasKey('accountUrl', $license);
+        $this->assertArrayHasKey('isGrandfathered', $license);
+    }
+
+    public function test_license_block_free_safe_when_sdk_undefined(): void
+    {
+        $GLOBALS['__oxpulse_fs_stub'] = null;
+        $GLOBALS['__oxpulse_filters'] = [];
+
+        $page = new SettingsPage();
+        $license = $page->buildLicenseData();
+
+        $this->assertFalse($license['isPro']);
+        $this->assertSame('free', $license['plan']);
+        $this->assertSame('', $license['upgradeUrl']);
+        $this->assertSame('', $license['accountUrl']);
+        $this->assertFalse($license['isGrandfathered']);
+    }
+
+    public function test_license_block_pro_when_paying_with_urls(): void
+    {
+        $GLOBALS['__oxpulse_fs_stub'] = $this->licenseFsStub(
+            true,
+            'https://checkout.freemius.com/upgrade',
+            'https://users.freemius.com/account'
+        );
+        $GLOBALS['__oxpulse_filters'] = [];
+
+        $page = new SettingsPage();
+        $license = $page->buildLicenseData();
+
+        $this->assertTrue($license['isPro']);
+        $this->assertSame('pro', $license['plan']);
+        $this->assertStringContainsString('checkout.freemius.com', $license['upgradeUrl']);
+        $this->assertStringContainsString('users.freemius.com', $license['accountUrl']);
+        $this->assertFalse($license['isGrandfathered']);
+    }
+
+    public function test_license_block_grandfathered_shows_pro_and_included(): void
+    {
+        $GLOBALS['__oxpulse_fs_stub'] = $this->licenseFsStub(false);
+        $GLOBALS['__oxpulse_filters'] = [];
+        update_option('oxpulse_grandfathered', 1);
+
+        $page = new SettingsPage();
+        $license = $page->buildLicenseData();
+
+        // isPro true (grandfathered), isGrandfathered true → SPA shows "Pro · included".
+        $this->assertTrue($license['isPro']);
+        $this->assertSame('pro', $license['plan']);
+        $this->assertTrue($license['isGrandfathered']);
+    }
+
+    public function test_license_block_non_paying_urls_empty_when_sdk_has_no_url_methods(): void
+    {
+        // A stub without get_upgrade_url/get_account_url (the bare
+        // fsStub shape) — method_exists guard must degrade URLs to ''.
+        $GLOBALS['__oxpulse_fs_stub'] = new class {
+            public function can_use_premium_code(): bool { return false; }
+        };
+        $GLOBALS['__oxpulse_filters'] = [];
+
+        $page = new SettingsPage();
+        $license = $page->buildLicenseData();
+
+        $this->assertFalse($license['isPro']);
+        $this->assertSame('', $license['upgradeUrl']);
+        $this->assertSame('', $license['accountUrl']);
+    }
 }

@@ -48,6 +48,14 @@ final class OptionsMapper
         'dprEnabled'          => 'dpr_enabled',
         'dprVariants'         => 'dpr_variants',
         'watermark'           => 'watermark',
+        // <picture> element wrapping (Phase 1) — Pro-gated (PICTURE_ELEMENT).
+        // The SPA toggle + this mapper entry + the validator producer + the
+        // save branch land as a cohesive unit with the license UI.
+        'pictureEnabled'      => 'picture_enabled',
+        // LocalBackend cache size cap (MB) — Pro-gated (CACHE_MANAGEMENT).
+        // Under free, loadCacheMaxMb() returns the default (512) regardless
+        // of the stored value; the SPA locks the field under free.
+        'cacheMaxMb'          => 'cache_max_mb',
         // Diagnostics
         'diagnosticLevel'     => 'diagnostic_level',
         'devHttpOverride'     => 'dev_http_override',

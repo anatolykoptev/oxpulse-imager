@@ -100,6 +100,18 @@ final class OptionsRestController
             'dpr_variants'      => $delivery->dprVariants,
             'format_quality'    => $delivery->formatQuality,
             'watermark'         => $this->watermarkToArray($delivery->watermark),
+            // <picture> element wrapping (Phase 1) — Pro-gated. The GET
+            // returns the raw stored option so the SPA can render the
+            // toggle state; the backend oxpulse_picture_enabled filter at
+            // PHP_INT_MAX is the real gate (enforces false under free).
+            'picture_enabled'   => (bool) get_option(
+                OptionSettingsRepository::OPTION_PICTURE_ENABLED,
+                false
+            ),
+            // LocalBackend cache cap (MB) — Pro-gated. loadCacheMaxMb()
+            // returns the default (512) under free regardless of the
+            // stored value, so the SPA shows 512 + locked under free.
+            'cache_max_mb'      => $this->repository->loadCacheMaxMb(),
             'diagnostic_level'  => (string) get_option(
                 OptionSettingsRepository::OPTION_DIAGNOSTIC_LEVEL,
                 'off'
