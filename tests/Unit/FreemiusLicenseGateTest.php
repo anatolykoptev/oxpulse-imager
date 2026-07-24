@@ -68,6 +68,36 @@ class FreemiusLicenseGateTest extends TestCase
         $this->assertSame('free', $gate->planName());
     }
 
+    // ─── SDK missing → free tier, no fatal (FIX 1 regression) ────────
+    //
+    // When the Freemius SDK is absent (deploy/ZIP shipped without
+    // freemius/), oxpulse_fs() returns null. isPro() must degrade to
+    // the free tier WITHOUT calling any method on null (which would
+    // fatal-error the site). A custom error handler converts any
+    // attempt to call a method on null into a failing assertion so the
+    // test REDS if the null guard is removed.
+
+    public function test_sdk_absent_is_pro_false_without_fatal(): void
+    {
+        $GLOBALS['__oxpulse_fs_stub'] = null;
+
+        $caught = null;
+        set_error_handler(static function (int $errno, string $errstr) use (&$caught): bool {
+            $caught = $errstr;
+            return true;
+        });
+
+        try {
+            $gate = new FreemiusLicenseGate();
+            $result = $gate->isPro();
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertNull($caught, 'isPro() must not raise a PHP error when the SDK is absent: ' . (string) $caught);
+        $this->assertFalse($result, 'isPro() must return false (free tier) when the SDK is absent');
+    }
+
     // ─── Non-paying stub ──────────────────────────────────────────────
 
     public function test_non_paying_is_pro_false(): void

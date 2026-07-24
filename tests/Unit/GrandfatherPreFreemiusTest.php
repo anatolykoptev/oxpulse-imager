@@ -178,4 +178,65 @@ class GrandfatherPreFreemiusTest extends TestCase
             'oxpulse_grandfathered must be stored with autoload=no',
         );
     }
+
+    // ─── Reactivation race (FIX 2 regression) ────────────────────────
+    //
+    // A pre-Freemius install that is UPGRADED and then DEACTIVATED +
+    // REACTIVATED with no admin page load between must still be
+    // grandfathered. Previously activation set oxpulse_born_version
+    // unconditionally → reactivation set the sentinel → the detector
+    // saw it → never grandfathered → the existing free user lost
+    // working features once gating landed. Activation must set
+    // born_version ONLY on a TRUE fresh install (no prior markers).
+
+    public function test_reactivation_of_pre_freemius_install_does_not_set_born_version(): void
+    {
+        // Simulate an upgraded old install: both prior-install markers
+        // already present in the DB (set by the pre-Freemius activation
+        // hook), but NO born_version sentinel (pre-Freemius never set it).
+        update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 1);
+        update_option(OptionSettingsRepository::OPTION_ONBOARDED, false);
+
+        oxpulse_imager_activate();
+
+        $this->assertNull(
+            get_option('oxpulse_born_version', null),
+            'reactivation of a pre-Freemius install must NOT set oxpulse_born_version, '
+            . 'otherwise the grandfather detector refuses to grandfather it',
+        );
+    }
+
+    public function test_reactivation_of_pre_freemius_install_still_grandfathers(): void
+    {
+        // Full race scenario end-to-end: upgraded old install is
+        // deactivated + reactivated (activation runs), THEN the
+        // grandfather detector runs on the next admin page load.
+        // The install must be grandfathered (features preserved).
+        update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 1);
+        update_option(OptionSettingsRepository::OPTION_ONBOARDED, false);
+
+        oxpulse_imager_activate();
+
+        $GLOBALS['__oxpulse_is_admin'] = true;
+        $this->runGrandfatherDetector();
+
+        $this->assertSame(1, (int) get_option('oxpulse_grandfathered'));
+    }
+
+    // ─── Grandfather via onboarded-only prior marker ─────────────────
+    //
+    // Covers the untested OR branch of the prior-markers check: an
+    // install with onboarded present but schema_version absent must
+    // still grandfather. (schema_version absent is unrealistic but the
+    // detector's OR must hold for the onboarded-only branch.)
+
+    public function test_grandfather_via_onboarded_only_prior_marker(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ONBOARDED, false);
+
+        $GLOBALS['__oxpulse_is_admin'] = true;
+        $this->runGrandfatherDetector();
+
+        $this->assertSame(1, (int) get_option('oxpulse_grandfathered'));
+    }
 }

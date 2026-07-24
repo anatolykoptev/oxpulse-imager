@@ -886,7 +886,7 @@ final class ServiceRegistrar
             return;
         }
 
-        // Already grandfathered (or explicitly not) → idempotent no-op.
+        // Already grandfathered → idempotent no-op.
         if (get_option('oxpulse_grandfathered', null) !== null) {
             return;
         }

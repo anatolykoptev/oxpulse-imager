@@ -95,6 +95,18 @@ function oxpulse_imager_grant_capability(): void {
  * an administrator explicitly enables delivery.
  */
 function oxpulse_imager_activate(): void {
+    // FIX 2: capture pre-activation state BEFORE any add_option so the
+    // born_version sentinel is set ONLY on a TRUE fresh install. A
+    // pre-Freemius install that is upgraded then deactivated +
+    // reactivated (with no admin page load between) still has its
+    // prior-install markers in the DB → NOT fresh → born_version must
+    // NOT be set, otherwise the grandfather detector sees the sentinel
+    // and refuses to grandfather → the existing free user loses working
+    // features once Phase-B gating lands. null default distinguishes
+    // "not set" from "set to false" (onboarded is stored as false).
+    $isFreshInstall = get_option(OXPULSE_IMAGER_OPTION_PREFIX . 'schema_version', null) === null
+        && get_option(OXPULSE_IMAGER_OPTION_PREFIX . 'onboarded', null) === null;
+
     $defaults = [
         OXPULSE_IMAGER_OPTION_PREFIX . 'enabled' => false,
         OXPULSE_IMAGER_OPTION_PREFIX . 'endpoint' => '',
@@ -107,14 +119,6 @@ function oxpulse_imager_activate(): void {
         // or by the "Skip" link. Re-activation does NOT reset this —
         // only a fresh install (no option in DB) gets the wizard.
         OXPULSE_IMAGER_OPTION_PREFIX . 'onboarded' => false,
-        // Freemius integration: sentinel marking "born on the Freemius
-        // version". Set on fresh activation ONLY (add_option skips when
-        // the option already exists). The grandfather detector uses its
-        // ABSENCE to identify pre-Freemius installs upgrading to this
-        // version. A fresh install on this version must NOT be
-        // grandfathered; an upgrade from a pre-Freemius version (which
-        // never set this sentinel) must be.
-        'oxpulse_born_version' => OXPULSE_IMAGER_VERSION,
     ];
 
     // #91: hot render-path options (read on every page load via
@@ -135,6 +139,19 @@ function oxpulse_imager_activate(): void {
         if (get_option($key, null) === null) {
             add_option($key, $value, '', in_array($key, $autoloadKeys, true));
         }
+    }
+
+    // Freemius integration: sentinel marking "born on the Freemius
+    // version". Set on fresh activation ONLY (add_option skips when the
+    // option already exists). The grandfather detector uses its ABSENCE
+    // to identify pre-Freemius installs upgrading to this version. A
+    // fresh install on this version must NOT be grandfathered; an
+    // upgrade from a pre-Freemius version (which never set this
+    // sentinel) must be. FIX 2: gated on $isFreshInstall so a
+    // deactivated+reactivated pre-Freemius install does not get the
+    // sentinel set on reactivation (which would block grandfathering).
+    if ($isFreshInstall && get_option('oxpulse_born_version', null) === null) {
+        add_option('oxpulse_born_version', OXPULSE_IMAGER_VERSION, '', 'no');
     }
 
     oxpulse_imager_grant_capability();
@@ -240,7 +257,18 @@ if (!function_exists('oxpulse_fs')) {
         global $oxpulse_fs;
 
         if (!isset($oxpulse_fs)) {
-            require_once dirname(__FILE__) . '/freemius/start.php';
+            // FIX 1: WSOD guard. If a deploy/ZIP ships without the
+            // bundled freemius/ directory, require_once would fatal the
+            // site on every request. Degrade to the free tier instead:
+            // mark a tried-and-missing sentinel (false) and return null.
+            // Subsequent calls return null without re-running the init.
+            $sdk = dirname(__FILE__) . '/freemius/start.php';
+            if (!file_exists($sdk)) {
+                $oxpulse_fs = false;
+                return null;
+            }
+
+            require_once $sdk;
 
             $oxpulse_fs = fs_dynamic_init([
                 'id'                  => '35418',
@@ -268,11 +296,17 @@ if (!function_exists('oxpulse_fs')) {
             ]);
         }
 
-        return $oxpulse_fs;
+        // Memo: return null (not false) when the SDK is missing so
+        // callers can null-guard uniformly (FreemiusLicenseGate::isPro
+        // already does: $fs !== null && $fs->can_use_premium_code()).
+        return $oxpulse_fs === false ? null : $oxpulse_fs;
     }
 
-    oxpulse_fs();
-    do_action('oxpulse_fs_loaded');
+    // FIX 1: only signal "loaded" when the SDK actually initialized.
+    // A missing SDK degrades to free tier silently — no loaded signal.
+    if (oxpulse_fs() !== null) {
+        do_action('oxpulse_fs_loaded');
+    }
 }
 
 require_once OXPULSE_IMAGER_DIR . 'src/Plugin.php';
