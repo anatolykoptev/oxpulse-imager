@@ -103,9 +103,12 @@ final class ServiceRegistrar
         self::registerCacheCleanupCron($plugin);
         self::registerLocalCacheInvalidation($plugin);
         self::registerLocalDeliverySettingsSync($plugin);
+        self::registerImgproxyDeliveryGate();
+        self::registerPictureGate();
         self::maybeReprobeOnVersionUpdate();
         self::maybeMigrateAutoload();
         self::maybeGrandfatherPreFreemiusInstalls();
+        self::maybeRebakeAvifOnLicenseChange();
     }
 
     /**
@@ -151,6 +154,68 @@ final class ServiceRegistrar
             self::$licenseGate = new FreemiusLicenseGate();
         }
         return self::$licenseGate;
+    }
+
+    /**
+     * Centralized Pro-entitlement check — the single call every feature
+     * gate consults at use-time. Delegates to licenseGate()->isPro() so
+     * the provider (Freemius + grandfather + oxpulse_is_pro filter) is
+     * resolved once and every gate stays consistent + testable via the
+     * oxpulse_is_pro filter (add_filter('oxpulse_is_pro',
+     * '__return_true'/'__return_false')).
+     *
+     * Read at the point of use (not cached at bootstrap) so a license
+     * activation takes effect on the next isPro() call without a reload.
+     */
+    public static function isPro(): bool
+    {
+        return self::licenseGate()->isPro();
+    }
+
+    /**
+     * Gate 2 (ProFeatures::IMGPROXY_DELIVERY): under free, the imgproxy
+     * delivery backend is NOT selectable. Registered at bootstrap via
+     * the documented oxpulse_delivery_backends extension point so the
+     * strip applies to EVERY factory call site (frontend delivery,
+     * prewarm cron, WP-CLI, REST) without scattering isPro() checks.
+     *
+     * When !isPro(), the callback removes every ImgproxyBackendProvider
+     * from the provider list; the registry then falls through to
+     * LocalBackend (WebP) or Passthrough (preserve original URL) —
+     * delivery never breaks. When isPro(), the list passes through
+     * unchanged (imgproxy selectable as today).
+     */
+    private static function registerImgproxyDeliveryGate(): void
+    {
+        add_filter('oxpulse_delivery_backends', static function (array $providers): array {
+            if (self::isPro()) {
+                return $providers;
+            }
+            return array_values(array_filter(
+                $providers,
+                static fn($p): bool => !$p instanceof ImgproxyBackendProvider,
+            ));
+        }, 10, 1);
+    }
+
+    /**
+     * Gate 3 (ProFeatures::PICTURE_ELEMENT): under free, <picture>
+     * wrapping is forced OFF regardless of the stored option or any
+     * other oxpulse_picture_enabled filter callback — Pro is a
+     * prerequisite; a free user who flips the option or adds
+     * add_filter('oxpulse_picture_enabled','__return_true') still gets
+     * no <picture>. Registered at PHP_INT_MAX priority so it runs LAST
+     * in the apply_filters chain and wins over any earlier force-on.
+     *
+     * When isPro(), the filter passes the value through unchanged (the
+     * option + oxpulse_picture_enabled filter control wrapping as today).
+     * Free-fallback: no picture wrapping (unchanged default behavior).
+     */
+    private static function registerPictureGate(): void
+    {
+        add_filter('oxpulse_picture_enabled', static function ($enabled): bool {
+            return self::isPro() ? (bool) $enabled : false;
+        }, PHP_INT_MAX, 1);
     }
 
     /**
@@ -908,6 +973,66 @@ final class ServiceRegistrar
         }
 
         update_option('oxpulse_grandfathered', 1, false);
+    }
+
+    /**
+     * Self-heal the baked OXPULSE_AVIF_ALLOWED constant on a Freemius
+     * license change (FIX 2 MAJOR).
+     *
+     * The baked constant only regenerates on activation / settings-save
+     * / version bump — NOT on a license change. So Pro→free keeps
+     * serving AVIF (leak) and free→Pro withholds AVIF (lag) until the
+     * next settings save. This guard closes that gap: on an idempotent
+     * admin-time check, compare current isPro() to a stored
+     * oxpulse_avif_baked_pro option; if they differ AND the site is a
+     * LocalBackend site (endpoint===''), call installLocalDelivery()
+     * to regenerate the endpoint with the correct value, then update
+     * the stored option. For an imgproxy site (no local endpoint) the
+     * regeneration is skipped (no baked endpoint exists) but the
+     * stored flag is still updated so a later switch-to-local bakes
+     * the correct value.
+     *
+     * Idempotent: when stored === isPro() it's a no-op. Admin-only
+     * (write-time housekeeping, never on the front-end read path).
+     * Mirrors the maybeGrandfatherPreFreemiusInstalls /
+     * maybeReprobeOnVersionUpdate idiom.
+     */
+    private static function maybeRebakeAvifOnLicenseChange(): void
+    {
+        if (!is_admin()) {
+            return;
+        }
+
+        $currentPro = self::isPro();
+        $bakedPro = get_option('oxpulse_avif_baked_pro', null);
+
+        // First run on a fresh install (no stored flag yet): seed it
+        // from the current isPro() state without regenerating. The
+        // activation hook already baked the endpoint with the correct
+        // value, so there's nothing to drift from.
+        if ($bakedPro === null) {
+            update_option('oxpulse_avif_baked_pro', $currentPro, false);
+            return;
+        }
+
+        $bakedProBool = (bool) $bakedPro;
+        if ($bakedProBool === $currentPro) {
+            return; // No drift — idempotent no-op.
+        }
+
+        // Drift detected. For a LocalBackend site (endpoint===''),
+        // regenerate the endpoint so the baked constant reflects the
+        // new license state. For an imgproxy site there's no baked
+        // endpoint to regenerate — skip the install call. The stored
+        // flag is updated in both cases so a later switch-to-local
+        // bakes the correct value.
+        $endpoint = get_option(OptionSettingsRepository::OPTION_ENDPOINT, '');
+        if ($endpoint === '') {
+            self::installLocalDelivery();
+            do_action('oxpulse_rebaked_avif');
+        }
+
+        update_option('oxpulse_avif_baked_pro', $currentPro, false);
     }
 
     /**

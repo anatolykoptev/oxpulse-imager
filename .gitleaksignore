@@ -2,3 +2,5 @@ tests/Unit/LocalBackendTest.php:generic-api-key:32
 tests/Unit/MissEndpointHandlerTest.php:generic-api-key:35
 tests/Unit/FallbackRewriterTest.php:generic-api-key:28
 tests/Integration/MissEndpointIntegrationTest.php:generic-api-key:49
+tests/Unit/FeatureGateAvifTest.php:generic-api-key:32
+tests/Unit/FeatureGateAvifTest.php:generic-api-key:33

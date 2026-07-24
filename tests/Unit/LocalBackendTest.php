@@ -26,6 +26,7 @@ use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
+use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
 use OXPulse\Imager\Infrastructure\Local\LocalRewriteProbe;
 use OXPulse\Imager\Infrastructure\Local\HttpRequester;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
@@ -36,6 +37,33 @@ class LocalBackendTest extends TestCase
     private const KEY_HEX = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
     private const SALT_HEX = 'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5';
     private const SOURCE = 'https://example.com/wp-content/uploads/2024/01/photo.jpg';
+
+    protected function setUp(): void
+    {
+        // FIX (BLOCKER) precondition: LocalBackendProvider::health()
+        // now checks the miss-endpoint artifact exists on disk. Other
+        // test classes define WP_CONTENT_DIR to a temp dir — if that
+        // define leaked into this class, health() would return Down
+        // (artifact absent) and the factory-selects-LocalBackend tests
+        // would fail. Ensure the artifact exists so LocalBackend is
+        // Healthy, matching the pre-fix behavior.
+        if (defined('WP_CONTENT_DIR')) {
+            if (!is_dir(WP_CONTENT_DIR)) {
+                @mkdir(WP_CONTENT_DIR, 0755, true);
+            }
+            file_put_contents(
+                WP_CONTENT_DIR . '/' . LocalDeliveryInstaller::ENDPOINT_FILENAME,
+                '<?php // present',
+            );
+        }
+    }
+
+    protected function tearDown(): void
+    {
+        if (defined('WP_CONTENT_DIR')) {
+            @unlink(WP_CONTENT_DIR . '/' . LocalDeliveryInstaller::ENDPOINT_FILENAME);
+        }
+    }
 
     private function backend(): LocalBackend
     {

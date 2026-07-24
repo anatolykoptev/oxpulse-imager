@@ -125,6 +125,7 @@ final class ContentImgTagRewriter
         // returns false, skip.
         if ($this->pictureWrapper !== null
             && apply_filters('oxpulse_picture_enabled', $this->delivery->pictureEnabled)
+            && oxpulse_license_gate()->isPro()
         ) {
             $filteredImage = $this->pictureWrapper->wrap(
                 $filteredImage,

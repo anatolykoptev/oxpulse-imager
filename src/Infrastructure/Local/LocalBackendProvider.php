@@ -32,9 +32,26 @@ use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
 
 final class LocalBackendProvider implements DeliveryBackendProvider
 {
+    /**
+     * The miss-endpoint artifact path the provider checks in health().
+     * Null when no path was injected AND WP_CONTENT_DIR is undefined
+     * (the unit-test stub env) — in that case the artifact check is
+     * SKIPPED (preserves the encoder-only health() behavior for tests
+     * that don't exercise the artifact gate). In production this
+     * resolves to WP_CONTENT_DIR/oxpulse-img.php (the file
+     * LocalDeliveryInstaller::install() writes / uninstall() removes).
+     */
+    private ?string $endpointArtifactPath;
+
     public function __construct(
         private ImageTransformer $transformer,
-    ) {}
+        ?string $endpointArtifactPath = null,
+    ) {
+        if ($endpointArtifactPath === null && defined('WP_CONTENT_DIR')) {
+            $endpointArtifactPath = WP_CONTENT_DIR . '/' . LocalDeliveryInstaller::ENDPOINT_FILENAME;
+        }
+        $this->endpointArtifactPath = $endpointArtifactPath;
+    }
 
     public function id(): string
     {
@@ -75,15 +92,37 @@ final class LocalBackendProvider implements DeliveryBackendProvider
     /**
      * Healthy when the host can ACTUALLY encode webp or avif (reusing
      * ImageTransformer's memoized real-encode probe — front-end-safe,
-     * zero network I/O). Down when neither encoder is available
-     * (LocalBackend would produce nothing usable).
+     * zero network I/O) AND the LocalBackend miss-endpoint artifact
+     * exists on disk. Down when neither encoder is available
+     * (LocalBackend would produce nothing usable) OR the artifact is
+     * absent.
+     *
+     * BLOCKER fix: LocalBackend emits signed URLs to
+     * wp-content/oxpulse-img.php (the miss-endpoint written by
+     * LocalDeliveryInstaller::install() ONLY when endpoint === '').
+     * When the artifact is absent — e.g. a free user with a stored
+     * imgproxy endpoint, where gate 2 strips ImgproxyBackendProvider
+     * and the registry would select LocalBackend, but install()
+     * self-gated because endpoint !== '' — LocalBackend would emit
+     * signed URLs to a non-existent endpoint → 404 on every optimized
+     * <img> sitewide. Marking Down makes select() fall through to
+     * Passthrough (original URLs, unoptimized but WORKING).
+     *
+     * The artifact check is a cheap is_file() stat; select() is
+     * memoized per request. When $endpointArtifactPath is null (no
+     * WP_CONTENT_DIR — unit-test stub env), the check is skipped so
+     * the encoder-only behavior is preserved for tests that don't
+     * exercise the artifact gate.
      */
     public function health(DeliveryConfig $config): BackendHealth
     {
-        if ($this->transformer->supportsWebp() || $this->transformer->supportsAvif()) {
-            return BackendHealth::Healthy;
+        if (!$this->transformer->supportsWebp() && !$this->transformer->supportsAvif()) {
+            return BackendHealth::Down;
         }
-        return BackendHealth::Down;
+        if ($this->endpointArtifactPath !== null && !is_file($this->endpointArtifactPath)) {
+            return BackendHealth::Down;
+        }
+        return BackendHealth::Healthy;
     }
 
     public function build(DeliveryConfig $config, SigningConfig $signing): ?DeliveryBackend

@@ -49,6 +49,11 @@ final class MissEndpointGenerator
      *        from the admin formatQuality setting. Baked as a constant
      *        (the endpoint has no WP option access). 0/null = use the
      *        payload's default quality for avif too.
+     * @param bool $avifAllowed Gate 1 (ProFeatures::AVIF): when false
+     *        (free tier), the baked endpoint refuses to negotiate/serve
+     *        avif. Resolved from ServiceRegistrar::isPro() at generation
+     *        time and baked as OXPULSE_AVIF_ALLOWED (the self-contained
+     *        endpoint has no WP access at request time). Default true.
      * @return string The path written (same as $outputFile).
      */
     public function generate(
@@ -60,6 +65,7 @@ final class MissEndpointGenerator
         string $cacheDir,
         string $srcDir,
         ?int $avifQuality = null,
+        bool $avifAllowed = true,
     ): string {
         $keyB64 = base64_encode($signingKey);
         $saltB64 = base64_encode($signingSalt);
@@ -81,6 +87,7 @@ final class MissEndpointGenerator
         $cacheLit   = var_export($cacheDir, true);
         $srcDirLit  = var_export($srcDir, true);
         $avifQualityInt = $avifQuality ?? 0;
+        $avifAllowedLit = $avifAllowed ? 'true' : 'false';
         // phpcs:enable
 
         $php = "<?php
@@ -106,6 +113,10 @@ define('OXPULSE_CACHE_DIR', {$cacheLit});
 define('OXPULSE_SRC_DIR', {$srcDirLit});
 // #47: per-format AVIF quality override (0 = use the payload's default q).
 define('OXPULSE_AVIF_QUALITY', {$avifQualityInt});
+// Gate 1 (ProFeatures::AVIF): when false, AVIF is not an eligible output
+// format — negotiation resolves to WebP/original, direct .avif requests
+// downgrade. Baked from ServiceRegistrar::isPro() at generation time.
+define('OXPULSE_AVIF_ALLOWED', {$avifAllowedLit});
 
 // Self-contained PSR-4 autoloader — mirrors Plugin::registerAutoloader().
 // The release ZIP ships no third-party autoloader (the plugin has zero
@@ -173,6 +184,7 @@ if (\$key === '') {
     cacheDir: OXPULSE_CACHE_DIR,
     uploadsBasedir: OXPULSE_UPLOADS_BASEDIR,
     avifQualityOverride: OXPULSE_AVIF_QUALITY > 0 ? OXPULSE_AVIF_QUALITY : null,
+    avifAllowed: OXPULSE_AVIF_ALLOWED,
 );
 
 \$response = \$handler->handle(\$key, \$format, \$accept);

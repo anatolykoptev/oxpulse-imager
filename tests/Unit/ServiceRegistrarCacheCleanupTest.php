@@ -41,6 +41,12 @@ class ServiceRegistrarCacheCleanupTest extends TestCase
         $GLOBALS['__oxpulse_did_action'] = [];
         $GLOBALS['__oxpulse_scheduled_events'] = [];
 
+        // These tests exercise the configurable cache cap (a Pro
+        // feature since the Gate 4 cache-management gate locks the cap
+        // to the default under free). Opt into Pro so the stored
+        // OPTION_CACHE_MAX_MB is honored by loadCacheMaxMb().
+        add_filter('oxpulse_is_pro', '__return_true');
+
         // Reuse the same fixed WP_CONTENT_DIR path as
         // ServiceRegistrarMultisiteGateTest (define-once constant) so
         // resolveLocalCacheDir() returns a real path regardless of

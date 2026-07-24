@@ -318,6 +318,7 @@ final class BufferRewriter
             // output, never throws out of the buffer.
             if ($this->pictureWrapper !== null
                 && apply_filters('oxpulse_picture_enabled', $this->delivery->pictureEnabled)
+                && oxpulse_license_gate()->isPro()
             ) {
                 // Skip <picture> wrapping for JS-lazy images (data-src): a
                 // <source srcset> is resolved EAGERLY by the browser at

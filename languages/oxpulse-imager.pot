@@ -237,6 +237,15 @@ msgstr ""
 msgid "Active delivery: Passthrough (no optimization)"
 msgstr ""
 
+msgid "Active delivery: imgproxy"
+msgstr ""
+
+msgid "Active delivery: local (WebP)"
+msgstr ""
+
+msgid "Active delivery: passthrough (no optimization)"
+msgstr ""
+
 msgid "Active delivery: imgproxy (AVIF)"
 msgstr ""
 

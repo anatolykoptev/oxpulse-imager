@@ -25,6 +25,23 @@ class ContentImgTagRewriterTest extends TestCase
 {
     private const ALLOWED = 'https://example.com/wp-content/uploads/';
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $GLOBALS['__oxpulse_filters'] = [];
+        $GLOBALS['__oxpulse_options'] = [];
+        // FIX 3: ContentImgTagRewriter now directly checks isPro() as
+        // a belt-and-suspenders gate alongside the filter. Default
+        // isPro() is false → picture wrapping disabled. Tests that
+        // exercise picture wrapping set oxpulse_is_pro=true individually.
+    }
+
+    protected function tearDown(): void
+    {
+        unset($GLOBALS['__oxpulse_filters'], $GLOBALS['__oxpulse_options']);
+        parent::tearDown();
+    }
+
     private function createDeliveryConfig(bool $enabled = true): DeliveryConfig
     {
         return new DeliveryConfig(
@@ -377,6 +394,10 @@ class ContentImgTagRewriterTest extends TestCase
 
     private function createContentRewriterWithPicture(bool $pictureEnabled): ContentImgTagRewriter
     {
+        // FIX 3: ContentImgTagRewriter now directly checks isPro() —
+        // the belt-and-suspenders gate. Set Pro=true so the picture-
+        // wrapping tests exercise the wrapping path.
+        add_filter('oxpulse_is_pro', '__return_true');
         $delivery = new DeliveryConfig(
             enabled: true,
             endpoint: 'https://imgproxy.example.com',
@@ -435,6 +456,11 @@ class ContentImgTagRewriterTest extends TestCase
         $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
 
         $GLOBALS['__oxpulse_filters'] = [];
+        // FIX 3: re-add oxpulse_is_pro=true after the filter reset
+        // (createContentRewriterWithPicture set it, but the reset above
+        // cleared it). The belt-and-suspenders isPro() check in the
+        // consumer requires Pro=true for picture wrapping to fire.
+        add_filter('oxpulse_is_pro', '__return_true');
         add_filter('oxpulse_picture_enabled', '__return_true');
         try {
             $result = $rewriter->rewrite($tag, 'the_content', 0);
