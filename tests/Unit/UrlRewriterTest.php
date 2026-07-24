@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Tests\Unit;
 
+use OXPulse\Imager\Application\Delivery\DeliveryBackend;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
@@ -730,5 +731,105 @@ class UrlRewriterTest extends TestCase
 
         $this->assertTrue($result->rewritten);
         $this->assertStringContainsString('@webp', $result->url);
+    }
+
+    // --- rewriteSocialImage tests ---
+    // rewriteSocialImage routes an og:image source through the active
+    // backend's socialSafeUrl() seam to produce a .jpg-terminated URL.
+    // Reuses the rewriteWithFormat guard chain (already-rewritten /
+    // delivery-disabled / no-endpoint / no-signing / SourcePolicy
+    // authorize). Degrades to preserved($sourceUrl) when the backend
+    // returns null (LocalBackend / http-source / passthrough).
+
+    private const SOCIAL_SOURCE = 'https://piter.now/wp-content/uploads/2026/07/photo.webp';
+    private const SOCIAL_ALLOWED = 'https://piter.now/wp-content/uploads/';
+
+    private function socialStubBackend(?string $socialUrl): DeliveryBackend
+    {
+        return new class($socialUrl) implements DeliveryBackend {
+            public function __construct(private ?string $socialUrl) {}
+            public function available(): bool { return true; }
+            public function generate(\OXPulse\Imager\Domain\Transform\TransformRequest $request, ?string $filename = null): string
+            {
+                throw new \LogicException('generate must not be called by rewriteSocialImage');
+            }
+            public function socialSafeUrl(\OXPulse\Imager\Domain\Transform\TransformRequest $request, ?string $filename = null): ?string
+            {
+                return $this->socialUrl;
+            }
+        };
+    }
+
+    private function createSocialRewriter(
+        bool $enabled = true,
+        ?SigningConfig $signing = null,
+        ?DeliveryBackend $backend = null
+    ): UrlRewriter {
+        $delivery = new DeliveryConfig(
+            enabled: $enabled,
+            endpoint: self::ENDPOINT,
+            allowedSources: [self::SOCIAL_ALLOWED],
+        );
+        return new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            $signing ?? SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX),
+            null,
+            $backend,
+        );
+    }
+
+    public function test_rewrite_social_image_stub_returns_jpg_is_rewritten(): void
+    {
+        $stub = $this->socialStubBackend('https://imgproxy.test/sig/rs:fill:1200:630/plain/photo.jpg');
+        $rewriter = $this->createSocialRewriter(backend: $stub);
+
+        $result = $rewriter->rewriteSocialImage(self::SOCIAL_SOURCE, 1200, 630);
+
+        $this->assertTrue($result->rewritten);
+        $this->assertStringEndsWith('.jpg', $result->url);
+    }
+
+    public function test_rewrite_social_image_backend_null_is_preserved(): void
+    {
+        // Backend answers null (LocalBackend / http-source / passthrough)
+        // → degrade to the original webp URL, never break.
+        $stub = $this->socialStubBackend(null);
+        $rewriter = $this->createSocialRewriter(backend: $stub);
+
+        $result = $rewriter->rewriteSocialImage(self::SOCIAL_SOURCE, 1200, 630);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame(self::SOCIAL_SOURCE, $result->url);
+        $this->assertSame('social_format_unsupported', $result->reason);
+    }
+
+    public function test_rewrite_social_image_delivery_disabled_is_preserved(): void
+    {
+        $stub = $this->socialStubBackend('https://imgproxy.test/photo.jpg');
+        $rewriter = $this->createSocialRewriter(enabled: false, backend: $stub);
+
+        $result = $rewriter->rewriteSocialImage(self::SOCIAL_SOURCE, 1200, 630);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('delivery_disabled', $result->reason);
+        $this->assertSame(self::SOCIAL_SOURCE, $result->url);
+    }
+
+    public function test_rewrite_social_image_signing_null_is_preserved(): void
+    {
+        $stub = $this->socialStubBackend('https://imgproxy.test/photo.jpg');
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: self::ENDPOINT,
+            allowedSources: [self::SOCIAL_ALLOWED],
+        );
+        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, null, null, $stub);
+
+        $result = $rewriter->rewriteSocialImage(self::SOCIAL_SOURCE, 1200, 630);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('no_signing_config', $result->reason);
+        $this->assertSame(self::SOCIAL_SOURCE, $result->url);
     }
 }

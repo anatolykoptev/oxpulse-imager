@@ -545,6 +545,30 @@ class LocalBackendTest extends TestCase
         $this->assertStringContainsString('/wp-content/cache/oxpulse/', $url);
         $this->assertStringEndsWith('.webp', $url);
     }
+
+    /**
+     * socialSafeUrl() must return null for the LocalBackend: jpeg is
+     * NOT in MissEndpointHandler::ALLOWED_FORMATS (['webp','avif']),
+     * so a .jpg local cache URL would be unservable. Returning null
+     * (→ caller degrades to the direct URL) is the honest answer.
+     * Invariant: LocalBackend NEVER advertises a .jpg social URL.
+     */
+    public function test_social_safe_url_returns_null_for_jpeg_request(): void
+    {
+        $request = new TransformRequest(
+            sourceUrl: self::SOURCE,
+            width: 1200,
+            height: 630,
+            resize: 'fill',
+            format: 'jpeg',
+            sourceMode: 'http',
+            extensionFormat: true,
+        );
+
+        $url = $this->backend()->socialSafeUrl($request);
+
+        $this->assertNull($url, 'LocalBackend must not advertise a .jpg social URL');
+    }
 }
 
 /**

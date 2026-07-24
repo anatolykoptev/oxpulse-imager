@@ -59,7 +59,7 @@ final class ImgproxyPathBuilder
     {
         $options = $this->profile->buildOptions($request);
         $sourceSegment = $this->sourceSegment($request);
-        $formatSuffix = $this->formatSuffix($request->format);
+        $formatSuffix = $this->formatSuffix($request);
         $filenameOption = $this->filenameOption($filename);
 
         // Combine processing options with the filename option.
@@ -121,14 +121,32 @@ final class ImgproxyPathBuilder
     /**
      * Format suffix for the source URL.
      *
-     * 'auto' produces no suffix — imgproxy uses Accept header negotiation
-     * (requires IMGPROXY_AUTO_AVIF/AUTO_WEBP on the server). Explicit
-     * formats produce an @format suffix.
+     * 'auto' (or '') produces no suffix — imgproxy uses Accept header
+     * negotiation (requires IMGPROXY_AUTO_AVIF/AUTO_WEBP on the server).
+     *
+     * For an explicit format:
+     * - $request->extensionFormat === false (default): emit the
+     *   imgproxy-native `@format` suffix. Byte-identical to the
+     *   pre-extensionFormat behaviour — the existing PathBuilder /
+     *   UrlRewriter / PictureElement suites guard this.
+     * - $request->extensionFormat === true: emit a dot-extension
+     *   (`.jpg` for jpeg, `.png`, `.webp`, `.avif`) instead. Used for
+     *   social-safe og:image URLs so RankMath's wp_check_filetype()
+     *   accepts the URL. The dot-extension is part of the path that
+     *   HmacSigner::sign signs (the signer already receives the full
+     *   path from ImgproxyUrlGenerator), so the signature covers it.
      */
-    private function formatSuffix(string $format): string
+    private function formatSuffix(TransformRequest $request): string
     {
+        $format = $request->format;
         if ($format === '' || $format === 'auto') {
             return '';
+        }
+        if ($request->extensionFormat) {
+            // jpeg → jpg (the social-safe raster extension social
+            // platforms/messengers recognise). Other formats pass
+            // through with their own extension.
+            return '.' . ($format === 'jpeg' ? 'jpg' : $format);
         }
         return '@' . $format;
     }

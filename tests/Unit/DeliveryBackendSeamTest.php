@@ -88,6 +88,10 @@ class DeliveryBackendSeamTest extends TestCase
                 $this->generateCalled = true;
                 return 'https://stub.test/cache/' . $request->width . 'x' . $request->height . '/' . basename($request->sourceUrl);
             }
+            public function socialSafeUrl(TransformRequest $request, ?string $filename = null): ?string
+            {
+                return null;
+            }
         };
 
         $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, null, $stub);
@@ -114,6 +118,10 @@ class DeliveryBackendSeamTest extends TestCase
             public function generate(TransformRequest $request, ?string $filename = null): string
             {
                 throw new \LogicException('generate must not be called when available() is false');
+            }
+            public function socialSafeUrl(TransformRequest $request, ?string $filename = null): ?string
+            {
+                throw new \LogicException('socialSafeUrl must not be called when available() is false');
             }
         };
 

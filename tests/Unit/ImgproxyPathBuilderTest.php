@@ -375,4 +375,69 @@ class ImgproxyPathBuilderTest extends TestCase
         $expectedB64 = rtrim(strtr(base64_encode($source), '+/', '-_'), '=');
         $this->assertStringContainsString($expectedB64, $path);
     }
+
+    // --- Social-safe extension-format (.jpg) tests ---
+    // extensionFormat=true makes formatSuffix() emit a dot-extension
+    // (`.jpg` for jpeg) instead of the @format suffix, so RankMath's
+    // wp_check_filetype() accepts the URL. The .jpg is part of the
+    // signed path (HmacSigner signs the full path).
+
+    public function test_extension_format_true_emits_dot_jpg_for_local_jpeg(): void
+    {
+        $request = new TransformRequest(
+            sourceUrl: 'wp-content/uploads/2026/07/photo.webp',
+            width: 1200,
+            height: 630,
+            resize: 'fill',
+            format: 'jpeg',
+            sourceMode: 'local',
+            extensionFormat: true,
+        );
+
+        $path = $this->builder->build($request);
+
+        $this->assertStringEndsWith('.jpg', $path, 'path must end with .jpg');
+        $this->assertStringNotContainsString('@', $path, 'path must not contain @format suffix');
+    }
+
+    public function test_extension_format_false_emits_at_jpeg_regression_guard(): void
+    {
+        // Regression guard: extensionFormat=false (default) preserves the
+        // existing @format behaviour byte-for-byte.
+        $request = new TransformRequest(
+            sourceUrl: 'wp-content/uploads/2026/07/photo.webp',
+            width: 1200,
+            height: 630,
+            resize: 'fill',
+            format: 'jpeg',
+            sourceMode: 'local',
+            extensionFormat: false,
+        );
+
+        $path = $this->builder->build($request);
+
+        $this->assertStringEndsWith('@jpeg', $path, 'default path must end with @jpeg');
+        $this->assertStringNotContainsString('.jpg', $path);
+    }
+
+    public function test_extension_format_true_with_auto_emits_no_suffix(): void
+    {
+        // 'auto' never emits a suffix regardless of extensionFormat —
+        // there is no concrete extension to emit.
+        $request = new TransformRequest(
+            sourceUrl: 'wp-content/uploads/2026/07/photo.webp',
+            width: 1200,
+            height: 630,
+            resize: 'fill',
+            format: 'auto',
+            sourceMode: 'local',
+            extensionFormat: true,
+        );
+
+        $path = $this->builder->build($request);
+
+        $this->assertStringNotContainsString('@', $path);
+        $this->assertStringNotContainsString('.jpg', $path);
+        $this->assertStringNotContainsString('.auto', $path);
+    }
 }

@@ -105,6 +105,103 @@ final class UrlRewriter
     }
 
     /**
+     * Rewrite an og:image / twitter:image source URL to a social-safe
+     * raster (jpeg) URL via the active backend's socialSafeUrl() seam.
+     *
+     * Used by RankMathCompatibility::restoreDirectUrl when the restored
+     * direct URL is NOT social-safe (e.g. .webp on a webp-original
+     * install). Routes the source through the backend to an explicit-
+     * jpeg, `.jpg`-terminated URL so RankMath's wp_check_filetype()
+     * accepts it and social networks/messengers render the preview.
+     *
+     * Reuses the exact guard chain as rewriteWithFormat (already-
+     * rewritten / delivery-disabled / no-endpoint / no-signing /
+     * SourcePolicy::authorize) — all fail-safe paths return
+     * preserved($sourceUrl, <reason>). On authorize success, builds a
+     * TransformRequest with format='jpeg' + extensionFormat=true and
+     * delegates to backend()->socialSafeUrl(). When the backend
+     * answers null (LocalBackend / http-source / passthrough — cannot
+     * produce a servable social raster), degrades to
+     * preserved($sourceUrl, 'social_format_unsupported') (== today's
+     * behaviour, never broken). try/catch → preserved('social_generation_error').
+     *
+     * @param string $sourceUrl Original (direct) image URL.
+     * @param int $width Target width (og:image default 1200).
+     * @param int $height Target height (og:image default 630).
+     * @param string $context Diagnostic context (default 'og_image').
+     * @return RewriteResult
+     */
+    public function rewriteSocialImage(string $sourceUrl, int $width, int $height, string $context = 'og_image'): RewriteResult
+    {
+        if ($this->isAlreadyRewritten($sourceUrl)) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'already_rewritten'));
+            return RewriteResult::preserved($sourceUrl, 'already_rewritten');
+        }
+
+        if (!$this->delivery->enabled) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'delivery_disabled'));
+            return RewriteResult::preserved($sourceUrl, 'delivery_disabled');
+        }
+
+        if (!$this->backendAvailable()) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'no_endpoint'));
+            return RewriteResult::preserved($sourceUrl, 'no_endpoint');
+        }
+
+        if ($this->signing === null) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'no_signing_config'));
+            return RewriteResult::preserved($sourceUrl, 'no_signing_config');
+        }
+
+        $decision = $this->policy->authorize($sourceUrl, $this->delivery);
+        if (!$decision->authorized) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, $decision->reason));
+            return RewriteResult::preserved($sourceUrl, $decision->reason);
+        }
+
+        try {
+            $sourceForRequest = $decision->fsPath ?? (string) $decision->url;
+            $sourceMode = $decision->fsPath !== null ? 'local' : 'http';
+
+            [$quality, $formatQuality] = $this->applyQualityAdjustments(
+                $width,
+                $this->delivery->defaultQuality,
+                $this->delivery->formatQuality
+            );
+
+            $request = new TransformRequest(
+                sourceUrl: $sourceForRequest,
+                width: $width,
+                height: $height,
+                resize: $this->resolveResizeType($width, $height),
+                format: 'jpeg',
+                quality: $quality > 0 ? $quality : 0,
+                context: $context,
+                dpr: 0,
+                blur: 0,
+                watermark: $this->delivery->watermark,
+                formatQuality: $formatQuality,
+                sourceMode: $sourceMode,
+                extensionFormat: true,
+            );
+
+            $filename = $this->buildContentDispositionFilename($sourceUrl, 'jpeg');
+
+            $url = $this->backend()->socialSafeUrl($request, $filename);
+            if ($url === null) {
+                $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'social_format_unsupported'));
+                return RewriteResult::preserved($sourceUrl, 'social_format_unsupported');
+            }
+
+            $this->log(LogEntry::rewritten($context, $sourceUrl, $width));
+            return RewriteResult::rewritten($url);
+        } catch (\Throwable $e) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'social_generation_error'));
+            return RewriteResult::preserved($sourceUrl, 'social_generation_error');
+        }
+    }
+
+    /**
      * Shared rewrite body for both rewrite() (config outputFormat) and
      * rewriteFormat() (explicit format). Behaviour-preserving for the
      * rewrite() path — all guards, quality adjustments, and the filename

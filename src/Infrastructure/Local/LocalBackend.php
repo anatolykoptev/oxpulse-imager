@@ -119,6 +119,24 @@ final class LocalBackend implements DeliveryBackend
     }
 
     /**
+     * LocalBackend cannot produce a servable social-safe raster URL:
+     * jpeg is NOT in MissEndpointHandler::ALLOWED_FORMATS
+     * (['webp','avif']), so a .jpg local cache URL would be
+     * unservable (the miss endpoint would reject the format). Answer
+     * null so the caller degrades to the direct (e.g. .webp) URL.
+     *
+     * Future upgrade trigger: when jpeg is added to
+     * MissEndpointHandler::ALLOWED_FORMATS + the ImageTransformer
+     * gains a jpeg encoder, this method can produce a real .jpg URL
+     * (mirroring generate() with $fmt='jpeg'). Until then, null is
+     * the honest answer.
+     */
+    public function socialSafeUrl(TransformRequest $request, ?string $filename = null): ?string
+    {
+        return null;
+    }
+
+    /**
      * Resolve the fallback decision ONCE per instance (memoized).
      *
      * The decision is: apply_filters('oxpulse_fallback_rewrite_enabled',
