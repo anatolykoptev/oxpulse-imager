@@ -70,7 +70,12 @@ final class SocialJpegCapabilityCache
         }
 
         $now = $this->now !== null ? (int) ($this->now)() : time();
-        return ($now - (int) $checkedAt) <= self::TTL;
+        $checkedAtInt = (int) $checkedAt;
+        // Lower bound: a FUTURE checked_at (backward clock / NTP correction,
+        // or an over-PHP_INT_MAX digit string → negative elapsed) must NOT
+        // be trusted as fresh. Require now >= checked_at AS WELL as the
+        // upper-bound TTL check. Future stamp → false → degrade to webp.
+        return $now >= $checkedAtInt && ($now - $checkedAtInt) <= self::TTL;
     }
 
     /**

@@ -184,4 +184,24 @@ class SocialJpegCapabilityCacheTest extends TestCase
         $this->assertArrayHasKey(SocialJpegCapabilityCache::OPTION_CHECKED_AT, $GLOBALS['__oxpulse_options'] ?? []);
         $this->assertSame('no', $GLOBALS['__oxpulse_options'][SocialJpegCapabilityCache::OPTION]);
     }
+
+    /**
+     * A FUTURE checked_at stamp (backward clock / NTP correction, or an
+     * over-PHP_INT_MAX digit string → negative elapsed) must NOT be
+     * trusted as fresh. The lower bound requires now >= checked_at so a
+     * future stamp → false → conservative degrade to webp.
+     */
+    public function test_read_ok_false_when_checked_at_is_in_the_future(): void
+    {
+        $cache = $this->cache();
+        $cache->write('ok');
+
+        // Roll the clock BACK so checked_at is now in the future.
+        $this->now -= 100;
+
+        $this->assertFalse(
+            $cache->readOk(),
+            'A future checked_at stamp must NOT be trusted (conservative — degrade to webp)',
+        );
+    }
 }
