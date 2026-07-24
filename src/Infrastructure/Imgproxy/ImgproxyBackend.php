@@ -26,10 +26,14 @@ use OXPulse\Imager\Domain\Transform\TransformRequest;
 final class ImgproxyBackend implements DeliveryBackend
 {
     private ImgproxyUrlGenerator $generator;
+    private ?ImgproxyHealthCache $health;
+    private ?SocialJpegCapabilityCache $capability;
 
     public function __construct(
         private DeliveryConfig $delivery,
-        SigningConfig $signing
+        SigningConfig $signing,
+        ?ImgproxyHealthCache $health = null,
+        ?SocialJpegCapabilityCache $capability = null,
     ) {
         // Construct the exact same chain the pre-seam UrlRewriter::generator()
         // built: HmacSigner -> ImgproxyPathBuilder -> ImgproxyUrlGenerator.
@@ -40,6 +44,8 @@ final class ImgproxyBackend implements DeliveryBackend
             new HmacSigner($signing),
             $this->delivery->endpoint
         );
+        $this->health = $health;
+        $this->capability = $capability;
     }
 
     public function available(): bool
@@ -60,8 +66,24 @@ final class ImgproxyBackend implements DeliveryBackend
         // (imgproxy reads the file directly and transcodes to jpeg).
         // For http sources the .jpg extension-form is unreliable →
         // answer null so the caller degrades to the direct URL.
-        return $request->sourceMode === 'local'
-            ? $this->generator->generate($request, $filename)
-            : null;
+        if ($request->sourceMode !== 'local') {
+            return null;
+        }
+
+        // Conservative capability gate: og:image is EITHER a proven-working
+        // imgproxy .jpg OR the webp direct URL — never a URL that might 403.
+        // The health cache is a cheap belt (imgproxy down → no .jpg); the
+        // capability cache is the conservative gate (unproven → degrade to
+        // webp). Both caches are front-end-safe (zero network I/O — option
+        // reads only). When the caches are null (direct construction, e.g.
+        // the probe), the gate is bypassed (today's optimistic behavior).
+        if ($this->health !== null && $this->health->read() === 'down') {
+            return null;
+        }
+        if ($this->capability !== null && !$this->capability->readOk()) {
+            return null;
+        }
+
+        return $this->generator->generate($request, $filename);
     }
 }
