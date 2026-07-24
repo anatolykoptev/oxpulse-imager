@@ -363,10 +363,15 @@ final class ServiceRegistrar
 
         // Ф3: RankMath og:image compatibility. Restores direct attachment
         // URLs in OpenGraph/Twitter meta tags so RankMath's filetype
-        // validation doesn't drop them. Default true — safe to register
-        // unconditionally (the filter is a no-op when RankMath isn't active).
+        // validation doesn't drop them. When the restored direct URL is
+        // NOT social-safe (.webp/.avif on webp-original installs), the
+        // injected rewriter routes it through the active backend to an
+        // explicit-jpeg, .jpg-terminated URL; the backend answers
+        // honestly (null → degrade to the direct URL, never broken).
+        // Default true — safe to register unconditionally (the filter is
+        // a no-op when RankMath isn't active).
         if ($delivery->rankMathCompatibility) {
-            $rankMath = new RankMathCompatibility();
+            $rankMath = new RankMathCompatibility($rewriter);
             $rankMath->register();
         }
 

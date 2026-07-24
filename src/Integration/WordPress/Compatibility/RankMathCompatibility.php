@@ -28,8 +28,12 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Compatibility;
 
+use OXPulse\Imager\Application\Delivery\UrlRewriter;
+
 final class RankMathCompatibility
 {
+    public function __construct(private ?UrlRewriter $rewriter = null) {}
+
     /**
      * Register the RankMath OpenGraph + Twitter image filters.
      *
@@ -45,13 +49,30 @@ final class RankMathCompatibility
     }
 
     /**
-     * Restore the direct attachment URL in a RankMath image array.
+     * Restore the direct attachment URL in a RankMath image array, and
+     * when that URL is NOT social-safe (.webp/.avif/.bmp/.tiff), route
+     * it through the injected UrlRewriter::rewriteSocialImage() to
+     * produce a social-safe raster (.jpg) URL.
      *
      * RankMath passes an array shaped like:
      *   ['url' => '...', 'id' => 123, 'width' => 1200, 'height' => 630, ...]
      *
-     * The url may already be a direct URL (when delivery is disabled or
-     * the image was not rewritten) — in that case this is a no-op.
+     * Flow:
+     *  1. Non-array / empty-url guards (unchanged).
+     *  2. Resolve the DIRECT URL:
+     *     - already-direct (has any image extension) → use as-is;
+     *     - attachment ID available → wp_get_attachment_url (no
+     *       image_downsize, so no re-rewrite);
+     *     - else decode the imgproxy URL's base64url source segment;
+     *     - unresolvable → clear '' (RankMath skips gracefully).
+     *  3. If the direct URL is social-safe (jpg/png/gif) → set it and
+     *     return (common case, byte-for-byte unchanged, no
+     *     rewriter/backend call).
+     *  4. Else (webp/avif/...) — if a rewriter is injected, call
+     *     rewriteSocialImage(); on a rewritten + social-safe result,
+     *     set url + og dimensions; otherwise DEGRADE to the direct URL
+     *     (today's behaviour, never broken, never @jpeg/extensionless).
+     *  5. No rewriter → degrade to the direct URL.
      *
      * @param mixed $attachment
      * @return mixed
@@ -75,48 +96,98 @@ final class RankMathCompatibility
 
         $url = (string) $attachment['url'];
 
-        // Not an imgproxy URL — nothing to do. Detect by the presence of
-        // a long base64url-looking segment after the last /, OR by the
-        // local:// marker in the decoded path. The simplest robust check:
-        // imgproxy URLs contain a signature segment (hex/base64) followed
-        // by /plain/ or /local:// — but the most reliable signal is that
-        // the URL does NOT end in a recognizable image extension.
+        // --- Resolve the direct URL ---
+        // An already-direct URL (any image extension) is used as-is.
+        // An imgproxy URL (no extension) is resolved via attachment ID
+        // or base64url decode — the pre-social-safe behaviour verbatim.
         if ($this->hasImageExtension($url)) {
-            return $attachment;
-        }
-
-        // Preferred path: attachment ID available → wp_get_attachment_url
-        // returns the direct URL (.webp/.jpg) without triggering
-        // image_downsize (which would re-rewrite it back to imgproxy).
-        if (!empty($attachment['id'])) {
+            $directUrl = $url;
+        } elseif (!empty($attachment['id'])) {
+            // Preferred path: attachment ID available → wp_get_attachment_url
+            // returns the direct URL (.webp/.jpg) without triggering
+            // image_downsize (which would re-rewrite it back to imgproxy).
             $direct = wp_get_attachment_url((int) $attachment['id']);
             if (is_string($direct) && $direct !== '') {
-                $attachment['url'] = $direct;
-                return $attachment;
+                $directUrl = $direct;
+            } else {
+                // ID lookup failed → fall back to decode.
+                $directUrl = $this->decodeImgproxyUrl($url);
             }
+        } else {
+            // Fallback: decode the imgproxy URL to recover the source path.
+            // Handles the case where the attachment ID is missing (e.g.
+            // the image was inserted as a raw URL, not via the media library).
+            $directUrl = $this->decodeImgproxyUrl($url);
         }
 
-        // Fallback: decode the imgproxy URL to recover the source path.
-        // This handles the case where the attachment ID is missing (e.g.
-        // the image was inserted as a raw URL, not via the media library).
-        $decoded = $this->decodeImgproxyUrl($url);
-        if ($decoded !== null) {
-            $attachment['url'] = $decoded;
-            return $attachment;
-        }
-
-        // Decode failed — clear the URL so RankMath skips the image
+        // Unresolvable → clear the URL so RankMath skips the image
         // gracefully. Returning the imgproxy URL would make RankMath call
         // wp_check_filetype() on an extensionless base64 path, fail
         // validation, and silently drop og:image — the exact bug this
         // filter exists to prevent.
-        $attachment['url'] = '';
+        if ($directUrl === null || $directUrl === '') {
+            $attachment['url'] = '';
+            return $attachment;
+        }
+
+        // --- Social-safe check ---
+        // jpg/png/gif are social-safe → set the direct URL and return.
+        // Common case: byte-for-byte unchanged, no rewriter/backend call.
+        if ($this->isSocialSafe($directUrl)) {
+            $attachment['url'] = $directUrl;
+            return $attachment;
+        }
+
+        // Not social-safe (webp/avif/bmp/tiff) — try rerouting through
+        // the active delivery backend to an explicit-jpeg, .jpg-terminated
+        // URL. The backend answers honestly: null (LocalBackend / http-
+        // source / passthrough) → degrade to the direct URL.
+        if ($this->rewriter !== null) {
+            [$w, $h] = $this->ogSize();
+            $r = $this->rewriter->rewriteSocialImage($directUrl, $w, $h);
+            if ($r->rewritten && $this->isSocialSafe($r->url)) {
+                $attachment['url'] = $r->url;
+                $attachment['width'] = $w;
+                $attachment['height'] = $h;
+                return $attachment;
+            }
+        }
+
+        // Degrade: keep the direct (webp/avif) URL — never emit @jpeg
+        // or an extensionless URL. This is today's behaviour.
+        $attachment['url'] = $directUrl;
         return $attachment;
     }
 
     /**
+     * Whether a URL ends with a social-safe raster extension that
+     * social networks/messengers (VK, Telegram, older parsers) render
+     * reliably and RankMath's wp_check_filetype() accepts. webp/avif
+     * are NOT social-safe — many social parsers can't render them.
+     */
+    private function isSocialSafe(string $url): bool
+    {
+        return (bool) preg_match('#\.(jpe?g|png|gif)$#i', $url);
+    }
+
+    /**
+     * og:image dimensions, filterable. Defaults to 1200x630 (the
+     * Facebook/Twitter recommendation). Clamped to positive ints.
+     *
+     * @return array{0:int,1:int} [width, height]
+     */
+    private function ogSize(): array
+    {
+        $size = apply_filters('oxpulse_og_image_size', ['width' => 1200, 'height' => 630]);
+        $w = is_array($size) && isset($size['width']) ? (int) $size['width'] : 1200;
+        $h = is_array($size) && isset($size['height']) ? (int) $size['height'] : 630;
+        return [max(1, $w), max(1, $h)];
+    }
+
+    /**
      * Check whether a URL ends with a recognizable image extension.
-     * Used to detect already-direct URLs (no rewrite needed).
+     * Used to detect already-direct URLs (no rewrite needed) and to
+     * validate decoded plain/ sources.
      */
     private function hasImageExtension(string $url): bool
     {
