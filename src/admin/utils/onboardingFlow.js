@@ -43,6 +43,18 @@ export const buildFinishOptions = (enable) => ({
 });
 
 /**
+ * Build the options payload persisted on Step-1 "Turn on optimization".
+ * Enables delivery IMMEDIATELY (so the user who clicks the on-switch
+ * actually gets optimization) WITHOUT marking onboarding complete —
+ * the user still advances through Steps 2–3, and Finish later sets
+ * {enabled:true, onboarded:true} (idempotent on `enabled`). Returns a
+ * NEW object every call (immutability).
+ *
+ * @return {{enabled: true}}
+ */
+export const buildEnableOptions = () => ({ enabled: true });
+
+/**
  * Build the options payload persisted on "Skip for now". Marks
  * onboarding complete ONLY — does NOT force-enable delivery (matches
  * the existing skip semantics: advanced users configure manually).
@@ -67,4 +79,4 @@ export const buildSkipOptions = () => ({ onboarded: true });
 export const welcomeMessageKind = (webpCapable) =>
   webpCapable ? 'ready' : 'unsupported';
 
-export default { WIZARD_STEPS, buildFinishOptions, buildSkipOptions, welcomeMessageKind };
+export default { WIZARD_STEPS, buildEnableOptions, buildFinishOptions, buildSkipOptions, welcomeMessageKind };

@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 
 import {
   WIZARD_STEPS,
+  buildEnableOptions,
   buildFinishOptions,
   buildSkipOptions,
   welcomeMessageKind,
@@ -52,6 +53,23 @@ test('buildFinishOptions returns a NEW object each call (immutability)', () => {
   const a = buildFinishOptions(true);
   const b = buildFinishOptions(true);
   assert.notEqual(a, b, 'must return a fresh object, not a shared reference');
+});
+
+// ─── buildEnableOptions: {enabled:true} ONLY, no onboarded key ───────
+// Step-1 "Turn on optimization" persists this immediately so the user
+// who clicks the on-switch actually gets optimization (Finish later
+// sets {enabled:true,onboarded:true} — idempotent).
+
+test('buildEnableOptions() → {enabled:true} with NO onboarded key', () => {
+  const enabled = buildEnableOptions();
+  assert.deepEqual(enabled, { enabled: true });
+  assert.ok(!('onboarded' in enabled), 'enable must NOT mark onboarding complete');
+});
+
+test('buildEnableOptions returns a NEW object each call (immutability)', () => {
+  const a = buildEnableOptions();
+  const b = buildEnableOptions();
+  assert.notEqual(a, b);
 });
 
 // ─── buildSkipOptions: {onboarded:true} ONLY, no enabled key ─────────

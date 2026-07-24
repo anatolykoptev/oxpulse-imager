@@ -7,7 +7,8 @@
  *   1. Welcome + turn on — copy switches on the server's WebP
  *      capability (window.oxpulseAdmin.webpCapable, localized by
  *      SettingsPage::buildClientStatus()). Primary CTA "Turn on
- *      optimization" advances to Step 2 (persist nothing yet).
+ *      optimization" (or "Continue" when WebP is unsupported)
+ *      persists {enabled:true} immediately, then advances to Step 2.
  *   2. Optional tuning (skippable) — one number field bound to
  *      options.defaultQuality. "Next" + "Skip" both advance to Step 3.
  *   3. Pro upsell + finish — ProBadge + the Pro feature list. Free
@@ -36,6 +37,7 @@ import { useLicenseStore } from '@store/useLicenseStore';
 import { planPill } from '@utils/proGate';
 import {
   WIZARD_STEPS,
+  buildEnableOptions,
   buildFinishOptions,
   buildSkipOptions,
   welcomeMessageKind,
@@ -94,11 +96,24 @@ const OnboardingWizard = () => {
   const { isPro, isGrandfathered, upgradeUrl } = useLicenseStore();
   const cta = planPill({ isPro, isGrandfathered }).cta;
 
-  // Step 1: "Turn on optimization" → advance (persist nothing yet).
-  const handleStep1Next = useCallback(() => {
+  // Step 1: "Turn on optimization" → persist {enabled:true} NOW (so
+  // the user who clicked the on-switch actually gets optimization),
+  // then advance to Step 2. Finish later sets {enabled:true,
+  // onboarded:true} — idempotent on `enabled`. On save failure we
+  // surface the error and stay on Step 1 (no advance on a failed
+  // enable).
+  const handleStep1Next = useCallback(async () => {
     setError('');
-    setStep(2);
-  }, []);
+    setOptions(buildEnableOptions());
+    setIsWorking(true);
+    const ok = await saveOptions();
+    setIsWorking(false);
+    if (ok) {
+      setStep(2);
+    } else {
+      setError(useOptionsStore.getState().error || __('Failed to enable optimization.', 'oxpulse-imager'));
+    }
+  }, [setOptions, saveOptions]);
 
   // Step 2: "Next" → advance (the defaultQuality field is already
   // bound to the store via setOption; it persists on Finish with the
@@ -277,7 +292,11 @@ const OnboardingWizard = () => {
             <div className="oxp-flex oxp-items-center oxp-gap-2">
               {step === 1 && (
                 <Button onClick={handleStep1Next} variant="primary" disabled={isWorking}>
-                  {__('Turn on optimization', 'oxpulse-imager')}
+                  {isWorking
+                    ? __('Turning on…', 'oxpulse-imager')
+                    : messageKind === 'ready'
+                      ? __('Turn on optimization', 'oxpulse-imager')
+                      : __('Continue', 'oxpulse-imager')}
                 </Button>
               )}
               {step === 2 && (
