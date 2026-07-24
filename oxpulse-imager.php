@@ -154,6 +154,23 @@ function oxpulse_imager_activate(): void {
         add_option('oxpulse_born_version', OXPULSE_IMAGER_VERSION, '', 'no');
     }
 
+    // FIX 2: seed the AVIF-baked-Pro drift sentinel at activation so
+    // maybeRebakeAvifOnLicenseChange has a baseline to compare against
+    // on the first admin load. The activation hook's
+    // installLocalDelivery() call (below) bakes OXPULSE_AVIF_ALLOWED
+    // from isPro() at activation time, so the sentinel must reflect
+    // that same isPro() state. add_option skips when the option
+    // already exists (preserves the value across deactivate→reactivate
+    // — a re-activation must NOT reset the drift baseline, otherwise
+    // a Pro→free change made while inactive would be silently "healed"
+    // back to the stale value on re-activation).
+    if (get_option('oxpulse_avif_baked_pro', null) === null) {
+        $proAtActivation = class_exists(\OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::class)
+            ? \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::isPro()
+            : false;
+        add_option('oxpulse_avif_baked_pro', $proAtActivation, '', 'no');
+    }
+
     oxpulse_imager_grant_capability();
 
     // Phase 6 Dispatch 3: generate the LocalBackend miss-endpoint +

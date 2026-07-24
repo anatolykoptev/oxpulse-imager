@@ -108,6 +108,7 @@ final class ServiceRegistrar
         self::maybeReprobeOnVersionUpdate();
         self::maybeMigrateAutoload();
         self::maybeGrandfatherPreFreemiusInstalls();
+        self::maybeRebakeAvifOnLicenseChange();
     }
 
     /**
@@ -972,6 +973,66 @@ final class ServiceRegistrar
         }
 
         update_option('oxpulse_grandfathered', 1, false);
+    }
+
+    /**
+     * Self-heal the baked OXPULSE_AVIF_ALLOWED constant on a Freemius
+     * license change (FIX 2 MAJOR).
+     *
+     * The baked constant only regenerates on activation / settings-save
+     * / version bump — NOT on a license change. So Pro→free keeps
+     * serving AVIF (leak) and free→Pro withholds AVIF (lag) until the
+     * next settings save. This guard closes that gap: on an idempotent
+     * admin-time check, compare current isPro() to a stored
+     * oxpulse_avif_baked_pro option; if they differ AND the site is a
+     * LocalBackend site (endpoint===''), call installLocalDelivery()
+     * to regenerate the endpoint with the correct value, then update
+     * the stored option. For an imgproxy site (no local endpoint) the
+     * regeneration is skipped (no baked endpoint exists) but the
+     * stored flag is still updated so a later switch-to-local bakes
+     * the correct value.
+     *
+     * Idempotent: when stored === isPro() it's a no-op. Admin-only
+     * (write-time housekeeping, never on the front-end read path).
+     * Mirrors the maybeGrandfatherPreFreemiusInstalls /
+     * maybeReprobeOnVersionUpdate idiom.
+     */
+    private static function maybeRebakeAvifOnLicenseChange(): void
+    {
+        if (!is_admin()) {
+            return;
+        }
+
+        $currentPro = self::isPro();
+        $bakedPro = get_option('oxpulse_avif_baked_pro', null);
+
+        // First run on a fresh install (no stored flag yet): seed it
+        // from the current isPro() state without regenerating. The
+        // activation hook already baked the endpoint with the correct
+        // value, so there's nothing to drift from.
+        if ($bakedPro === null) {
+            update_option('oxpulse_avif_baked_pro', $currentPro, false);
+            return;
+        }
+
+        $bakedProBool = (bool) $bakedPro;
+        if ($bakedProBool === $currentPro) {
+            return; // No drift — idempotent no-op.
+        }
+
+        // Drift detected. For a LocalBackend site (endpoint===''),
+        // regenerate the endpoint so the baked constant reflects the
+        // new license state. For an imgproxy site there's no baked
+        // endpoint to regenerate — skip the install call. The stored
+        // flag is updated in both cases so a later switch-to-local
+        // bakes the correct value.
+        $endpoint = get_option(OptionSettingsRepository::OPTION_ENDPOINT, '');
+        if ($endpoint === '') {
+            self::installLocalDelivery();
+            do_action('oxpulse_rebaked_avif');
+        }
+
+        update_option('oxpulse_avif_baked_pro', $currentPro, false);
     }
 
     /**

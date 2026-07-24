@@ -32,6 +32,24 @@ class BufferRewriterTest extends TestCase
 {
     private const ALLOWED = 'https://example.com/wp-content/uploads/';
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $GLOBALS['__oxpulse_filters'] = [];
+        $GLOBALS['__oxpulse_options'] = [];
+        // FIX 3: BufferRewriter now directly checks isPro() as a
+        // belt-and-suspenders gate alongside the filter. Default isPro()
+        // is false (no Freemius, no grandfather, no oxpulse_is_pro filter)
+        // → picture wrapping would be disabled. Tests that exercise
+        // picture wrapping set oxpulse_is_pro=true individually.
+    }
+
+    protected function tearDown(): void
+    {
+        unset($GLOBALS['__oxpulse_filters'], $GLOBALS['__oxpulse_options']);
+        parent::tearDown();
+    }
+
     private function createDeliveryConfig(bool $enabled = true): DeliveryConfig
     {
         return new DeliveryConfig(
@@ -511,6 +529,11 @@ class BufferRewriterTest extends TestCase
         bool $bufferEnabled = true,
         array $allowedFormats = []
     ): BufferRewriter {
+        // FIX 3: BufferRewriter now directly checks isPro() — the
+        // belt-and-suspenders gate. Set Pro=true so the picture-
+        // wrapping tests exercise the wrapping path (the filter-only
+        // gate was the sole check before).
+        add_filter('oxpulse_is_pro', '__return_true');
         $delivery = new DeliveryConfig(
             enabled: true,
             endpoint: 'https://imgproxy.test',

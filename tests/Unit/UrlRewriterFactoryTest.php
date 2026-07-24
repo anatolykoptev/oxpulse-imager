@@ -21,6 +21,7 @@ use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
+use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
 use PHPUnit\Framework\TestCase;
 
 class UrlRewriterFactoryTest extends TestCase
@@ -36,6 +37,24 @@ class UrlRewriterFactoryTest extends TestCase
         $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_filters'] = [];
         $GLOBALS['__oxpulse_transients'] = [];
+        // FIX (BLOCKER) precondition: LocalBackendProvider::health()
+        // now also checks the miss-endpoint artifact exists on disk.
+        // Other test classes (ServiceRegistrarCacheCleanupTest) define
+        // WP_CONTENT_DIR to a temp dir whose artifact is absent —
+        // without this, LocalBackend would be Down and the imgproxy-
+        // Down fallthrough test could not exercise the LocalBackend
+        // path it intends. Ensure the artifact exists so LocalBackend
+        // is Healthy (the healthy-local precondition), matching the
+        // test's pre-fix behavior.
+        if (defined('WP_CONTENT_DIR')) {
+            if (!is_dir(WP_CONTENT_DIR)) {
+                @mkdir(WP_CONTENT_DIR, 0755, true);
+            }
+            file_put_contents(
+                WP_CONTENT_DIR . '/' . LocalDeliveryInstaller::ENDPOINT_FILENAME,
+                '<?php // present',
+            );
+        }
     }
 
     protected function tearDown(): void
@@ -43,6 +62,9 @@ class UrlRewriterFactoryTest extends TestCase
         unset($GLOBALS['__oxpulse_options']);
         unset($GLOBALS['__oxpulse_filters']);
         unset($GLOBALS['__oxpulse_transients']);
+        if (defined('WP_CONTENT_DIR')) {
+            @unlink(WP_CONTENT_DIR . '/' . LocalDeliveryInstaller::ENDPOINT_FILENAME);
+        }
         parent::tearDown();
     }
 

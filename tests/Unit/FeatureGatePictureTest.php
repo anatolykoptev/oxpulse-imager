@@ -92,4 +92,56 @@ class FeatureGatePictureTest extends TestCase
             'Free must force picture OFF even when another filter returns true',
         );
     }
+
+    // ─── FIX 3: belt-and-suspenders — consumer-level isPro() check ───
+
+    /**
+     * FIX 3 (MINOR): the <picture> gate filter at PHP_INT_MAX is the
+     * PRIMARY gate, but if it's NOT registered (ServiceRegistrar::
+     * register() wasn't called, or the filter was removed by another
+     * plugin), apply_filters returns the raw pictureEnabled value —
+     * which could be true even for free users. The belt-and-suspenders
+     * fix: BufferRewriter and ContentImgTagRewriter ALSO check
+     * isPro() directly. This test verifies the isPro() check is
+     * present in the consumer path (not just the filter): with the
+     * gate filter NOT registered, isPro()=false, and pictureEnabled=
+     * true, the consumer must still NOT wrap in <picture>.
+     *
+     * This test uses ContentImgTagRewriter directly (the content-path
+     * consumer) — the buffer-path consumer (BufferRewriter) has the
+     * same belt-and-suspenders check.
+     */
+    public function test_free_consumer_blocks_picture_even_without_gate_filter(): void
+    {
+        add_filter('oxpulse_is_pro', '__return_false');
+        // Gate filter NOT registered — simulates a missing
+        // ServiceRegistrar::register() call or a filter removal.
+        $delivery = new \OXPulse\Imager\Domain\Config\DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.example.com',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+            pictureEnabled: true,
+        );
+        $rewriter = new \OXPulse\Imager\Application\Delivery\UrlRewriter(
+            new \OXPulse\Imager\Domain\Source\SourcePolicy(),
+            $delivery,
+            \OXPulse\Imager\Domain\Config\SigningConfig::fromHex('736563726574', '68656C6C6F'),
+        );
+        $pictureWrapper = new \OXPulse\Imager\Application\Delivery\PictureElementWrapper($rewriter);
+        $contentRewriter = new \OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter(
+            $rewriter,
+            $delivery,
+            null,
+            $pictureWrapper,
+        );
+
+        $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" width="800" height="600" />';
+        $result = $contentRewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertStringNotContainsString(
+            '<picture',
+            $result,
+            'FIX 3: free user must NOT get <picture> wrapping even without the gate filter registered (belt-and-suspenders isPro() check)',
+        );
+    }
 }

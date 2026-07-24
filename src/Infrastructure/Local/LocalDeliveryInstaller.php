@@ -31,6 +31,16 @@ use OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar;
 
 final class LocalDeliveryInstaller
 {
+    /**
+     * The miss-endpoint artifact filename (written to wp-content/ by
+     * install(), removed by uninstall()). The SINGLE source of truth
+     * for the artifact basename — LocalBackendProvider::health()
+     * references this constant to check the artifact exists on disk
+     * (FIX: BLOCKER — LocalBackend selected but artifact absent → 404),
+     * so the provider and installer never drift on the filename.
+     */
+    public const ENDPOINT_FILENAME = 'oxpulse-img.php';
+
     public function __construct(
         private string $wpContentDir,
         private string $uploadsBasedir,
@@ -66,7 +76,7 @@ final class LocalDeliveryInstaller
             return;
         }
 
-        $endpointFile = $this->wpContentDir . '/oxpulse-img.php';
+        $endpointFile = $this->wpContentDir . '/' . self::ENDPOINT_FILENAME;
 
         // #47: thread the per-format AVIF quality override from the admin
         // formatQuality setting into the generated endpoint (baked as a
@@ -110,7 +120,7 @@ final class LocalDeliveryInstaller
      */
     public function uninstall(): void
     {
-        $endpointFile = $this->wpContentDir . '/oxpulse-img.php';
+        $endpointFile = $this->wpContentDir . '/' . self::ENDPOINT_FILENAME;
         if (is_file($endpointFile)) {
             // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- plugin-owned cache scratch; direct unlink avoids the wp_delete_file filter, no WP_Filesystem needed.
             @unlink($endpointFile);

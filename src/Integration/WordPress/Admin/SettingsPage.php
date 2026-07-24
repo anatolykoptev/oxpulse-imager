@@ -20,10 +20,13 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Admin;
 
+use OXPulse\Imager\Application\Delivery\DeliveryBackendFactory;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
+use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use OXPulse\Imager\Infrastructure\WordPress\AssetManifest;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar;
@@ -109,11 +112,16 @@ final class SettingsPage
     public function buildDeliveryStatusLine(): string
     {
         // Gate 5 (ProFeatures::ADMIN_STATUS): under free, the detailed
-        // delivery-status readout is Pro — replace it with a basic line
-        // so the settings page still renders + works; only the detailed
-        // status is Pro. Cosmetic — must not break the page. No nag.
+        // delivery-status readout is Pro — replace it with an HONEST
+        // basic line that reflects the actual selected backend (FIX 4:
+        // the previous "Active delivery: active" was dishonest — it
+        // said "active" even when delivery was passthrough/no-op).
+        // Reuses DeliveryBackendFactory::select() (the canonical
+        // selection path) so the status line never drifts from the
+        // real front-end backend. No detailed diagnostics (AVIF/WebP
+        // format, clean-URL/?k=) — just the backend type.
         if (!ServiceRegistrar::isPro()) {
-            return __('Active delivery: active', 'oxpulse-imager');
+            return $this->freeDeliveryStatusLine();
         }
 
         $delivery = $this->repository->loadDeliveryConfig();
@@ -134,6 +142,35 @@ final class SettingsPage
         }
 
         return __('Active delivery: Passthrough (no optimization)', 'oxpulse-imager');
+    }
+
+    /**
+     * Honest but basic delivery-status line for free users (FIX 4).
+     *
+     * Queries the actual selected backend via DeliveryBackendFactory::
+     * select() and returns a basic label reflecting the backend type —
+     * no detailed diagnostics (format, clean-URL/?k=). This is honest:
+     * "Active delivery: imgproxy" when imgproxy is selected, "Active
+     * delivery: local (WebP)" when LocalBackend is selected, "Active
+     * delivery: passthrough (no optimization)" when no backend is
+     * selected (null = preserve original URLs).
+     */
+    private function freeDeliveryStatusLine(): string
+    {
+        $delivery = $this->repository->loadDeliveryConfig();
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
+        $signing = $this->repository->loadSigningConfig();
+        $backend = DeliveryBackendFactory::select($delivery, $signing);
+
+        if ($backend instanceof ImgproxyBackend) {
+            return __('Active delivery: imgproxy', 'oxpulse-imager');
+        }
+        if ($backend instanceof LocalBackend) {
+            return __('Active delivery: local (WebP)', 'oxpulse-imager');
+        }
+        return __('Active delivery: passthrough (no optimization)', 'oxpulse-imager');
     }
 
     private function imgproxyLabel(DeliveryConfig $delivery): string

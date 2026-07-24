@@ -89,8 +89,14 @@ class FeatureGateAdminStatusTest extends TestCase
         $this->assertStringContainsString('LocalBackend', $label);
     }
 
-    // ─── Free: basic line, no detailed diagnostics ───────────────────
+    // ─── Free: honest basic line, no detailed diagnostics ───────────
 
+    /**
+     * FIX 4: under free + imgproxy configured + imgproxy healthy,
+     * the status line must honestly say "imgproxy" (not the dishonest
+     * "active" — the backend IS imgproxy). But no detailed diagnostics
+     * (AVIF/WebP format) — those are Pro.
+     */
     public function test_free_hides_detailed_imgproxy_status(): void
     {
         add_filter('oxpulse_is_pro', '__return_false');
@@ -101,11 +107,20 @@ class FeatureGateAdminStatusTest extends TestCase
         $page = new SettingsPage();
         $label = $page->buildDeliveryStatusLine();
 
-        $this->assertStringNotContainsString('imgproxy', $label, 'Free must not show the detailed imgproxy status');
+        // FIX 4: honest — says "imgproxy" (the actual backend).
+        $this->assertStringContainsString('imgproxy', $label, 'FIX 4: free status line must honestly reflect the imgproxy backend');
+        // No detailed diagnostics (AVIF/WebP format) — those are Pro.
         $this->assertStringNotContainsString('AVIF', $label, 'Free must not show the detailed AVIF status');
+        $this->assertStringNotContainsString('WebP', $label, 'Free must not show the detailed WebP format status');
         $this->assertStringContainsString('Active delivery:', $label, 'Free status line keeps the basic prefix');
     }
 
+    /**
+     * FIX 4: under free + LocalBackend active (endpoint empty, encoder
+     * present), the status line must honestly say "local (WebP)" (not
+     * the dishonest "active"). No detailed diagnostics (clean-URL/?k=)
+     * — those are Pro.
+     */
     public function test_free_hides_detailed_local_status(): void
     {
         add_filter('oxpulse_is_pro', '__return_false');
@@ -116,8 +131,37 @@ class FeatureGateAdminStatusTest extends TestCase
         $page = new SettingsPage(null, $this->webpTransformer());
         $label = $page->buildDeliveryStatusLine();
 
+        // FIX 4: honest — says "local (WebP)" (the actual backend).
+        $this->assertStringContainsString('local', $label, 'FIX 4: free status line must honestly reflect the LocalBackend');
+        // No detailed diagnostics (clean-URL/?k=) — those are Pro.
         $this->assertStringNotContainsString('LocalBackend', $label, 'Free must not show the detailed LocalBackend status');
+        $this->assertStringNotContainsString('clean-URL', $label);
+        $this->assertStringNotContainsString('?k=', $label);
         $this->assertStringContainsString('Active delivery:', $label);
+    }
+
+    /**
+     * FIX 4: under free + no signing (nothing configured), the status
+     * line must honestly say "passthrough (no optimization)" — NOT the
+     * dishonest "active" (delivery is NOT active, URLs are preserved).
+     */
+    public function test_free_passthrough_honestly_says_passthrough(): void
+    {
+        add_filter('oxpulse_is_pro', '__return_false');
+        // No signing options → signing=null → select() returns null
+        // (passthrough). The old code returned "Active delivery: active"
+        // which was a lie — delivery is NOT active.
+
+        $page = new SettingsPage();
+        $label = $page->buildDeliveryStatusLine();
+
+        $this->assertStringContainsString('passthrough', $label, 'FIX 4: free + no signing must honestly say passthrough');
+        $this->assertStringContainsString('no optimization', $label);
+        // The old code returned "Active delivery: active" — a lie.
+        // The honest line says "passthrough", not "active" as the
+        // backend label. Check the suffix (after "Active delivery:").
+        $suffix = trim(substr($label, strlen('Active delivery:')));
+        $this->assertStringNotContainsString('active', strtolower($suffix), 'FIX 4: must NOT say "active" as the backend when delivery is passthrough');
     }
 
     public function test_free_settings_page_still_renders(): void
