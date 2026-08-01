@@ -48,6 +48,7 @@ use OXPulse\Imager\Integration\WordPress\Admin\SettingsPage;
 use OXPulse\Imager\Integration\WordPress\Admin\StatusRestController;
 use OXPulse\Imager\Integration\WordPress\Cli\CliServiceProvider;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
+use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcsetRestorer;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentUrlRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\AvatarRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\BufferRewriter;
@@ -345,6 +346,28 @@ final class ServiceRegistrar
         // wp_get_attachment_url (which is also hooked above).
         $downsizeRewriter = new ImageDownsizeRewriter($rewriter);
         add_filter('image_downsize', [$downsizeRewriter, 'rewrite'], 99, 3);
+
+        // Ф7: Restore srcset + sizes for wp_get_attachment_image().
+        // ImageDownsizeRewriter (above) short-circuits image_downsize by
+        // returning a proxied imgproxy URL. WordPress core then uses that
+        // proxied URL as $image_src in wp_calculate_image_srcset(), which
+        // resolves candidates by matching the src basename against
+        // $image_meta['sizes'] — a proxied /imgproxy/<sig>/<b64> basename
+        // matches nothing, core returns false, and wp_get_attachment_image()
+        // emits NO srcset and NO sizes. Every attachment image becomes a
+        // single bitmap resized to its CSS box → blurry on DPR-2/DPR-3.
+        //
+        // This restorer hooks wp_get_attachment_image_attributes (fires
+        // AFTER core's srcset/sizes computation). When srcset is missing,
+        // it resolves the ORIGINAL (unproxied) attachment URL via
+        // AttachmentOriginResolver, re-runs wp_calculate_image_srcset()
+        // with it (core now matches the upload filenames and builds
+        // candidates), and SrcsetRewriter (hooked above on
+        // wp_calculate_image_srcset) proxies each candidate. Also
+        // re-runs wp_calculate_image_sizes() for the sizes attribute.
+        // Priority 99 (late) so any earlier attribute filter runs first.
+        $srcsetRestorer = new AttachmentImageSrcsetRestorer();
+        add_filter('wp_get_attachment_image_attributes', [$srcsetRestorer, 'restore'], 99, 3);
 
         // Ф6: get_site_icon_url — favicon/site icon optimization. The
         // site icon is served through get_site_icon_url() which bypasses
