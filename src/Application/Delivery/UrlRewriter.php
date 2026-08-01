@@ -568,17 +568,25 @@ final class UrlRewriter
      * size-based quality tiers configuration.
      *
      * Tiers are matched smallest-first: the first tier whose maxWidth >=
-     * $width wins. If no tier matches (width larger than the largest
-     * tier, or width is 0/auto), returns null → caller uses
-     * defaultQuality.
+     * $width wins. When $width is above the largest tier, or $width is 0
+     * (auto/original/full-size), the LARGEST tier's quality is used as
+     * the fallback — NOT a flat defaultQuality. defaultQuality is
+     * format-agnostic and calibrated for JPEG; applying it to AVIF
+     * produces files LARGER than the original (AVIF at q80 is far more
+     * expensive than WebP at q80), so the largest tier's per-format
+     * values — tuned for big images — are the correct fallback.
+     *
+     * When no tiers are configured at all, returns null → caller uses
+     * defaultQuality (+ global formatQuality if set), the sensible flat
+     * quality for a site that opted out of size-based tiers.
      *
      * @param int $width Requested width in pixels (0 = auto/original).
      * @return int|array<string,int>|null Resolved quality (int for simple
-     *         tier, array for per-format tier), or null when no tier matches.
+     *         tier, array for per-format tier), or null when no tiers configured.
      */
     private function resolveSizeQuality(int $width): int|array|null
     {
-        if ($width <= 0 || empty($this->delivery->sizeQualityTiers)) {
+        if (empty($this->delivery->sizeQualityTiers)) {
             return null;
         }
 
@@ -588,14 +596,25 @@ final class UrlRewriter
         $tiers = $this->delivery->sizeQualityTiers;
         ksort($tiers, SORT_NUMERIC);
 
+        // width <= 0 (auto/original/full-size): a full-size image is the
+        // biggest we serve, so it gets the largest tier's quality — the
+        // values calibrated for large images, not the format-agnostic
+        // defaultQuality that makes AVIF heavier than the original.
+        $largestMaxWidth = array_key_last($tiers);
+        if ($width <= 0) {
+            return $tiers[$largestMaxWidth];
+        }
+
         foreach ($tiers as $maxWidth => $quality) {
             if ($width <= $maxWidth) {
                 return $quality;
             }
         }
 
-        // Width larger than the largest tier → use defaultQuality.
-        return null;
+        // Width larger than the largest tier → largest tier's quality.
+        // Same rationale as width <= 0: avoid the JPEG-calibrated flat
+        // default for AVIF/WebP on the widest candidates.
+        return $tiers[$largestMaxWidth];
     }
 
     /**

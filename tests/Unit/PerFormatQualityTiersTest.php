@@ -8,7 +8,7 @@
  * matching the mu-plugin's production-tuned strategy:
  *   ≤400:   fq:avif:55:jpeg:70:webp:60
  *   ≤1000:  fq:avif:65:jpeg:78:webp:70
- *   >1000:  fq:avif:75:webp:80:jpeg:82
+ *   >1000:  falls back to the largest configured tier
  *
  * @package OXPulse\Imager
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -40,7 +40,7 @@ class PerFormatQualityTiersTest extends TestCase
      * The mu-plugin's production 3-tier per-format config:
      *   ≤400:   avif:55 webp:60 jpeg:70
      *   ≤1000:  avif:65 webp:70 jpeg:78
-     *   >1000:  defaultQuality (no tier match)
+     *   >1000:  falls back to the largest tier (avif:65 webp:70 jpeg:78)
      */
     private function createRewriterWithPerFormatTiers(int $defaultQuality = 80): UrlRewriter
     {
@@ -83,25 +83,55 @@ class PerFormatQualityTiersTest extends TestCase
         $this->assertStringContainsString('fq:avif:65:jpeg:78:webp:70', $result->url);
     }
 
-    public function test_width_larger_than_largest_tier_uses_default_quality(): void
+    public function test_width_larger_than_largest_tier_uses_largest_tier_per_format_quality(): void
     {
         $rewriter = $this->createRewriterWithPerFormatTiers();
         $result = $rewriter->rewrite(self::SOURCE, 2000, 0);
 
         $this->assertTrue($result->rewritten);
-        // 2000 > 1000 → defaultQuality 80, no fq: (formatQuality empty).
-        $this->assertStringContainsString('q:80', $result->url);
-        $this->assertStringNotContainsString('fq:', $result->url);
+        // 2000 > 1000 → fall back to the largest tier's per-format quality.
+        // A flat defaultQuality is JPEG-calibrated; applying it to AVIF
+        // produces files LARGER than the original (AVIF q80 >> WebP q80).
+        $this->assertStringContainsString('fq:avif:65:jpeg:78:webp:70', $result->url);
+        $this->assertStringNotContainsString('q:80', $result->url);
     }
 
-    public function test_zero_width_uses_default_quality(): void
+    public function test_zero_width_uses_largest_tier_per_format_quality(): void
     {
         $rewriter = $this->createRewriterWithPerFormatTiers();
         $result = $rewriter->rewrite(self::SOURCE, 0, 0);
 
         $this->assertTrue($result->rewritten);
-        $this->assertStringContainsString('q:80', $result->url);
-        $this->assertStringNotContainsString('fq:', $result->url);
+        // width=0 (auto/original/full-size) → largest tier (biggest images).
+        $this->assertStringContainsString('fq:avif:65:jpeg:78:webp:70', $result->url);
+        $this->assertStringNotContainsString('q:80', $result->url);
+    }
+
+    /**
+     * Falsification gate (silent-failure surface): a width ABOVE the
+     * largest tier must emit fq: with per-format values, and AVIF quality
+     * must be strictly below defaultQuality. A wrong quality number
+     * produces no error — just a heavier image — so this test guards the
+     * invariant that AVIF never inherits a JPEG-calibrated default.
+     */
+    public function test_width_above_largest_tier_avif_quality_below_default(): void
+    {
+        $rewriter = $this->createRewriterWithPerFormatTiers(defaultQuality: 80);
+        $result = $rewriter->rewrite(self::SOURCE, 5000, 0);
+
+        $this->assertTrue($result->rewritten);
+        $this->assertStringContainsString('fq:', $result->url);
+        $this->assertStringNotContainsString('q:80', $result->url);
+        // Largest tier AVIF quality is 65, strictly below defaultQuality 80.
+        $this->assertStringContainsString('avif:65', $result->url);
+        // Extract the avif quality from fq: and assert < defaultQuality.
+        $this->assertMatchesRegularExpression(
+            '/fq:avif:(\d+):/',
+            $result->url,
+            'fq: must carry an avif quality value'
+        );
+        preg_match('/fq:avif:(\d+):/', $result->url, $m);
+        $this->assertLessThan(80, (int) $m[1], 'AVIF quality must be below defaultQuality 80');
     }
 
     public function test_save_data_stacks_on_per_format_tier(): void
@@ -182,9 +212,12 @@ class PerFormatQualityTiersTest extends TestCase
         $this->assertStringContainsString('fq:avif:55:jpeg:70:webp:60', $r1->url);
         $this->assertStringNotContainsString('avif:90', $r1->url);
 
-        // width=2000 > 400 → no tier match → global formatQuality used
+        // width=2000 > 400 → above largest tier → largest tier's per-format
+        // quality wins over global formatQuality (tier fallback, not flat
+        // default). AVIF never inherits the JPEG-calibrated global value.
         $r2 = $rewriter->rewrite(self::SOURCE, 2000, 0);
-        $this->assertStringContainsString('fq:avif:90:jpeg:90:webp:90', $r2->url);
+        $this->assertStringContainsString('fq:avif:55:jpeg:70:webp:60', $r2->url);
+        $this->assertStringNotContainsString('avif:90', $r2->url);
     }
 
     public function test_invalid_per_format_quality_throws(): void
@@ -225,7 +258,7 @@ class PerFormatQualityTiersTest extends TestCase
         // Exact reproduction of the mu-plugin's production config:
         //   ≤400:   fq:avif:55:jpeg:70:webp:60
         //   ≤1000:  fq:avif:65:jpeg:78:webp:70
-        //   >1000:  defaultQuality (heroes, preserve gradients)
+        //   >1000:  falls back to largest tier (heroes) → fq:avif:65:jpeg:78:webp:70
         $rewriter = new UrlRewriter(
             new SourcePolicy(),
             new DeliveryConfig(
@@ -249,10 +282,10 @@ class PerFormatQualityTiersTest extends TestCase
         $r2 = $rewriter->rewrite(self::SOURCE, 615, 410);
         $this->assertStringContainsString('fq:avif:65:jpeg:78:webp:70', $r2->url);
 
-        // Hero 1536x1536 → >1000 → q:80 (defaultQuality)
+        // Hero 1536x1536 → >1000 → largest tier fallback → fq:avif:65:jpeg:78:webp:70
         $r3 = $rewriter->rewrite(self::SOURCE, 1536, 1536);
-        $this->assertStringContainsString('q:80', $r3->url);
-        $this->assertStringNotContainsString('fq:', $r3->url);
+        $this->assertStringContainsString('fq:avif:65:jpeg:78:webp:70', $r3->url);
+        $this->assertStringNotContainsString('q:80', $r3->url);
     }
 
     public function test_mu_plugin_production_config_with_save_data(): void
@@ -261,7 +294,7 @@ class PerFormatQualityTiersTest extends TestCase
         // Mu-plugin Save-Data mode shifts every tier down ~15 points:
         //   ≤400:   fq:avif:40:jpeg:55:webp:45
         //   ≤1000:  fq:avif:50:jpeg:63:webp:55
-        //   >1000:  q:65 (80-15)
+        //   >1000:  falls back to largest tier → fq:avif:50:jpeg:63:webp:55
         $rewriter = new UrlRewriter(
             new SourcePolicy(),
             new DeliveryConfig(
@@ -286,8 +319,9 @@ class PerFormatQualityTiersTest extends TestCase
         $r2 = $rewriter->rewrite(self::SOURCE, 800, 0);
         $this->assertStringContainsString('fq:avif:50:jpeg:63:webp:55', $r2->url);
 
-        // Hero >1000, Save-Data → q:65 (80-15)
+        // Hero >1000, Save-Data → largest tier per-format -15
+        // → fq:avif:50:jpeg:63:webp:55
         $r3 = $rewriter->rewrite(self::SOURCE, 2000, 0);
-        $this->assertStringContainsString('q:65', $r3->url);
+        $this->assertStringContainsString('fq:avif:50:jpeg:63:webp:55', $r3->url);
     }
 }

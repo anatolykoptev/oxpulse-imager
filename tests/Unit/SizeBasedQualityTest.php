@@ -95,14 +95,15 @@ class SizeBasedQualityTest extends TestCase
         $this->assertStringContainsString('q:65', $result->url);
     }
 
-    public function test_width_larger_than_largest_tier_uses_default(): void
+    public function test_width_larger_than_largest_tier_uses_largest_tier(): void
     {
         $rewriter = $this->createRewriterWithTiers();
         $result = $rewriter->rewrite(self::SOURCE, 2000, 0);
 
         $this->assertTrue($result->rewritten);
-        // 2000 > 1200 → defaultQuality 80.
-        $this->assertStringContainsString('q:80', $result->url);
+        // 2000 > 1200 → largest tier (1200 → q65), not flat defaultQuality.
+        $this->assertStringContainsString('q:65', $result->url);
+        $this->assertStringNotContainsString('q:80', $result->url);
     }
 
     public function test_width_at_tier_boundary_uses_that_tier(): void
@@ -122,14 +123,15 @@ class SizeBasedQualityTest extends TestCase
         $this->assertStringContainsString('q:65', $r3->url);
     }
 
-    public function test_zero_width_uses_default_quality(): void
+    public function test_zero_width_uses_largest_tier_quality(): void
     {
         $rewriter = $this->createRewriterWithTiers();
         $result = $rewriter->rewrite(self::SOURCE, 0, 0);
 
         $this->assertTrue($result->rewritten);
-        // width=0 (auto) → no tier match → defaultQuality 80.
-        $this->assertStringContainsString('q:80', $result->url);
+        // width=0 (auto) → largest tier (1200 → q65), not flat defaultQuality.
+        $this->assertStringContainsString('q:65', $result->url);
+        $this->assertStringNotContainsString('q:80', $result->url);
     }
 
     public function test_empty_tiers_uses_default_quality(): void
@@ -167,9 +169,9 @@ class SizeBasedQualityTest extends TestCase
         $result2 = $rewriter->rewrite(self::SOURCE, 600, 0);
         $this->assertStringContainsString('q:55', $result2->url);
 
-        // width=2000 → default q80, then Save-Data -15 → q65.
+        // width=2000 → largest tier q65, then Save-Data -15 → q50.
         $result3 = $rewriter->rewrite(self::SOURCE, 2000, 0);
-        $this->assertStringContainsString('q:65', $result3->url);
+        $this->assertStringContainsString('q:50', $result3->url);
     }
 
     public function test_tiers_unsorted_in_config_still_match_correctly(): void
