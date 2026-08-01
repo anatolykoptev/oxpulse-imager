@@ -8,7 +8,7 @@
  * matching the mu-plugin's production-tuned strategy:
  *   ≤400:   fq:avif:55:jpeg:70:webp:60
  *   ≤1000:  fq:avif:65:jpeg:78:webp:70
- *   >1000:  fq:avif:75:webp:80:jpeg:82
+ *   >1000:  falls back to the largest configured tier
  *
  * @package OXPulse\Imager
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -40,7 +40,7 @@ class PerFormatQualityTiersTest extends TestCase
      * The mu-plugin's production 3-tier per-format config:
      *   ≤400:   avif:55 webp:60 jpeg:70
      *   ≤1000:  avif:65 webp:70 jpeg:78
-     *   >1000:  defaultQuality (no tier match)
+     *   >1000:  falls back to the largest tier (avif:65 webp:70 jpeg:78)
      */
     private function createRewriterWithPerFormatTiers(int $defaultQuality = 80): UrlRewriter
     {
@@ -258,7 +258,7 @@ class PerFormatQualityTiersTest extends TestCase
         // Exact reproduction of the mu-plugin's production config:
         //   ≤400:   fq:avif:55:jpeg:70:webp:60
         //   ≤1000:  fq:avif:65:jpeg:78:webp:70
-        //   >1000:  defaultQuality (heroes, preserve gradients)
+        //   >1000:  falls back to largest tier (heroes) → fq:avif:65:jpeg:78:webp:70
         $rewriter = new UrlRewriter(
             new SourcePolicy(),
             new DeliveryConfig(
