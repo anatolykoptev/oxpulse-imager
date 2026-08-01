@@ -304,6 +304,99 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             ];
         }
     }
+    // Stubs for wp_calculate_image_srcset / wp_calculate_image_sizes —
+    // simplified replicas of the core functions, sufficient for unit-
+    // testing the AttachmentImageSrcsetRestorer without a full WP
+    // install. The stubs fire the real apply_filters chain so that
+    // SrcsetRewriter (hooked on wp_calculate_image_srcset) proxies the
+    // candidate URLs, mirroring the production filter chain.
+    if (!function_exists('wp_basename')) {
+        function wp_basename($path, $suffix = '') {
+            return urldecode(basename($path, $suffix));
+        }
+    }
+    if (!function_exists('absint')) {
+        function absint($maybeint) {
+            return abs((int) $maybeint);
+        }
+    }
+    if (!function_exists('wp_calculate_image_srcset')) {
+        function wp_calculate_image_srcset($size_array, $image_src, $image_meta, $attachment_id = 0) {
+            if (empty($image_meta['sizes']) || !isset($image_meta['file']) || strlen($image_meta['file']) < 4) {
+                return false;
+            }
+            $image_width = isset($size_array[0]) ? absint($size_array[0]) : 0;
+            if ($image_width < 1) {
+                return false;
+            }
+
+            $uploads = wp_get_upload_dir();
+            $baseurl = rtrim($uploads['baseurl'] ?? '', '/');
+
+            // Build the uploads sub-directory from image_meta['file']
+            // (e.g. "2024/01/photo.jpg" → "2024/01/").
+            $file = $image_meta['file'];
+            $dirname = trim(dirname($file), '/');
+            $dirname = $dirname === '' ? '' : $dirname . '/';
+            $image_baseurl = $baseurl . '/' . $dirname;
+
+            // Collect all candidate sizes (intermediate + full).
+            $all_sizes = $image_meta['sizes'];
+            // Add the full-size image as a candidate (core does this too).
+            $all_sizes[] = [
+                'width'  => $image_meta['width'] ?? 0,
+                'height' => $image_meta['height'] ?? 0,
+                'file'   => wp_basename($file),
+            ];
+
+            $sources = [];
+            $src_matched = false;
+
+            foreach ($all_sizes as $size) {
+                if (!is_array($size) || !isset($size['file'], $size['width'])) {
+                    continue;
+                }
+                // Check if the image_src contains this size's relative path
+                // (core uses str_contains for the same check).
+                if (!$src_matched && str_contains((string) $image_src, $dirname . $size['file'])) {
+                    $src_matched = true;
+                }
+                $sources[(int) $size['width']] = [
+                    'url'        => $image_baseurl . $size['file'],
+                    'descriptor' => 'w',
+                    'value'      => (int) $size['width'],
+                ];
+            }
+
+            // Fire the filter so SrcsetRewriter can proxy each candidate.
+            $sources = apply_filters('wp_calculate_image_srcset', $sources, $size_array, $image_src, $image_meta, $attachment_id);
+
+            if (!$src_matched || !is_array($sources) || count($sources) < 2) {
+                return false;
+            }
+
+            // Build the srcset string (core sorts by key first).
+            ksort($sources);
+            $srcset = '';
+            foreach ($sources as $source) {
+                $srcset .= str_replace(' ', '%20', $source['url']) . ' ' . $source['value'] . $source['descriptor'] . ', ';
+            }
+            return rtrim($srcset, ', ');
+        }
+    }
+    if (!function_exists('wp_calculate_image_sizes')) {
+        function wp_calculate_image_sizes($size, $image_src = null, $image_meta = null, $attachment_id = 0) {
+            $width = 0;
+            if (is_array($size)) {
+                $width = absint($size[0] ?? 0);
+            }
+            if (!$width) {
+                return false;
+            }
+            $sizes = sprintf('(max-width: %1$dpx) 100vw, %1$dpx', $width);
+            return apply_filters('wp_calculate_image_sizes', $sizes, $size, $image_src, $image_meta, $attachment_id);
+        }
+    }
     if (!function_exists('get_posts')) {
         function get_posts($args = []) {
             return $GLOBALS['__oxpulse_posts'] ?? [];

@@ -388,4 +388,47 @@ class DeliveryWiringTest extends TestCase
             'BufferRewriter must register a template_redirect handler when bufferRewritingEnabled is true',
         );
     }
+
+    /**
+     * ServiceRegistrar must register the AttachmentImageSrcsetRestorer
+     * on wp_get_attachment_image_attributes — this is the production
+     * wiring that fixes the HiDPI srcset regression. Without it,
+     * wp_get_attachment_image() emits no srcset/sizes when
+     * ImageDownsizeRewriter proxies the src.
+     */
+    public function test_srcset_restorer_registered_by_service_registrar(): void
+    {
+        $repository = new OptionSettingsRepository();
+        $repository->saveDeliverySettings([
+            'enabled' => true,
+            'endpoint' => 'https://imgproxy.example.com',
+            'allowed_sources' => ['https://example.com/wp-content/uploads/'],
+            'output_format' => 'auto',
+            'default_quality' => 80,
+        ]);
+        $repository->saveSecrets(
+            'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+            'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3'
+        );
+
+        // ServiceRegistrar::register() hooks a plugins_loaded closure
+        // that calls registerDeliveryAdapters(). The bootstrap already
+        // called Plugin::load() (which calls register()), but delivery
+        // was disabled then so registerDeliveryAdapters() never ran.
+        // Re-register now that options are set, then fire plugins_loaded.
+        $plugin = \OXPulse\Imager\Plugin::load(__FILE__);
+        ServiceRegistrar::register($plugin);
+        do_action('plugins_loaded');
+
+        // The wp_get_attachment_image_attributes filter must be registered.
+        $filters = $GLOBALS['__oxpulse_filters'] ?? [];
+        $srcsetRestorerFilters = array_filter(
+            $filters,
+            static fn($entry) => $entry['hook'] === 'wp_get_attachment_image_attributes'
+        );
+        $this->assertNotEmpty(
+            $srcsetRestorerFilters,
+            'ServiceRegistrar must register AttachmentImageSrcsetRestorer on wp_get_attachment_image_attributes',
+        );
+    }
 }
