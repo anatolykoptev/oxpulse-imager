@@ -294,7 +294,7 @@ class PerFormatQualityTiersTest extends TestCase
         // Mu-plugin Save-Data mode shifts every tier down ~15 points:
         //   ≤400:   fq:avif:40:jpeg:55:webp:45
         //   ≤1000:  fq:avif:50:jpeg:63:webp:55
-        //   >1000:  q:65 (80-15)
+        //   >1000:  falls back to largest tier → fq:avif:50:jpeg:63:webp:55
         $rewriter = new UrlRewriter(
             new SourcePolicy(),
             new DeliveryConfig(
