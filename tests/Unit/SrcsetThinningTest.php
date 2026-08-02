@@ -335,4 +335,35 @@ class SrcsetThinningTest extends TestCase
 
         $this->assertSame(count($sources), count($result), 'Step <= 1.0 must disable thinning');
     }
+
+    /**
+     * The src-matching candidate must survive even when the largest
+     * candidate sits within one step of it.
+     *
+     * Regression: the largest-too-close branch popped the last kept
+     * intermediate unconditionally. With the ladder 240/615/900/1100 and
+     * src=900, 1100 < 900*1.4, so the branch fired and dropped 900 — the
+     * one width the `src` attribute resolves to.
+     */
+    public function test_src_width_survives_when_largest_is_within_one_step(): void
+    {
+        $rewriter = $this->createRewriter();
+
+        $sources = [];
+        foreach ([240, 615, 900, 1100] as $w) {
+            $sources[$w] = [
+                'url'        => 'https://example.com/img-' . $w . '.webp',
+                'descriptor' => 'w',
+                'value'      => $w,
+            ];
+        }
+
+        $result = $rewriter->rewrite($sources, [900, 600], 'https://example.com/img-900.webp', [], 0);
+
+        $keptWidths = array_map(static fn(array $s): int => (int) $s['value'], array_values($result));
+
+        $this->assertContains(900, $keptWidths, 'src-width candidate must never be thinned away');
+        $this->assertContains(1100, $keptWidths, 'largest candidate must always survive');
+        $this->assertContains(240, $keptWidths, 'smallest candidate must always survive');
+    }
 }

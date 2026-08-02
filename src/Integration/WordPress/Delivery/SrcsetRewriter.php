@@ -177,11 +177,15 @@ final class SrcsetRewriter
         if ($largestWidth >= $lastWidth * $step) {
             $keptKeys[] = $largestKey;
         } else {
-            // Largest too close to the last kept. If the last kept is
-            // not the smallest, replace it with the largest. If the
-            // last kept IS the smallest (no intermediates survived),
-            // keep both — smallest + largest is the minimum viable srcset.
-            if ($lastWidth !== $widths[$smallestKey]) {
+            // Largest too close to the last kept. Replace that
+            // intermediate with the largest — but NEVER drop the
+            // src-matching candidate: the ladder must always contain the
+            // width the `src` attribute resolves to, otherwise a browser
+            // using srcset can no longer pick the size the layout asked
+            // for. Also keep the smallest when no intermediate survived
+            // (smallest + largest is the minimum viable srcset).
+            $lastIsSrc = $srcWidth > 0 && $lastWidth === $srcWidth;
+            if ($lastWidth !== $widths[$smallestKey] && !$lastIsSrc) {
                 array_pop($keptKeys);
             }
             $keptKeys[] = $largestKey;
