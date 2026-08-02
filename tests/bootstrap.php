@@ -397,6 +397,14 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return apply_filters('wp_calculate_image_sizes', $sizes, $size, $image_src, $image_meta, $attachment_id);
         }
     }
+    // #127: wp_sizes_attribute_includes_valid_auto stub (WP 6.7+).
+    // Mirrors core: true when 'auto' is the first comma-separated entry.
+    if (!function_exists('wp_sizes_attribute_includes_valid_auto')) {
+        function wp_sizes_attribute_includes_valid_auto(string $sizes_attr): bool {
+            $parts = explode(',', $sizes_attr, 2);
+            return 'auto' === strtolower(trim($parts[0], " \t\f\r\n"));
+        }
+    }
     if (!function_exists('get_posts')) {
         function get_posts($args = []) {
             return $GLOBALS['__oxpulse_posts'] ?? [];
