@@ -111,8 +111,51 @@ final class AttachmentImageSrcsetRestorer
             if (empty($attr['sizes'])) {
                 $sizes = wp_calculate_image_sizes($sizeArray, $originalSrc, $imageMeta, $attachmentId);
                 if ($sizes) {
+                    // #127 Part 2 — core's default sizes derives its ceiling
+                    // from the image width, which over-declares whenever the
+                    // image sits in a column narrower than itself. Use the
+                    // $content_width global (the documented signal for the
+                    // main column width) as the ceiling when it is set and
+                    // smaller than the image width. This is the fallback for
+                    // browsers without sizes=auto support (Firefox, Safari);
+                    // Chromium gets the correct slot from auto.
+                    $contentWidth = isset($GLOBALS['content_width']) ? (int) $GLOBALS['content_width'] : 0;
+                    if ($contentWidth > 0 && $contentWidth < $width) {
+                        $sizes = sprintf('(max-width: %1$dpx) 100vw, %1$dpx', $contentWidth);
+                    }
+
+                    // #127 Part 2 — let an operator supply a precise sizes
+                    // string per context, following the oxpulse_* convention.
+                    // The filter receives the (possibly clamped) default and
+                    // may replace it entirely.
+                    $sizes = apply_filters('oxpulse_image_sizes', $sizes, $sizeArray, $originalSrc, $imageMeta, $attachmentId);
+
                     $attr['sizes'] = $sizes;
                 }
+            }
+
+            // #127 Part 1 — replicate core's auto-sizes step from
+            // wp_get_attachment_image() (wp-includes/media.php lines
+            // 1146-1157). Core adds 'auto, ' before the
+            // wp_get_attachment_image_attributes filter fires, but only
+            // when $attr['sizes'] is already set at that point. Because
+            // our proxied src defeated core's srcset computation, sizes
+            // was unset when the auto-sizes step ran, so core skipped it.
+            // We set sizes above (priority 99, after that step), so we
+            // must add the auto prefix ourselves, mirroring core's exact
+            // conditions. The CSS guard (wp_print_auto_sizes_contain_css_fix,
+            // hooked on wp_head by core) keys off the [sizes^="auto,"]
+            // attribute selector and applies regardless of who added
+            // auto, so our path inherits it for free.
+            $addAutoSizes = apply_filters('wp_img_tag_add_auto_sizes', true);
+            if (
+                $addAutoSizes
+                && isset($attr['loading'])
+                && 'lazy' === $attr['loading']
+                && isset($attr['sizes'])
+                && !wp_sizes_attribute_includes_valid_auto($attr['sizes'])
+            ) {
+                $attr['sizes'] = 'auto, ' . $attr['sizes'];
             }
         }
 
