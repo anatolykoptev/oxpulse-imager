@@ -246,4 +246,162 @@ class AttachmentImageSrcsetRestorerTest extends TestCase
 
         $this->assertArrayNotHasKey('srcset', $result);
     }
+
+    /**
+     * #127 Part 1 — a lazy-loaded image restored by the restorer must
+     * get the 'auto, ' prefix on its sizes attribute, replicating what
+     * core would have done in wp_get_attachment_image() (media.php
+     * lines 1146-1157) if the srcset/sizes step had not been skipped.
+     */
+    public function test_lazy_loaded_image_gets_auto_sizes_prefix(): void
+    {
+        $attr = $this->buildProxiedAttr();
+        $attr['loading'] = 'lazy';
+        $attachment = new \stdClass();
+        $attachment->ID = 57942;
+
+        $result = apply_filters(
+            'wp_get_attachment_image_attributes',
+            $attr,
+            $attachment,
+            'foxiz_g1'
+        );
+
+        $this->assertArrayHasKey('sizes', $result);
+        $this->assertStringStartsWith('auto, ', $result['sizes']);
+    }
+
+    /**
+     * #127 Part 1 — a non-lazy image must NOT get the auto prefix.
+     * Core's own condition requires 'lazy' === $attr['loading'].
+     */
+    public function test_non_lazy_image_does_not_get_auto_prefix(): void
+    {
+        $attr = $this->buildProxiedAttr();
+        // No 'loading' attribute (eager is the default).
+        $attachment = new \stdClass();
+        $attachment->ID = 57942;
+
+        $result = apply_filters(
+            'wp_get_attachment_image_attributes',
+            $attr,
+            $attachment,
+            'foxiz_g1'
+        );
+
+        $this->assertArrayHasKey('sizes', $result);
+        $this->assertFalse(
+            str_starts_with($result['sizes'], 'auto'),
+            'sizes must not start with auto for a non-lazy image'
+        );
+    }
+
+    /**
+     * #127 Part 2 — when $content_width is set and smaller than the
+     * image width, the sizes ceiling must be the content width, not
+     * the image width. Core's wp_calculate_image_sizes() derives the
+     * ceiling from the image width, which over-declares for images in
+     * a constrained column.
+     */
+    public function test_content_width_clamps_sizes_ceiling(): void
+    {
+        $GLOBALS['content_width'] = 300;
+
+        $attr = $this->buildProxiedAttr();
+        // Image width is 330 (from buildProxiedAttr). content_width=300
+        // is smaller → ceiling must clamp to 300.
+        $attachment = new \stdClass();
+        $attachment->ID = 57942;
+
+        $result = apply_filters(
+            'wp_get_attachment_image_attributes',
+            $attr,
+            $attachment,
+            'foxiz_g1'
+        );
+
+        unset($GLOBALS['content_width']);
+
+        $this->assertArrayHasKey('sizes', $result);
+        // Strip a possible 'auto, ' prefix before checking the ceiling.
+        $sizes = $result['sizes'];
+        if (str_starts_with($sizes, 'auto, ')) {
+            $sizes = substr($sizes, 6);
+        }
+        // The ceiling (the number after the comma) must be 300, not 330.
+        $this->assertStringContainsString('(max-width: 300px) 100vw, 300px', $sizes);
+        $this->assertStringNotContainsString('330', $sizes);
+    }
+
+    /**
+     * #127 Part 2 — the oxpulse_image_sizes filter lets an operator
+     * supply a precise sizes string, overriding the computed default.
+     */
+    public function test_oxpulse_image_sizes_filter_overrides_sizes(): void
+    {
+        $custom = '(max-width: 700px) 85vw, 700px';
+        add_filter('oxpulse_image_sizes', static function () use ($custom): string {
+            return $custom;
+        }, 10, 1);
+
+        $attr = $this->buildProxiedAttr();
+        $attachment = new \stdClass();
+        $attachment->ID = 57942;
+
+        $result = apply_filters(
+            'wp_get_attachment_image_attributes',
+            $attr,
+            $attachment,
+            'foxiz_g1'
+        );
+
+        $this->assertSame($custom, $result['sizes']);
+    }
+
+    /**
+     * #127 falsification gate — the sizes string (after stripping any
+     * 'auto, ' prefix) must remain a valid media-query list in all
+     * cases: lazy, non-lazy, and content_width-clamped.
+     *
+     * @dataProvider valid_sizes_provider
+     */
+    public function test_sizes_remains_valid_media_query_list(array $attrOverrides, ?int $contentWidth): void
+    {
+        if ($contentWidth !== null) {
+            $GLOBALS['content_width'] = $contentWidth;
+        }
+
+        $attr = array_merge($this->buildProxiedAttr(), $attrOverrides);
+        $attachment = new \stdClass();
+        $attachment->ID = 57942;
+
+        $result = apply_filters(
+            'wp_get_attachment_image_attributes',
+            $attr,
+            $attachment,
+            'foxiz_g1'
+        );
+
+        unset($GLOBALS['content_width']);
+
+        $this->assertArrayHasKey('sizes', $result);
+        $sizes = $result['sizes'];
+        if (str_starts_with($sizes, 'auto, ')) {
+            $sizes = substr($sizes, 6);
+        }
+        $this->assertMatchesRegularExpression(
+            '/^\(max-width: \d+px\) 100vw, \d+px$/',
+            $sizes,
+            "sizes is not a valid media-query list: $sizes"
+        );
+    }
+
+    public static function valid_sizes_provider(): array
+    {
+        return [
+            'lazy'         => [['loading' => 'lazy'], null],
+            'non-lazy'     => [[], null],
+            'clamped'      => [['loading' => 'lazy'], 300],
+        ];
+    }
 }
