@@ -373,7 +373,11 @@ final class UrlRewriter
                 quality: 30,
                 context: 'lqip',
                 dpr: 0,
-                blur: $this->delivery->lqipBlur > 0 ? $this->delivery->lqipBlur : 1,
+                // 0 = omit the blur option entirely (TransformProfile skips
+                // blur <= 0): some imgproxy builds reject `blur` at the URL
+                // parser and the 20px placeholder is soft via browser
+                // upscaling regardless.
+                blur: max(0.0, $this->delivery->lqipBlur),
                 watermark: null, // Never watermark the placeholder
                 formatQuality: [],
                 sourceMode: $sourceMode,
