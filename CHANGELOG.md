@@ -59,6 +59,14 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.8](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.7...v0.1.8) (2026-08-18)
+
+
+### Fixed
+
+* declare Pro in imgproxy-URL integration tests; gate on the integration suite ([#140](https://github.com/anatolykoptev/oxpulse-imager/issues/140)) ([a2aa3db](https://github.com/anatolykoptev/oxpulse-imager/commit/a2aa3db2a439348030d2ec6d50c1a30cc7a3f50f))
+* escape raw-HTML srcset/avatar URLs; normalize source path before prefix compare ([#142](https://github.com/anatolykoptev/oxpulse-imager/issues/142)) ([acd8fa6](https://github.com/anatolykoptev/oxpulse-imager/commit/acd8fa6d619776b0355312d500ba0cb78ee428e0))
+
 ## [0.1.7](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.6...v0.1.7) (2026-08-18)
 
 
