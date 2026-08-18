@@ -299,7 +299,8 @@ final class BufferRewriter
             }
 
             // #43 Phase 3 — stamp data-oxpulse="1" so a later pass skips.
-            $rewritten = $prefix . $result->url . $suffix;
+            // #73: escape the rewritten URL for the attribute context.
+            $rewritten = $prefix . htmlspecialchars($result->url, ENT_QUOTES, 'UTF-8') . $suffix;
             $rewritten = $this->addOxpulseMarker($rewritten);
 
             // Phase 1b — <picture> wrapping for theme-hardcoded <img> tags

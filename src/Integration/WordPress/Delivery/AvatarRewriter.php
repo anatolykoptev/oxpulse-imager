@@ -61,7 +61,8 @@ final class AvatarRewriter
         // Replace the src attribute with the rewritten URL. We use a
         // targeted replacement to preserve all other attributes (class,
         // alt, width, height, loading, srcset, etc.).
-        $rewrittenSrc = $result->url;
+        // #73: escape the URL before it goes back into the src attribute.
+        $rewrittenSrc = htmlspecialchars($result->url, ENT_QUOTES, 'UTF-8');
         $newAvatar = preg_replace(
             '/\bsrc=["\']' . preg_quote($originalSrc, '/') . '["\']/',
             'src="' . $rewrittenSrc . '"',
