@@ -36,6 +36,14 @@ class StatusRestControllerTest extends TestCase
         $this->repository = new OptionSettingsRepository();
     }
 
+    protected function tearDown(): void
+    {
+        // Drop test-added filters (incl. oxpulse_is_pro) so Pro state
+        // never leaks into later test classes.
+        unset($GLOBALS['__oxpulse_filters']);
+        parent::tearDown();
+    }
+
     private function fireHook(string $hook): void
     {
         foreach ($GLOBALS['__oxpulse_actions'] ?? [] as $action) {
@@ -104,6 +112,11 @@ class StatusRestControllerTest extends TestCase
     public function test_handle_info_returns_rewritten_url_when_authorized(): void
     {
         $this->setupFullConfig();
+        // Imgproxy delivery is Pro-gated (#110): without this the
+        // oxpulse_delivery_backends gate (registered by the test
+        // bootstrap) strips ImgproxyBackendProvider and the registry
+        // falls through to LocalBackend's ?k= URL — the #122 failure.
+        add_filter('oxpulse_is_pro', '__return_true');
         $controller = new StatusRestController($this->repository);
 
         $request = new WP_REST_Request([

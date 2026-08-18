@@ -88,6 +88,9 @@ class CliCommandsTest extends TestCase
 
     public function test_info_command_shows_imgproxy_url_when_authorized(): void
     {
+        // Imgproxy delivery is Pro-gated (#110) — declare Pro so the
+        // backends gate keeps ImgproxyBackendProvider (see #122).
+        add_filter('oxpulse_is_pro', '__return_true');
         $this->setupFullConfig();
         $command = new InfoCommand();
 
