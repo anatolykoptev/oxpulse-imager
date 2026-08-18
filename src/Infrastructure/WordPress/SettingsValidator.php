@@ -149,7 +149,10 @@ final class SettingsValidator
         // LQIP placeholders.
         $values['lqip_enabled'] = !empty($input['lqip_enabled']);
         $lqipBlur = (float) ($input['lqip_blur'] ?? 1);
-        if ($lqipBlur < self::MIN_LQIP_BLUR || $lqipBlur > self::MAX_LQIP_BLUR) {
+        // 0 is a valid "no blur" value (omits the imgproxy option — some
+        // builds reject `blur` at the parser); the MIN..MAX range applies
+        // to non-zero sigmas only.
+        if ($lqipBlur !== 0.0 && ($lqipBlur < self::MIN_LQIP_BLUR || $lqipBlur > self::MAX_LQIP_BLUR)) {
             $errors['lqip_blur'] = sprintf(
                 /* translators: 1: minimum blur, 2: maximum blur. */
                 __('LQIP blur must be between %1$s and %2$s.', 'oxpulse-imager'),
@@ -157,7 +160,9 @@ final class SettingsValidator
                 self::MAX_LQIP_BLUR
             );
         }
-        $values['lqip_blur'] = (float) max(self::MIN_LQIP_BLUR, min(self::MAX_LQIP_BLUR, $lqipBlur));
+        $values['lqip_blur'] = $lqipBlur === 0.0
+            ? 0.0
+            : (float) max(self::MIN_LQIP_BLUR, min(self::MAX_LQIP_BLUR, $lqipBlur));
 
         // DPR variants. Same dual-shape contract as allowed_sources:
         // the form sends a comma-separated STRING ("1,2,3"); the SPA
