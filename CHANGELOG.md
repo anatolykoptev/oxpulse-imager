@@ -59,6 +59,13 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.7](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.6...v0.1.7) (2026-08-18)
+
+
+### Fixed
+
+* suspend delivery on media REST routes; add repair-content CLI ([#138](https://github.com/anatolykoptev/oxpulse-imager/issues/138)) ([c6ae00e](https://github.com/anatolykoptev/oxpulse-imager/commit/c6ae00e5ced25898510aba929ce57886bb4d3979))
+
 ## [0.1.6](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.5...v0.1.6) (2026-08-18)
 
 
