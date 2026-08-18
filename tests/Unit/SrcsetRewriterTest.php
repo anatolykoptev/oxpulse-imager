@@ -123,4 +123,95 @@ class SrcsetRewriterTest extends TestCase
         $this->assertSame(['descriptor' => 'w', 'value' => 300], $result[0]);
         $this->assertStringStartsWith('https://imgproxy.example.com/', $result[1]['url']);
     }
+
+    /**
+     * Candidates for a known slot: core passes the rendered size as
+     * $sizeArray. With the default density cap of 2.0, a 330px slot
+     * keeps widths <= 660 plus the single smallest candidate above
+     * the bound (upscale safety); the rest are dead weight no
+     * viewport/DPR combination can select.
+     */
+    private function gridSources(): array
+    {
+        $sources = [];
+        foreach ([420, 615, 768, 860, 900, 1536, 1920] as $w) {
+            $sources[$w] = [
+                'url' => "https://example.com/wp-content/uploads/photo-{$w}.jpg",
+                'descriptor' => 'w',
+                'value' => $w,
+            ];
+        }
+        return $sources;
+    }
+
+    protected function tearDown(): void
+    {
+        $GLOBALS['__oxpulse_filters'] = [];
+        parent::tearDown();
+    }
+
+    public function test_trims_candidates_above_default_density_cap(): void
+    {
+        $rewriter = new SrcsetRewriter($this->createRewriter());
+
+        $result = $rewriter->rewrite($this->gridSources(), [330, 220], 'src', [], 0);
+
+        $this->assertSame([420, 615, 768], array_keys($result));
+    }
+
+    public function test_keeps_smallest_candidate_above_bound_for_upscale_safety(): void
+    {
+        $rewriter = new SrcsetRewriter($this->createRewriter());
+        $sources = $this->gridSources();
+        unset($sources[768]); // gap: next above 660 is 860
+
+        $result = $rewriter->rewrite($sources, [330, 220], 'src', [], 0);
+
+        $this->assertSame([420, 615, 860], array_keys($result));
+    }
+
+    public function test_no_trimming_when_size_array_unknown(): void
+    {
+        $rewriter = new SrcsetRewriter($this->createRewriter());
+
+        $zero = $rewriter->rewrite($this->gridSources(), [0, 0], 'src', [], 0);
+        $empty = $rewriter->rewrite($this->gridSources(), [], 'src', [], 0);
+
+        $this->assertCount(7, $zero);
+        $this->assertCount(7, $empty);
+    }
+
+    public function test_density_cap_filter_raises_the_bound(): void
+    {
+        add_filter('oxpulse_imager_srcset_density_cap', static fn() => 3.0);
+        $rewriter = new SrcsetRewriter($this->createRewriter());
+
+        $result = $rewriter->rewrite($this->gridSources(), [330, 220], 'src', [], 0);
+
+        // bound 990: 420..900 kept, 1536 is the upscale-safety candidate.
+        $this->assertSame([420, 615, 768, 860, 900, 1536], array_keys($result));
+    }
+
+    public function test_density_cap_zero_disables_trimming(): void
+    {
+        add_filter('oxpulse_imager_srcset_density_cap', static fn() => 0.0);
+        $rewriter = new SrcsetRewriter($this->createRewriter());
+
+        $result = $rewriter->rewrite($this->gridSources(), [330, 220], 'src', [], 0);
+
+        $this->assertCount(7, $result);
+    }
+
+    public function test_x_descriptor_sources_are_never_trimmed(): void
+    {
+        $rewriter = new SrcsetRewriter($this->createRewriter());
+        $sources = [
+            1 => ['url' => 'https://example.com/wp-content/uploads/photo.jpg', 'descriptor' => 'x', 'value' => 1],
+            2 => ['url' => 'https://example.com/wp-content/uploads/photo-2x.jpg', 'descriptor' => 'x', 'value' => 2],
+        ];
+
+        $result = $rewriter->rewrite($sources, [330, 220], 'src', [], 0);
+
+        $this->assertCount(2, $result);
+    }
 }
