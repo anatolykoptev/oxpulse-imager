@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Infrastructure\WordPress;
 
+use OXPulse\Imager\Application\Delivery\DeliverySuspension;
 use OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder;
 use OXPulse\Imager\Application\Delivery\PictureElementWrapper;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
@@ -251,7 +252,41 @@ final class ServiceRegistrar
             }
 
             self::registerDeliveryAdapters();
+            self::registerRestSuspension();
         });
+    }
+
+    /**
+     * Suspend delivery rewriting while media REST routes are served.
+     *
+     * is_admin() is FALSE on REST requests, so without this the block
+     * editor receives PROXIED source_urls from /wp/v2/media and bakes
+     * them into post_content — signed URLs that break on deactivation
+     * or key rotation (#135). Scoped to media routes only (the
+     * corruption vector); posts routes keep rewriting so headless
+     * consumers still get optimized URLs. Counter-based suspension
+     * balances nested internal dispatches (_embed).
+     */
+    private static function registerRestSuspension(): void
+    {
+        $isMediaRoute = static function ($request): bool {
+            return $request instanceof \WP_REST_Request
+                && str_starts_with($request->get_route(), '/wp/v2/media');
+        };
+
+        add_filter('rest_request_before_callbacks', static function ($response, $handler, $request) use ($isMediaRoute) {
+            if ($isMediaRoute($request)) {
+                DeliverySuspension::suspend();
+            }
+            return $response;
+        }, 10, 3);
+
+        add_filter('rest_request_after_callbacks', static function ($response, $handler, $request) use ($isMediaRoute) {
+            if ($isMediaRoute($request)) {
+                DeliverySuspension::resume();
+            }
+            return $response;
+        }, 10, 3);
     }
 
     /**

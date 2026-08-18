@@ -27,5 +27,6 @@ final class CliServiceProvider
         \WP_CLI::add_command('oxpulse info', [new InfoCommand(), 'info']);
         \WP_CLI::add_command('oxpulse warm', [new WarmCommand(), 'warm']);
         \WP_CLI::add_command('oxpulse flush', [new FlushCommand(), 'flush']);
+        \WP_CLI::add_command('oxpulse repair-content', [new RepairContentCommand(), 'repair']);
     }
 }

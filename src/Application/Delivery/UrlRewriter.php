@@ -135,6 +135,10 @@ final class UrlRewriter
      */
     public function rewriteSocialImage(string $sourceUrl, int $width, int $height, string $context = 'og_image'): RewriteResult
     {
+        if (DeliverySuspension::isSuspended()) {
+            return RewriteResult::preserved($sourceUrl, 'delivery_suspended');
+        }
+
         if ($this->isAlreadyRewritten($sourceUrl)) {
             $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'already_rewritten'));
             return RewriteResult::preserved($sourceUrl, 'already_rewritten');
@@ -211,6 +215,11 @@ final class UrlRewriter
      */
     private function rewriteWithFormat(string $sourceUrl, int $width, int $height, string $format, string $context): RewriteResult
     {
+        if (DeliverySuspension::isSuspended()) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'delivery_suspended'));
+            return RewriteResult::preserved($sourceUrl, 'delivery_suspended');
+        }
+
         // #43 Phase 3 — idempotency guard (no double-rewrite / recursion).
         // If the source URL is ALREADY one of OUR rewritten forms — a
         // LocalBackend cache URL (wp-content/cache/oxpulse/) or the
@@ -319,6 +328,10 @@ final class UrlRewriter
      */
     public function rewriteLqip(string $sourceUrl): RewriteResult
     {
+        if (DeliverySuspension::isSuspended()) {
+            return RewriteResult::preserved($sourceUrl, 'delivery_suspended');
+        }
+
         if (!$this->delivery->lqipEnabled) {
             return RewriteResult::preserved($sourceUrl, 'lqip_disabled');
         }
@@ -387,6 +400,10 @@ final class UrlRewriter
      */
     public function rewriteDpr(string $sourceUrl, int $width, float $dpr, string $context = 'srcset'): RewriteResult
     {
+        if (DeliverySuspension::isSuspended()) {
+            return RewriteResult::preserved($sourceUrl, 'delivery_suspended');
+        }
+
         if ($this->isAlreadyRewritten($sourceUrl)) {
             return RewriteResult::preserved($sourceUrl, 'already_rewritten');
         }
