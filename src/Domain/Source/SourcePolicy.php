@@ -186,7 +186,7 @@ final class SourcePolicy
         if ($parsed === false) {
             return false;
         }
-        $endpointPath = $parsed['path'] ?? '';
+        $endpointPath = NormalizedUrl::normalizePath($parsed['path'] ?? '');
         if ($endpointPath === '' || $endpointPath === '/' || !str_starts_with($endpointPath, '/')) {
             // Empty or '/' would match everything — not a meaningful
             // prefix for a relative endpoint. Allowlist still gates.

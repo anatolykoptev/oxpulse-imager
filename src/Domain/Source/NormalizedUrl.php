@@ -54,6 +54,15 @@ final readonly class NormalizedUrl
             throw new \InvalidArgumentException('URL contains control characters.');
         }
 
+        // Reject a percent-encoded slash or backslash (#79): a router
+        // may collapse %2f / \ to a path separator while a byte-level
+        // str_starts_with prefix compare would not, letting a crafted
+        // path evade the proxy-loop / allowlist segment check. Reject
+        // rather than guess at the decoded form.
+        if (preg_match('~%2f~i', $url) || str_contains($url, '\\')) {
+            throw new \InvalidArgumentException('URL path contains an encoded or literal path separator.');
+        }
+
         $parsed = wp_parse_url($url);
 
         if ($parsed === false) {
@@ -87,10 +96,54 @@ final readonly class NormalizedUrl
         if ($path === '') {
             $path = '/';
         }
+        $path = self::normalizePath($path);
 
         $query = $parsed['query'] ?? '';
 
         return new self($scheme, $host, $port, $path, $query);
+    }
+
+    /**
+     * Canonicalize a URL path (#79).
+     *
+     * Collapses repeated slashes, resolves `.` and `..` segments
+     * (over-popping stops at root, never producing a relative or
+     * negative path), and always returns an absolute path. Applied
+     * once here so every consumer — the allowlist prefix compare and
+     * the proxy-loop guard alike — sees the same canonical path and a
+     * `//`, `/./`, or `/../` form cannot evade a str_starts_with +
+     * segment-boundary check.
+     */
+    public static function normalizePath(string $path): string
+    {
+        if ($path === '' || $path === '/') {
+            return '/';
+        }
+
+        $isAbsolute = $path[0] === '/';
+        $trailingSlash = strlen($path) > 1 && substr($path, -1) === '/';
+
+        $out = [];
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+            if ($segment === '..') {
+                array_pop($out);
+                continue;
+            }
+            $out[] = $segment;
+        }
+
+        $normalized = implode('/', $out);
+        if ($isAbsolute) {
+            $normalized = '/' . $normalized;
+        }
+        if ($trailingSlash && substr($normalized, -1) !== '/') {
+            $normalized .= '/';
+        }
+
+        return $normalized === '' ? '/' : $normalized;
     }
 
     /**
