@@ -59,6 +59,13 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.10](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.9...v0.1.10) (2026-08-18)
+
+
+### Fixed
+
+* lqip_blur=0 omits the blur option for imgproxy builds that reject it ([#145](https://github.com/anatolykoptev/oxpulse-imager/issues/145)) ([095d832](https://github.com/anatolykoptev/oxpulse-imager/commit/095d832d54d63a163d77f66be14ec7f39f435ac1))
+
 ## [0.1.9](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.8...v0.1.9) (2026-08-18)
 
 
