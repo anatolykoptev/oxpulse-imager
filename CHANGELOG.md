@@ -59,6 +59,13 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.9](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.8...v0.1.9) (2026-08-18)
+
+
+### Added
+
+* full-page coverage (CSS backgrounds, image preloads) + visible LQIP + admin toggle ([#143](https://github.com/anatolykoptev/oxpulse-imager/issues/143)) ([6e40b0b](https://github.com/anatolykoptev/oxpulse-imager/commit/6e40b0b7f250b2d7bf12f47cc2bc1ecaeca64267))
+
 ## [0.1.8](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.7...v0.1.8) (2026-08-18)
 
 
