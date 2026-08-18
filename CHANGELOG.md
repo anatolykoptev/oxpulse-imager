@@ -59,6 +59,28 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.6](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.5...v0.1.6) (2026-08-18)
+
+
+### Added
+
+* free-first onboarding wizard (imgproxy is optional Pro, not step 1) ([#120](https://github.com/anatolykoptev/oxpulse-imager/issues/120)) ([8527f30](https://github.com/anatolykoptev/oxpulse-imager/commit/8527f30d5a1e93d57ba9d2942b7ab28c0985485b))
+* gate the 5 Pro features behind the license seam (open-core) ([#110](https://github.com/anatolykoptev/oxpulse-imager/issues/110)) ([fe68a87](https://github.com/anatolykoptev/oxpulse-imager/commit/fe68a876233f8face617bad75f9a67cfded3c05b))
+* license-aware admin UI + Pro-gating UX ([#113](https://github.com/anatolykoptev/oxpulse-imager/issues/113)) ([f7b1a32](https://github.com/anatolykoptev/oxpulse-imager/commit/f7b1a32a5883d1f888a1d939d1f601c73c3d1ca5))
+* prefer social-safe JPEG for RankMath og:image (WebP fallback) ([#117](https://github.com/anatolykoptev/oxpulse-imager/issues/117)) ([c7bcf40](https://github.com/anatolykoptev/oxpulse-imager/commit/c7bcf402c2965ed8297092c93ed99305ae27ce78))
+* trim srcset candidates to a density cap of the rendered slot ([#134](https://github.com/anatolykoptev/oxpulse-imager/issues/134)) ([0357576](https://github.com/anatolykoptev/oxpulse-imager/commit/0357576f1f4cdbb4ae4ba363d4e6a6f0f6d6aad7))
+* wire Freemius WordPress SDK as license provider (open-core, core wiring only) ([#108](https://github.com/anatolykoptev/oxpulse-imager/issues/108)) ([3422e2d](https://github.com/anatolykoptev/oxpulse-imager/commit/3422e2df9c6bbffdc006fe484d9350c4a817ac9c))
+* zero-403 guarantee for og:image (conservative cached-capability gate) ([#119](https://github.com/anatolykoptev/oxpulse-imager/issues/119)) ([be7294f](https://github.com/anatolykoptev/oxpulse-imager/commit/be7294fa732b332b0995e559fba8fa77600fb093))
+
+
+### Fixed
+
+* fall back to largest tier quality for widths above the largest tier ([#125](https://github.com/anatolykoptev/oxpulse-imager/issues/125)) ([0528d70](https://github.com/anatolykoptev/oxpulse-imager/commit/0528d70d41ff5c3f5d869a407fd9effb3ac38ac0))
+* onboarding save 500 — validator TypeError on SPA array body + partial-merge violation ([#123](https://github.com/anatolykoptev/oxpulse-imager/issues/123)) ([511b82b](https://github.com/anatolykoptev/oxpulse-imager/commit/511b82b508e66333545e381ed06c43b26451d1b8))
+* register admin REST controllers unconditionally (rest_no_route 404 on onboarding save) ([#121](https://github.com/anatolykoptev/oxpulse-imager/issues/121)) ([1784e93](https://github.com/anatolykoptev/oxpulse-imager/commit/1784e932e27069817dfbe1adade8a621c0ce36a3))
+* relax RankMathCompatibility::restoreDirectUrl type hint to mixed ([#115](https://github.com/anatolykoptev/oxpulse-imager/issues/115)) ([4a5cb9e](https://github.com/anatolykoptev/oxpulse-imager/commit/4a5cb9eca2fa888e0c8ccfee92868fdebd203321))
+* restore srcset+sizes for wp_get_attachment_image (HiDPI regression) ([#124](https://github.com/anatolykoptev/oxpulse-imager/issues/124)) ([b87e728](https://github.com/anatolykoptev/oxpulse-imager/commit/b87e72866f6218bc319c468c20ce39b4f46722c8))
+
 ## [0.1.5](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.4...v0.1.5) (2026-07-23)
 
 
