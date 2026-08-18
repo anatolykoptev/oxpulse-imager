@@ -61,6 +61,28 @@ class DeliveryEscapingTest extends TestCase
         $this->assertStringStartsWith('https://imgproxy.example.com/', html_entity_decode($out, ENT_QUOTES));
     }
 
+    public function test_preserved_srcset_candidate_is_not_double_escaped(): void
+    {
+        // A candidate whose source is not in the allowlist is preserved
+        // verbatim — it came from the HTML already escaped, so it must
+        // round-trip byte-for-byte, not get re-escaped. Regression for
+        // the Devin double-escape finding.
+        $r = new ContentImgTagRewriter(
+            $this->rewriter(),
+            new DeliveryConfig(
+                enabled: true,
+                endpoint: 'https://imgproxy.example.com',
+                allowedSources: ['https://example.com/wp-content/uploads/'],
+            )
+        );
+        $method = new \ReflectionMethod($r, 'rewriteSrcsetCandidate');
+        $candidate = 'https://cdn.other.com/a.jpg?x=1&amp;y=2 800w';
+        $out = $method->invoke($r, $candidate);
+
+        $this->assertSame($candidate, $out);
+        $this->assertStringNotContainsString('&amp;amp;', $out);
+    }
+
     public function test_avatar_src_is_escaped(): void
     {
         $r = new AvatarRewriter($this->rewriter());

@@ -54,15 +54,6 @@ final readonly class NormalizedUrl
             throw new \InvalidArgumentException('URL contains control characters.');
         }
 
-        // Reject a percent-encoded slash or backslash (#79): a router
-        // may collapse %2f / \ to a path separator while a byte-level
-        // str_starts_with prefix compare would not, letting a crafted
-        // path evade the proxy-loop / allowlist segment check. Reject
-        // rather than guess at the decoded form.
-        if (preg_match('~%2f~i', $url) || str_contains($url, '\\')) {
-            throw new \InvalidArgumentException('URL path contains an encoded or literal path separator.');
-        }
-
         $parsed = wp_parse_url($url);
 
         if ($parsed === false) {
@@ -96,6 +87,18 @@ final readonly class NormalizedUrl
         if ($path === '') {
             $path = '/';
         }
+
+        // Reject a percent-encoded slash or backslash in the PATH (#79):
+        // a router may collapse %2f / \ to a separator while a byte-level
+        // str_starts_with prefix compare would not, letting a crafted
+        // path evade the proxy-loop / allowlist segment check. Scoped to
+        // the path — a %2f inside the query string (e.g. a CDN
+        // ?url=https%3A%2F%2F... param) is legitimate, never enters the
+        // prefix compare, and must not reject the whole URL.
+        if (preg_match('~%2f~i', $path) || str_contains($path, '\\')) {
+            throw new \InvalidArgumentException('URL path contains an encoded or literal path separator.');
+        }
+
         $path = self::normalizePath($path);
 
         $query = $parsed['query'] ?? '';

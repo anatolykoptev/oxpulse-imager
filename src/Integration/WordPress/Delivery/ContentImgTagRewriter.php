@@ -251,12 +251,17 @@ final class ContentImgTagRewriter
 
         $result = $this->rewriter->rewrite($url, $width, 0, 'srcset');
 
-        // #73: escape the assembled candidate once before it goes back
-        // into the img's srcset attribute — same hygiene as
-        // PictureElementWrapper::buildPerFormatSrcset (#68). The
-        // descriptor is a trusted " 800w"/" 2x" tail, but the URL is
-        // rewriter output; escaping the whole candidate is uniform and
-        // satisfies plugin-check EscapeOutput.
+        // #73: escape the assembled candidate before it goes back into
+        // the img's srcset attribute — same hygiene as
+        // PictureElementWrapper::buildPerFormatSrcset (#68). Only
+        // escape GENERATOR output: a preserved (non-rewritten) candidate
+        // is the URL captured straight from the HTML attribute, already
+        // HTML-escaped — re-escaping would double-encode '&amp;' and
+        // break the URL. Return it untouched instead.
+        if (!$result->rewritten) {
+            return $candidate;
+        }
+
         return htmlspecialchars($result->url . $descriptor, ENT_QUOTES, 'UTF-8');
     }
 

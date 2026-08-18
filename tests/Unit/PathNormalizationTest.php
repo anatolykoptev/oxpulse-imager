@@ -94,6 +94,17 @@ class PathNormalizationTest extends TestCase
         NormalizedUrl::parse('https://example.com/imgproxy%2f..%2fx.jpg');
     }
 
+    public function test_encoded_slash_in_query_is_accepted(): void
+    {
+        // A %2f in the query string (e.g. a CDN ?url= param) is
+        // legitimate and never enters the prefix compare — it must not
+        // reject the whole URL. Regression for the Devin over-broad
+        // rejection finding.
+        $u = NormalizedUrl::parse('https://example.com/wp-content/uploads/a.jpg?u=https%3A%2F%2Fcdn.example.com%2Fb.jpg');
+        $this->assertSame('/wp-content/uploads/a.jpg', $u->path);
+        $this->assertStringContainsString('%2F', $u->query);
+    }
+
     public function test_rejects_backslash(): void
     {
         $this->expectException(\InvalidArgumentException::class);
