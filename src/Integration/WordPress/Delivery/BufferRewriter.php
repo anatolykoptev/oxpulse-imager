@@ -177,7 +177,12 @@ final class BufferRewriter
         if ($html === '' || strlen($html) > self::MAX_BUFFER) {
             return $html;
         }
-        if (!str_contains($html, '<img')) {
+        if (
+            !str_contains($html, '<img')
+            && !str_contains($html, 'background')
+            && !str_contains($html, 'rel="preload"')
+            && !str_contains($html, "rel='preload'")
+        ) {
             return $html;
         }
 
@@ -207,7 +212,9 @@ final class BufferRewriter
         // #43 Phase 3 — fail-safe: never blank the page. Any Throwable
         // from the regex/rewrite path returns the original buffer.
         try {
-            return $this->rewriteImgTags($html);
+            $html = $this->rewriteImgTags($html);
+            $html = $this->rewriteStyleBackgrounds($html);
+            return $this->rewriteImagePreloads($html);
         } catch (\Throwable $e) {
             return $html;
         }
@@ -361,6 +368,82 @@ final class BufferRewriter
      *
      * @return array<int, array{0:int, 1:int}>
      */
+    /**
+     * #136 — rewrite CSS background-image URLs inside inline style
+     * ATTRIBUTES (builder/theme markup the attachment API never sees).
+     *
+     * Scope is deliberately narrow: style="..." attributes only, one
+     * url(...) token at a time, image extensions under /wp-content/.
+     * A <style> block needs a CSS parser, not a regex — untouched.
+     * Fail-safe: a preserved rewrite leaves the token byte-identical.
+     */
+    private function rewriteStyleBackgrounds(string $html): string
+    {
+        if (!str_contains($html, 'background')) {
+            return $html;
+        }
+
+        $attrPattern = '#\bstyle\s*=\s*(["\x27])((?:(?!\1).)*?background(?:(?!\1).)*?)\1#i';
+
+        return (string) preg_replace_callback($attrPattern, function (array $attr): string {
+            $quote = $attr[1];
+            $css = $attr[2];
+
+            $urlPattern = '#url\(\s*(["\x27]?)([^"\x27()\s]+/wp-content/[^"\x27()\s]+\.(?:' . self::SOURCE_EXTENSIONS . '))\1\s*\)#i';
+            $rewrittenCss = (string) preg_replace_callback($urlPattern, function (array $m): string {
+                $result = $this->rewriter->rewrite($m[2], 0, 0, 'buffer_bg');
+                if (!$result->rewritten) {
+                    return $m[0];
+                }
+                // Attribute + CSS-url context: the generated URL is
+                // base64url/imgproxy-options charset, safe for both; escape
+                // for the surrounding HTML attribute anyway (#73 discipline).
+                return 'url(' . htmlspecialchars($result->url, ENT_QUOTES, 'UTF-8') . ')';
+            }, $css);
+
+            return 'style=' . $quote . $rewrittenCss . $quote;
+        }, $html);
+    }
+
+    /**
+     * #136 — rewrite <link rel="preload" as="image" href="..."> so the
+     * preload hint and the rendered <img> point at the SAME (proxied)
+     * URL. A preload left at the origin double-downloads: the browser
+     * fetches the origin bytes for the hint and the proxied bytes for
+     * the tag. Attribute order is not guaranteed — match any <link>
+     * carrying both rel=preload and as=image, then rewrite href.
+     */
+    private function rewriteImagePreloads(string $html): string
+    {
+        if (stripos($html, 'preload') === false) {
+            return $html;
+        }
+
+        return (string) preg_replace_callback('#<link\b[^>]*>#i', function (array $m): string {
+            $tag = $m[0];
+            if (
+                !preg_match('#\brel\s*=\s*["\x27]preload["\x27]#i', $tag)
+                || !preg_match('#\bas\s*=\s*["\x27]image["\x27]#i', $tag)
+            ) {
+                return $tag;
+            }
+            if (!preg_match('#\bhref\s*=\s*(["\x27])([^"\x27]+)\1#i', $tag, $href)) {
+                return $tag;
+            }
+
+            $result = $this->rewriter->rewrite($href[2], 0, 0, 'buffer_preload');
+            if (!$result->rewritten) {
+                return $tag;
+            }
+
+            return str_replace(
+                $href[0],
+                'href=' . $href[1] . htmlspecialchars($result->url, ENT_QUOTES, 'UTF-8') . $href[1],
+                $tag
+            );
+        }, $html);
+    }
+
     private function findPictureSpans(string $html): array
     {
         $spans = [];

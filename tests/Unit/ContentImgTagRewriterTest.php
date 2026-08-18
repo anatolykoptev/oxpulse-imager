@@ -211,6 +211,54 @@ class ContentImgTagRewriterTest extends TestCase
         $this->assertStringContainsString('data-placeholder=', $result);
     }
 
+    public function test_lqip_emits_visible_background_style(): void
+    {
+        // The data attribute alone is INERT — nothing on the frontend
+        // consumes it. The visible mechanism is an inline
+        // background-image style on the img: the blurred placeholder
+        // paints immediately (pure CSS, no JS, lazy-compatible) and the
+        // real pixels cover it on arrival.
+        $delivery = $this->createDeliveryConfig();
+        $delivery = new DeliveryConfig(
+            enabled: $delivery->enabled,
+            endpoint: $delivery->endpoint,
+            allowedSources: $delivery->allowedSources,
+            lqipEnabled: true,
+            lqipBlur: 1,
+        );
+        $rewriter = $this->createRewriter();
+        $lqipBuilder = new \OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder($rewriter);
+        $contentRewriter = new ContentImgTagRewriter($rewriter, $delivery, $lqipBuilder);
+
+        $tag = '<img src="https://example.com/wp-content/uploads/photo.jpg" alt="Test" />';
+        $result = $contentRewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertStringContainsString('background-image:url(', $result);
+        $this->assertStringContainsString('background-size:cover', $result);
+    }
+
+    public function test_lqip_style_merges_with_existing_style_attr(): void
+    {
+        $delivery = $this->createDeliveryConfig();
+        $delivery = new DeliveryConfig(
+            enabled: $delivery->enabled,
+            endpoint: $delivery->endpoint,
+            allowedSources: $delivery->allowedSources,
+            lqipEnabled: true,
+            lqipBlur: 1,
+        );
+        $rewriter = $this->createRewriter();
+        $lqipBuilder = new \OXPulse\Imager\Application\Delivery\LqipPlaceholderBuilder($rewriter);
+        $contentRewriter = new ContentImgTagRewriter($rewriter, $delivery, $lqipBuilder);
+
+        $tag = '<img style="border-radius:8px" src="https://example.com/wp-content/uploads/photo.jpg" />';
+        $result = $contentRewriter->rewrite($tag, 'the_content', 0);
+
+        $this->assertStringContainsString('border-radius:8px', $result);
+        $this->assertStringContainsString('background-image:url(', $result);
+        $this->assertSame(1, substr_count($result, 'style='), 'must not emit a second style attribute');
+    }
+
     public function test_lqip_skipped_when_disabled(): void
     {
         $rewriter = $this->createContentRewriter();

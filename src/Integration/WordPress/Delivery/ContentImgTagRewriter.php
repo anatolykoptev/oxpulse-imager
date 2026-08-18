@@ -294,11 +294,34 @@ final class ContentImgTagRewriter
             return $imgTag;
         }
 
-        // Insert data-placeholder before the closing > or before src.
-        // Safest: insert right after the opening <img.
+        $escaped = htmlspecialchars($placeholder, ENT_QUOTES, 'UTF-8');
+
+        // The data attribute alone is INERT — nothing on the frontend
+        // reads it. The VISIBLE mechanism is an inline background on the
+        // img itself: the tiny blurred placeholder paints immediately
+        // (pure CSS, no JS, lazy-compatible) and the real pixels cover
+        // it when they arrive. background-size:cover keeps the blur
+        // filling the layout box; transparent PNGs are excluded upstream
+        // by the builder's photo-oriented source policy.
+        $lqipCss = 'background-image:url(' . $escaped . ');background-size:cover';
+
+        if (preg_match('/\bstyle\s*=\s*(["\x27])(.*?)\1/', $imgTag, $styleMatch)) {
+            // Merge into the existing style attribute (never a second one).
+            $merged = rtrim($styleMatch[2], '; ') . ';' . $lqipCss;
+            $imgTag = str_replace(
+                $styleMatch[0],
+                'style=' . $styleMatch[1] . $merged . $styleMatch[1],
+                $imgTag
+            );
+            $attr = ' data-placeholder="' . $escaped . '"';
+        } else {
+            $attr = ' style="' . $lqipCss . '" data-placeholder="' . $escaped . '"';
+        }
+
+        // Insert right after the opening <img attributes, before the
+        // closing > — the safest position across attribute orders.
         if (preg_match('/(<img[^>]*?)(\s\/?>)/', $imgTag, $tagMatch, PREG_OFFSET_CAPTURE)) {
             $insertPos = $tagMatch[2][1];
-            $attr = ' data-placeholder="' . htmlspecialchars($placeholder, ENT_QUOTES, 'UTF-8') . '"';
             return substr($imgTag, 0, $insertPos) . $attr . substr($imgTag, $insertPos);
         }
 

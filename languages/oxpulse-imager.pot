@@ -707,6 +707,18 @@ msgstr ""
 msgid "When enabled, content <img> tags are wrapped in <picture><source type=\"image/avif\"><source type=\"image/webp\"><img></picture> for browser-negotiated format delivery."
 msgstr ""
 
+msgid "Full-page coverage"
+msgstr ""
+
+msgid "Rewrite images the content pipeline cannot see: theme-option images (logos), CSS background-image in inline style attributes, and <link rel=preload as=image> hints. Runs as a guarded output buffer on the full HTML response."
+msgstr ""
+
+msgid "Rewrite theme images, CSS backgrounds and preloads"
+msgstr ""
+
+msgid "Fail-safe: any parse doubt leaves the original bytes untouched. Per-page opt-out: paste <!-- no-oxpulse --> into the template."
+msgstr ""
+
 msgid "LQIP placeholders"
 msgstr ""
 
