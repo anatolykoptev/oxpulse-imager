@@ -100,6 +100,7 @@ final class OptionsRestController
             'dpr_enabled'       => $delivery->dprEnabled,
             'dpr_variants'      => $delivery->dprVariants,
             'format_quality'    => $delivery->formatQuality,
+            'buffer_rewriting_enabled' => $delivery->bufferRewritingEnabled,
             'watermark'         => $this->watermarkToArray($delivery->watermark),
             // <picture> element wrapping (Phase 1) — Pro-gated. The GET
             // value is gated by ServiceRegistrar::isPro() so the SPA

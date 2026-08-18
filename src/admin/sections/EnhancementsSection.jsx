@@ -102,6 +102,19 @@ const EnhancementsSection = () => {
       </Card>
 
       <Card
+        title={__('Full-page coverage', 'oxpulse-imager')}
+        description={__('Rewrite images the content pipeline cannot see: theme-option images (logos), CSS background-image in inline style attributes, and <link rel=preload as=image> hints. Runs as a guarded output buffer on the full HTML response.', 'oxpulse-imager')}
+      >
+        <ToggleField
+          name="buffer_rewriting_enabled"
+          label={__('Rewrite theme images, CSS backgrounds and preloads', 'oxpulse-imager')}
+          help={__('Fail-safe: any parse doubt leaves the original bytes untouched. Per-page opt-out: paste <!-- no-oxpulse --> into the template.', 'oxpulse-imager')}
+          checked={options.bufferRewritingEnabled}
+          onChange={(v) => setOption('bufferRewritingEnabled', v)}
+        />
+      </Card>
+
+      <Card
         title={
           <span className="oxp-flex oxp-items-center oxp-gap-1.5">
             {__('LQIP placeholders', 'oxpulse-imager')}
