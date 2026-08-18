@@ -111,6 +111,43 @@ class PathNormalizationTest extends TestCase
         NormalizedUrl::parse('https://example.com/imgproxy\\..\\x.jpg');
     }
 
+    public function test_rejects_encoded_dot_segment(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        NormalizedUrl::parse('https://example.com/x/%2e%2e/imgproxy/a.jpg');
+    }
+
+    public function test_rejects_encoded_backslash(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        NormalizedUrl::parse('https://example.com/x/%5c/y.jpg');
+    }
+
+    public function test_encoded_parent_denied_under_uploads_allowlist(): void
+    {
+        // The SEC finding: /wp-content/uploads/%2e%2e/other.jpg passes a
+        // naive uploads-prefix compare but the origin resolves it ABOVE
+        // uploads. Rejected at parse → malformed_url, never authorized.
+        $config = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://example.com/imgproxy',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+        );
+        $decision = $this->policy->authorize(
+            'https://example.com/wp-content/uploads/%2e%2e/other.jpg',
+            $config
+        );
+        $this->assertFalse($decision->authorized);
+    }
+
+    public function test_trailing_dotdot_keeps_directory_slash(): void
+    {
+        $u = NormalizedUrl::parse('https://example.com/a/b/../');
+        $this->assertSame('/a/', $u->path);
+        $u2 = NormalizedUrl::parse('https://example.com/a/b/..');
+        $this->assertSame('/a/', $u2->path);
+    }
+
     public function test_normal_uploads_url_still_authorizes(): void
     {
         $config = new DeliveryConfig(

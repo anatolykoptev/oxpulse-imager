@@ -88,14 +88,20 @@ final readonly class NormalizedUrl
             $path = '/';
         }
 
-        // Reject a percent-encoded slash or backslash in the PATH (#79):
-        // a router may collapse %2f / \ to a separator while a byte-level
-        // str_starts_with prefix compare would not, letting a crafted
-        // path evade the proxy-loop / allowlist segment check. Scoped to
-        // the path — a %2f inside the query string (e.g. a CDN
-        // ?url=https%3A%2F%2F... param) is legitimate, never enters the
-        // prefix compare, and must not reject the whole URL.
-        if (preg_match('~%2f~i', $path) || str_contains($path, '\\')) {
+        // Reject percent-encoded path-structural characters or a literal
+        // backslash in the PATH (#79). normalizePath() resolves only
+        // LITERAL '.'/'..'/'/' segments; a router additionally decodes
+        // %2e (.), %2f (/), %5c (\) DURING URI normalization, so an
+        // encoded dot-segment like /x/%2e%2e/imgproxy or an encoded slash
+        // survives our lexical normalization, fails the str_starts_with
+        // prefix compare, yet resolves at the origin to the endpoint (a
+        // self-loop) or above the allowlisted subtree (a scope escape).
+        // A legitimate WordPress uploads filename never contains these
+        // encoded forms, so reject rather than guess at the decoded path.
+        // Scoped to the path — an encoded slash in the query string
+        // (e.g. a CDN ?url=https%3A%2F%2F... param) is legitimate, never
+        // enters the prefix compare, and must not reject the whole URL.
+        if (preg_match('~%2[ef]|%5c~i', $path) || str_contains($path, '\\')) {
             throw new \InvalidArgumentException('URL path contains an encoded or literal path separator.');
         }
 
@@ -124,7 +130,13 @@ final readonly class NormalizedUrl
         }
 
         $isAbsolute = $path[0] === '/';
-        $trailingSlash = strlen($path) > 1 && substr($path, -1) === '/';
+        // A path ending in '/', '/.' or '/..' resolves to a DIRECTORY at
+        // the router, so the canonical form keeps a trailing slash —
+        // matching how nginx/Apache normalize, so the two never diverge.
+        $lastSegment = substr($path, (int) strrpos($path, '/') + 1);
+        $trailingSlash = (strlen($path) > 1 && substr($path, -1) === '/')
+            || $lastSegment === '.'
+            || $lastSegment === '..';
 
         $out = [];
         foreach (explode('/', $path) as $segment) {
