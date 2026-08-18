@@ -118,6 +118,14 @@ jobs:
         env:
           WP_TESTS_DIR: ''
 
+      - name: Run integration suite
+        # #126: the integration suite (hook-wiring falsification tests
+        # included) must GATE — a filter that stops being registered
+        # otherwise ships behind a green unit-only gate.
+        run: composer test:integration
+        env:
+          WP_TESTS_DIR: ''
+
       - name: Lint main plugin file
         run: php -l oxpulse-imager.php
 
