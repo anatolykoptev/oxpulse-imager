@@ -36,6 +36,12 @@ final readonly class TransformRequest
      *        the imgproxy-native `@format` suffix. Used for social-safe
      *        og:image URLs so RankMath's wp_check_filetype() accepts the
      *        URL. Default false = current `@format` behaviour everywhere.
+     * @param bool $enlarge When true, TransformProfile appends the enlarge
+     *        argument to the rs: option (`rs:fill:1200:630:1`) so imgproxy
+     *        upscales a source smaller than the requested box instead of
+     *        serving it at its natural size. Used for the social preset:
+     *        og:image declares fixed dimensions and the served file must
+     *        match them. Default false = never enlarge (imgproxy default).
      */
     public function __construct(
         public string $sourceUrl,
@@ -50,7 +56,8 @@ final readonly class TransformRequest
         public ?Watermark $watermark = null,
         public array $formatQuality = [],
         public string $sourceMode = 'http',
-        public bool $extensionFormat = false
+        public bool $extensionFormat = false,
+        public bool $enlarge = false
     ) {
         if ($width < 0 || $width > 10000) {
             throw new \InvalidArgumentException('Width must be between 0 and 10000.');

@@ -189,6 +189,11 @@ final class UrlRewriter
                 formatQuality: $formatQuality,
                 sourceMode: $sourceMode,
                 extensionFormat: true,
+                // og:image declares fixed width/height (1200x630); without
+                // enlarge imgproxy serves an undersized original at its
+                // natural size and the declared dims lie. enlarge is the
+                // rs: 4th argument — inside the allowed `rs` option name.
+                enlarge: true,
             );
 
             $filename = $this->buildContentDispositionFilename($sourceUrl, 'jpeg');
