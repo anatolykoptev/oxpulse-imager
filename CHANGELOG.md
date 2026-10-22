@@ -59,6 +59,13 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.12](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.11...v0.1.12) (2026-10-22)
+
+
+### Fixed
+
+* **rankmath:** enlarge undersized og:image originals to the declared 1200x630 ([#152](https://github.com/anatolykoptev/oxpulse-imager/issues/152)) ([b03711d](https://github.com/anatolykoptev/oxpulse-imager/commit/b03711dd0d9d237ad1e66cd3991ce29a18a87c10))
+
 ## [0.1.11](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.10...v0.1.11) (2026-10-22)
 
 
