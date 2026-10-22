@@ -2,7 +2,7 @@
 Contributors: anatolykoptev
 Tags: images, imgproxy, performance, avif, webp
 Requires at least: 6.7
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 8.3
 Stable tag: 0.1.10
 License: GPLv2 or later
