@@ -43,8 +43,30 @@ final class AttachmentOriginResolver
             return null;
         }
 
-        // $attachedFile is relative to the uploads base (e.g. "2026/07/3-41.webp").
-        return rtrim($uploads['baseurl'], '/') . '/' . ltrim($attachedFile, '/');
+        // Mirror core's wp_get_attachment_url() handling of the stored
+        // value: _wp_attached_file is USUALLY relative to the uploads
+        // base (e.g. "2026/07/3-41.webp"), but can be an absolute path.
+        if (!empty($uploads['basedir']) && str_starts_with($attachedFile, $uploads['basedir'])) {
+            // Absolute path inside the uploads dir → swap basedir for baseurl.
+            $url = str_replace($uploads['basedir'], $uploads['baseurl'], $attachedFile);
+        } elseif (str_contains($attachedFile, 'wp-content/uploads')) {
+            // Absolute path outside basedir but still under
+            // wp-content/uploads → take the part after it (core's
+            // back-compat branch for pre-2.7 uploads).
+            $relative = substr($attachedFile, strpos($attachedFile, 'wp-content/uploads') + 18);
+            $url = rtrim($uploads['baseurl'], '/') . '/' . ltrim($relative, '/');
+        } else {
+            // Relative to the uploads base.
+            $url = rtrim($uploads['baseurl'], '/') . '/' . ltrim($attachedFile, '/');
+        }
+
+        // On an SSL front end, URLs should be HTTPS — core applies
+        // set_url_scheme() to the resolved URL the same way.
+        if (is_ssl() && !is_admin() && 'wp-login.php' !== ($GLOBALS['pagenow'] ?? '')) {
+            $url = set_url_scheme($url);
+        }
+
+        return $url;
     }
 
     /**

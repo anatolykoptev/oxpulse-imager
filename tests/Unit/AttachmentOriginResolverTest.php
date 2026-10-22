@@ -33,7 +33,12 @@ final class AttachmentOriginResolverTest extends TestCase
     protected function tearDown(): void
     {
         parent::tearDown();
-        unset($GLOBALS['__oxpulse_upload_dir'], $GLOBALS['__oxpulse_post_meta']);
+        unset(
+            $GLOBALS['__oxpulse_upload_dir'],
+            $GLOBALS['__oxpulse_post_meta'],
+            $GLOBALS['__oxpulse_is_ssl'],
+            $GLOBALS['__oxpulse_is_admin']
+        );
     }
 
     public function test_resolve_original_url_from_attached_file_metadata(): void
@@ -66,6 +71,70 @@ final class AttachmentOriginResolverTest extends TestCase
         $url = AttachmentOriginResolver::resolveOriginalUrl(42);
 
         $this->assertNull($url);
+    }
+
+    /**
+     * Absolute _wp_attached_file inside the uploads basedir: core's
+     * wp_get_attachment_url replaces basedir with baseurl. The naive
+     * baseurl.concat would produce
+     * .../uploads/var/www/wp-content/uploads/... — a garbage URL.
+     */
+    public function test_resolve_absolute_file_inside_basedir_swaps_basedir_for_baseurl(): void
+    {
+        $GLOBALS['__oxpulse_upload_dir'] = [
+            'baseurl' => 'https://example.com/wp-content/uploads',
+            'basedir' => '/var/www/wp-content/uploads',
+            'error'   => false,
+        ];
+        $GLOBALS['__oxpulse_post_meta'] = [
+            42 => ['_wp_attached_file' => '/var/www/wp-content/uploads/2024/01/photo.jpg'],
+        ];
+
+        $url = AttachmentOriginResolver::resolveOriginalUrl(42);
+
+        $this->assertSame('https://example.com/wp-content/uploads/2024/01/photo.jpg', $url);
+    }
+
+    /**
+     * Absolute _wp_attached_file outside basedir but still under
+     * wp-content/uploads: core keeps the part after 'wp-content/uploads'
+     * (back-compat branch for pre-2.7 uploads).
+     */
+    public function test_resolve_absolute_file_outside_basedir_uses_wp_content_uploads_tail(): void
+    {
+        $GLOBALS['__oxpulse_upload_dir'] = [
+            'baseurl' => 'https://example.com/wp-content/uploads',
+            'basedir' => '/other/dir/wp-content/uploads',
+            'error'   => false,
+        ];
+        $GLOBALS['__oxpulse_post_meta'] = [
+            42 => ['_wp_attached_file' => '/srv/site/htdocs/wp-content/uploads/2024/02/pic.png'],
+        ];
+
+        $url = AttachmentOriginResolver::resolveOriginalUrl(42);
+
+        $this->assertSame('https://example.com/wp-content/uploads/2024/02/pic.png', $url);
+    }
+
+    /**
+     * On an SSL front end, core upgrades the resolved URL to https via
+     * set_url_scheme() — an og:image must never emit http://.
+     */
+    public function test_resolve_upgrades_to_https_on_ssl_front_end(): void
+    {
+        $GLOBALS['__oxpulse_is_ssl'] = true;
+        $GLOBALS['__oxpulse_upload_dir'] = [
+            'baseurl' => 'http://example.com/wp-content/uploads',
+            'basedir' => '/var/www/wp-content/uploads',
+            'error'   => false,
+        ];
+        $GLOBALS['__oxpulse_post_meta'] = [
+            42 => ['_wp_attached_file' => '2024/01/photo.jpg'],
+        ];
+
+        $url = AttachmentOriginResolver::resolveOriginalUrl(42);
+
+        $this->assertSame('https://example.com/wp-content/uploads/2024/01/photo.jpg', $url);
     }
 
     public function test_build_intermediate_url_replaces_basename(): void
