@@ -117,7 +117,13 @@ final class RankMathCompatibility
             // image RankMath adds by attachment ID).
             $direct = AttachmentOriginResolver::resolveOriginalUrl((int) $attachment['id']);
             if (is_string($direct) && $direct !== '') {
-                $directUrl = $direct;
+                // The image_array width/height describe the size
+                // variation RankMath picked (usable_dimensions:
+                // 200-2000px, first of full/large/medium_large) — NOT
+                // necessarily the original file. Emitting the original
+                // URL with those dimensions would lie about the file
+                // the URL points at: resolve the matching variation.
+                $directUrl = $this->matchChosenSize((int) $attachment['id'], $direct, $attachment);
             } else {
                 // ID lookup failed → fall back to decode.
                 $directUrl = $this->decodeImgproxyUrl($url);
@@ -166,6 +172,70 @@ final class RankMathCompatibility
         // or an extensionless URL. This is today's behaviour.
         $attachment['url'] = $directUrl;
         return $attachment;
+    }
+
+    /**
+     * Map the size variation RankMath chose onto the matching file URL.
+     *
+     * The image_array width/height come from the variation RankMath
+     * selected within usable_dimensions (200-2000px — 'full', 'large',
+     * 'medium_large', or the first usable registered size). For an
+     * original wider than 2000px that is typically 'large' (e.g.
+     * 1024x683): emitting the FULL original URL with those dimensions
+     * would make the og:image tags describe a different file than the
+     * URL.
+     *
+     * Resolution order:
+     *  1. chosen dims == the original's own metadata dims → original URL;
+     *  2. chosen dims match a _wp_attachment_metadata['sizes'] entry →
+     *     that intermediate file's URL (intermediates live side-by-side
+     *     with the original under uploads/YYYY/MM/);
+     *  3. no match → original URL, and OVERWRITE width/height with the
+     *     original's metadata dimensions so the tags never lie.
+     *
+     * The returned URL keeps its file extension — the caller's existing
+     * social-safe check still routes webp/avif through rewriteSocialImage.
+     */
+    private function matchChosenSize(int $id, string $originalUrl, array &$attachment): string
+    {
+        $meta = function_exists('wp_get_attachment_metadata')
+            ? wp_get_attachment_metadata($id)
+            : false;
+        if (!is_array($meta)) {
+            return $originalUrl;
+        }
+
+        $chosenW = isset($attachment['width']) ? (int) $attachment['width'] : 0;
+        $chosenH = isset($attachment['height']) ? (int) $attachment['height'] : 0;
+        $origW = (int) ($meta['width'] ?? 0);
+        $origH = (int) ($meta['height'] ?? 0);
+
+        if ($chosenW > 0 && $chosenH > 0) {
+            if ($chosenW === $origW && $chosenH === $origH) {
+                return $originalUrl;
+            }
+            foreach ((array) ($meta['sizes'] ?? []) as $size) {
+                if (!is_array($size) || !isset($size['file'], $size['width'], $size['height'])) {
+                    continue;
+                }
+                if ((int) $size['width'] === $chosenW && (int) $size['height'] === $chosenH) {
+                    $intermediate = AttachmentOriginResolver::buildIntermediateUrl($originalUrl, (string) $size['file']);
+                    if (is_string($intermediate) && $intermediate !== '') {
+                        return $intermediate;
+                    }
+                }
+            }
+        }
+
+        // No size matches → fall back to the original and overwrite the
+        // dimensions with the original's own metadata dims.
+        if ($origW > 0) {
+            $attachment['width'] = $origW;
+        }
+        if ($origH > 0) {
+            $attachment['height'] = $origH;
+        }
+        return $originalUrl;
     }
 
     /**

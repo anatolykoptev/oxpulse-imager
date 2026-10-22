@@ -588,6 +588,34 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return 'https://example.test/' . ltrim($path, '/');
         }
     }
+    if (!function_exists('is_ssl')) {
+        function is_ssl() {
+            // Tests flip $GLOBALS['__oxpulse_is_ssl'] to simulate an
+            // SSL front end (mirrors is_ssl()'s single true/false answer).
+            return !empty($GLOBALS['__oxpulse_is_ssl']);
+        }
+    }
+    if (!function_exists('set_url_scheme')) {
+        function set_url_scheme($url, $scheme = null) {
+            // Faithful subset of core's set_url_scheme: null scheme →
+            // is_ssl() ? 'https' : 'http'; only the leading http(s)
+            // scheme is replaced.
+            if (!$scheme) {
+                $scheme = is_ssl() ? 'https' : 'http';
+            }
+            $url = trim((string) $url);
+            if (substr($url, 0, 2) === '//') {
+                $url = 'http:' . $url;
+            }
+            if (str_starts_with($url, 'http://')) {
+                return $scheme . '://' . substr($url, 7);
+            }
+            if (str_starts_with($url, 'https://')) {
+                return $scheme . '://' . substr($url, 8);
+            }
+            return $url;
+        }
+    }
     if (!function_exists('wp_upload_dir')) {
         function wp_upload_dir() {
             return [
