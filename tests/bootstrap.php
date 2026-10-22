@@ -265,7 +265,10 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('wp_get_attachment_url')) {
         function wp_get_attachment_url($id) {
             $map = $GLOBALS['__oxpulse_attachment_urls'] ?? [];
-            return $map[$id] ?? false;
+            // Mirror core: the URL passes through the wp_get_attachment_url
+            // filter chain so tests can exercise registered adapters (e.g.
+            // AttachmentUrlRewriter) the way production does.
+            return apply_filters('wp_get_attachment_url', $map[$id] ?? '', $id);
         }
     }
     if (!function_exists('get_post_meta')) {

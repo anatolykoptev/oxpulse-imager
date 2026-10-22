@@ -22,12 +22,14 @@ declare(strict_types=1);
 namespace OXPulse\Imager\Tests\Unit;
 
 use OXPulse\Imager\Application\Delivery\DeliveryBackend;
+use OXPulse\Imager\Application\Delivery\DeliverySuspension;
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Integration\WordPress\Compatibility\RankMathCompatibility;
+use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentUrlRewriter;
 use PHPUnit\Framework\TestCase;
 
 class RankMathCompatibilityTest extends TestCase
@@ -40,14 +42,26 @@ class RankMathCompatibilityTest extends TestCase
         $this->compat = new RankMathCompatibility();
         // Reset the attachment URL stub map.
         $GLOBALS['__oxpulse_attachment_urls'] = [];
+        // Reset post meta (_wp_attached_file) + uploads dir stubs.
+        $GLOBALS['__oxpulse_post_meta'] = [];
+        $GLOBALS['__oxpulse_upload_dir'] = [
+            'baseurl'    => 'https://piter.now/wp-content/uploads',
+            'basedir'    => '/tmp/wp-content/uploads',
+            'error'      => false,
+        ];
         // Reset the filter registry so per-test add_filter calls don't leak.
         $GLOBALS['__oxpulse_filters'] = [];
+        // Static suspension depth persists across test classes in one
+        // process — reset so rewrite() is never vacuously preserved.
+        DeliverySuspension::reset();
     }
 
     protected function tearDown(): void
     {
         parent::tearDown();
         unset($GLOBALS['__oxpulse_attachment_urls']);
+        unset($GLOBALS['__oxpulse_post_meta']);
+        unset($GLOBALS['__oxpulse_upload_dir']);
         unset($GLOBALS['__oxpulse_filters']);
     }
 
@@ -73,9 +87,11 @@ class RankMathCompatibilityTest extends TestCase
 
     public function test_restores_direct_url_when_attachment_id_available(): void
     {
-        // Stub: wp_get_attachment_url(42) returns a direct URL.
-        $GLOBALS['__oxpulse_attachment_urls'] = [
-            42 => 'https://example.com/wp-content/uploads/2024/01/photo.jpg',
+        // The direct URL is resolved from _wp_attached_file +
+        // wp_get_upload_dir (AttachmentOriginResolver), bypassing the
+        // wp_get_attachment_url filter chain.
+        $GLOBALS['__oxpulse_post_meta'] = [
+            42 => ['_wp_attached_file' => '2024/01/photo.jpg'],
         ];
 
         // An imgproxy URL (no extension) with attachment ID.
@@ -85,7 +101,7 @@ class RankMathCompatibilityTest extends TestCase
         $result = $this->compat->restoreDirectUrl($attachment);
 
         $this->assertSame(
-            'https://example.com/wp-content/uploads/2024/01/photo.jpg',
+            'https://piter.now/wp-content/uploads/2024/01/photo.jpg',
             $result['url']
         );
     }
@@ -163,8 +179,9 @@ class RankMathCompatibilityTest extends TestCase
 
     public function test_clears_url_when_attachment_id_lookup_fails(): void
     {
-        // Attachment ID present but wp_get_attachment_url returns false.
-        $GLOBALS['__oxpulse_attachment_urls'] = [];
+        // Attachment ID present but no _wp_attached_file metadata —
+        // resolveOriginalUrl returns null.
+        $GLOBALS['__oxpulse_post_meta'] = [];
 
         $imgproxyUrl = 'https://imgproxy.example.com/sig/rs:fit:1200:630/local://XYZnotdecodable';
         $attachment = ['url' => $imgproxyUrl, 'id' => 999];
@@ -173,6 +190,151 @@ class RankMathCompatibilityTest extends TestCase
 
         // ID lookup failed + decode failed → URL cleared.
         $this->assertSame('', $result['url']);
+    }
+
+    // --- og:image with the plugin's wp_get_attachment_url filter ACTIVE ---
+    // Production wiring (ServiceRegistrar::registerDeliveryAdapters):
+    // AttachmentUrlRewriter is hooked on wp_get_attachment_url AND
+    // RankMathCompatibility on the RankMath image_array filters, both
+    // sharing ONE UrlRewriter. RankMath resolves every OG image —
+    // featured image, per-post image, taxonomy/archive/author image and
+    // the titles.open_graph_image_id default fallback — through
+    // wp_get_attachment_image_src()/add_image_by_id(), so the URL in the
+    // image_array arrives already extensionless. The compat layer must
+    // hand RankMath back the direct file URL WITH its extension or
+    // RankMath's wp_check_filetype() drops the image silently.
+
+    /**
+     * Build a REAL UrlRewriter whose backend emits extensionless
+     * imgproxy URLs — the shape production hands to RankMath.
+     */
+    private function rewritingImgproxyRewriter(): UrlRewriter
+    {
+        $backend = new class implements DeliveryBackend {
+            public function available(): bool { return true; }
+            public function generate(TransformRequest $r, ?string $f = null): string
+            {
+                // Extensionless imgproxy URL — the @avif suffix is not an
+                // image extension, mirroring the production URL shape.
+                return 'https://imgproxy.test/sig/rs:fit:0:0/plain/' . $r->sourceUrl . '@avif';
+            }
+            public function socialSafeUrl(TransformRequest $r, ?string $f = null): ?string
+            {
+                return null;
+            }
+        };
+        return new UrlRewriter(
+            new SourcePolicy(),
+            new DeliveryConfig(
+                enabled: true,
+                endpoint: 'https://imgproxy.test',
+                allowedSources: [self::SOCIAL_ALLOWED],
+            ),
+            SigningConfig::fromHex('736563726574', '68656C6C6F'),
+            null,
+            $backend,
+        );
+    }
+
+    /**
+     * Wire the plugin's real AttachmentUrlRewriter onto the
+     * wp_get_attachment_url stub — the production filter that turned
+     * every attachment URL into an extensionless imgproxy URL. Returns
+     * the shared UrlRewriter so the compat layer can be built with the
+     * same instance, mirroring ServiceRegistrar.
+     */
+    private function activateAttachmentUrlFilter(): UrlRewriter
+    {
+        $rewriter = $this->rewritingImgproxyRewriter();
+        add_filter('wp_get_attachment_url', [new AttachmentUrlRewriter($rewriter), 'rewrite'], 10, 2);
+        return $rewriter;
+    }
+
+    public function test_featured_image_url_has_extension_when_attachment_url_filter_active(): void
+    {
+        $rewriter = $this->activateAttachmentUrlFilter();
+        $compat = new RankMathCompatibility($rewriter);
+        $compat->register();
+
+        $GLOBALS['__oxpulse_post_meta'] = [
+            42 => ['_wp_attached_file' => '2026/07/photo.jpg'],
+        ];
+        $GLOBALS['__oxpulse_attachment_urls'] = [
+            42 => 'https://piter.now/wp-content/uploads/2026/07/photo.jpg',
+        ];
+
+        // The image_array RankMath builds for the featured image: the
+        // URL already rewritten to an extensionless imgproxy URL by the
+        // plugin's own filters — produced by the same rewriter for the
+        // exact shape.
+        $imgproxyUrl = $rewriter->rewrite(
+            'https://piter.now/wp-content/uploads/2026/07/photo.jpg',
+            2048,
+            1536,
+            'downsize'
+        )->url;
+
+        $result = apply_filters(
+            'rank_math/opengraph/facebook/image_array',
+            ['url' => $imgproxyUrl, 'id' => 42, 'width' => 2048, 'height' => 1536]
+        );
+
+        // wp_get_attachment_url must have been exercised and rewritten —
+        // proves the plugin filter is ACTIVE, not bypassed by the stub.
+        $this->assertStringStartsWith(
+            'https://imgproxy.test/',
+            wp_get_attachment_url(42),
+            'precondition: the plugin wp_get_attachment_url filter is active'
+        );
+        $this->assertSame(
+            'https://piter.now/wp-content/uploads/2026/07/photo.jpg',
+            $result['url'],
+            'RankMath must receive the direct uploads URL, not the imgproxy URL'
+        );
+        $this->assertStringEndsWith('.jpg', $result['url']);
+        $this->assertStringNotContainsString('imgproxy.test', $result['url']);
+    }
+
+    public function test_default_fallback_image_url_has_extension_when_attachment_url_filter_active(): void
+    {
+        $rewriter = $this->activateAttachmentUrlFilter();
+        $compat = new RankMathCompatibility($rewriter);
+        $compat->register();
+
+        // RankMath's default fallback (titles.open_graph_image_id) is an
+        // attachment ID — add_image_by_id resolves it through the same
+        // filtered wp_get_attachment_image_src path as a featured image.
+        $GLOBALS['__oxpulse_post_meta'] = [
+            77 => ['_wp_attached_file' => '2026/01/fallback.jpeg'],
+        ];
+        $GLOBALS['__oxpulse_attachment_urls'] = [
+            77 => 'https://piter.now/wp-content/uploads/2026/01/fallback.jpeg',
+        ];
+
+        $imgproxyUrl = $rewriter->rewrite(
+            'https://piter.now/wp-content/uploads/2026/01/fallback.jpeg',
+            1200,
+            630,
+            'downsize'
+        )->url;
+
+        $result = apply_filters(
+            'rank_math/opengraph/twitter/image_array',
+            ['url' => $imgproxyUrl, 'id' => 77, 'width' => 1200, 'height' => 630]
+        );
+
+        $this->assertStringStartsWith(
+            'https://imgproxy.test/',
+            wp_get_attachment_url(77),
+            'precondition: the plugin wp_get_attachment_url filter is active'
+        );
+        $this->assertSame(
+            'https://piter.now/wp-content/uploads/2026/01/fallback.jpeg',
+            $result['url'],
+            'RankMath must receive the direct fallback URL, not the imgproxy URL'
+        );
+        $this->assertStringEndsWith('.jpeg', $result['url']);
+        $this->assertStringNotContainsString('imgproxy.test', $result['url']);
     }
 
     public function test_register_adds_rankmath_filters(): void
