@@ -90,6 +90,10 @@ final class SocialJpegCapabilityProbe
             formatQuality: [],
             sourceMode: 'local',
             extensionFormat: true,
+            // Must mirror the production social preset (UrlRewriter::
+            // rewriteSocialImage) — the probe validates the EXACT URL
+            // form og:image emits, including the rs enlarge argument.
+            enlarge: true,
         );
 
         $jpgUrl = (new ImgproxyBackend($this->delivery, $this->signing))->socialSafeUrl($req);

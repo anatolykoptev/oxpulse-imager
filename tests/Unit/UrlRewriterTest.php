@@ -20,6 +20,7 @@ use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
 use PHPUnit\Framework\TestCase;
 
 class UrlRewriterTest extends TestCase
@@ -831,6 +832,60 @@ class UrlRewriterTest extends TestCase
         $this->assertFalse($result->rewritten);
         $this->assertSame('no_signing_config', $result->reason);
         $this->assertSame(self::SOCIAL_SOURCE, $result->url);
+    }
+
+    /**
+     * Issue #151: og:image declares fixed 1200x630. When the original is
+     * SMALLER than the fill box (a 900x600 webp), imgproxy's default is
+     * NO enlarge — it serves the file at its natural size and the
+     * declared og:image:width/height lie (seen live on piter.now: tags
+     * 1200x630, served JPEG 900x600). The social preset must carry the
+     * rs: enlarge argument — rs:fill:1200:630:1, enlarge as the 4th rs
+     * arg INSIDE the allowed `rs` option name (the server's
+     * IMGPROXY_ALLOWED_PROCESSING_OPTIONS allows rs but not el) — so the
+     * served file really is 1200x630.
+     *
+     * Drives the REAL ImgproxyBackend (no caches — gate bypassed as for
+     * the probe path) so the actual generated URL is inspected, not a stub.
+     */
+    public function test_rewrite_social_image_enlarges_undersized_original_to_declared_dims(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/oxpulse-rewriter-social-enlarge-' . uniqid();
+        $subDir = $tmpDir . '/wp-content/uploads/2026/07';
+        mkdir($subDir, 0755, true);
+        $imagePath = $subDir . '/photo.webp';
+        file_put_contents($imagePath, 'fake-webp-900x600');
+
+        try {
+            $delivery = new DeliveryConfig(
+                enabled: true,
+                endpoint: self::ENDPOINT,
+                allowedSources: [self::SOCIAL_ALLOWED],
+                sourceMode: 'local',
+                localBasePath: $tmpDir,
+            );
+            $signing = SigningConfig::fromHex(self::KEY_HEX, self::SALT_HEX);
+            $backend = new ImgproxyBackend($delivery, $signing);
+            $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, null, $backend);
+
+            $source = 'https://piter.now/wp-content/uploads/2026/07/photo.webp';
+            $result = $rewriter->rewriteSocialImage($source, 1200, 630);
+
+            $this->assertTrue($result->rewritten);
+            $this->assertStringContainsString(
+                'rs:fill:1200:630:1',
+                $result->url,
+                'social preset must enlarge an undersized original to the declared 1200x630'
+            );
+            $this->assertStringEndsWith('.jpg', $result->url);
+        } finally {
+            unlink($imagePath);
+            rmdir($subDir);
+            rmdir($tmpDir . '/wp-content/uploads/2026');
+            rmdir($tmpDir . '/wp-content/uploads');
+            rmdir($tmpDir . '/wp-content');
+            rmdir($tmpDir);
+        }
     }
 
     /**

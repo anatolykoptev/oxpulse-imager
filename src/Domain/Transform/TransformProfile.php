@@ -32,10 +32,20 @@ final class TransformProfile
     {
         $parts = [];
 
-        // Resize option.
+        // Resize option. imgproxy rs signature: rs:%type:%w:%h:%enlarge:%extend.
+        // enlarge is emitted as the 4th argument (not the standalone el:
+        // option) because it stays inside the `rs` option name — servers
+        // whose IMGPROXY_ALLOWED_PROCESSING_OPTIONS allowlist covers `rs`
+        // but not `el` accept this form.
         if ($request->width > 0 || $request->height > 0) {
             $resizeType = $request->resize !== '' ? $request->resize : 'fit';
-            $parts[] = sprintf('rs:%s:%d:%d', $resizeType, $request->width, $request->height);
+            $parts[] = sprintf(
+                'rs:%s:%d:%d%s',
+                $resizeType,
+                $request->width,
+                $request->height,
+                $request->enlarge ? ':1' : ''
+            );
         }
 
         // Global quality option. Skipped when per-format quality is set —

@@ -173,6 +173,37 @@ class TransformProfileTest extends TestCase
         );
     }
 
+    public function test_enlarge_appends_rs_enlarge_argument(): void
+    {
+        // enlarge rides INSIDE the rs: option as the 4th argument
+        // (rs:fill:1200:630:1), not as a standalone el: option — servers
+        // whose IMGPROXY_ALLOWED_PROCESSING_OPTIONS allows rs but not el
+        // accept this form.
+        $request = new TransformRequest(
+            sourceUrl: 'https://example.com/img.webp',
+            width: 1200,
+            height: 630,
+            resize: 'fill',
+            enlarge: true,
+        );
+
+        $this->assertSame('rs:fill:1200:630:1', $this->profile->buildOptions($request));
+    }
+
+    public function test_enlarge_default_off_omits_argument(): void
+    {
+        // Regression guard: enlarge=false (default) must NOT add the 4th
+        // rs argument — imgproxy's default is never enlarge.
+        $request = new TransformRequest(
+            sourceUrl: 'https://example.com/img.jpg',
+            width: 1200,
+            height: 630,
+            resize: 'fill',
+        );
+
+        $this->assertSame('rs:fill:1200:630', $this->profile->buildOptions($request));
+    }
+
     public function test_empty_request_produces_empty_options(): void
     {
         $request = new TransformRequest(
