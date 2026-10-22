@@ -59,6 +59,13 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.11](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.10...v0.1.11) (2026-10-22)
+
+
+### Fixed
+
+* **rankmath:** restore og:image — resolve direct URL from _wp_attached_file ([#148](https://github.com/anatolykoptev/oxpulse-imager/issues/148)) ([767df44](https://github.com/anatolykoptev/oxpulse-imager/commit/767df446d2e6a8645991b0c59c6cbb6fc195eae1))
+
 ## [0.1.10](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.9...v0.1.10) (2026-08-18)
 
 
