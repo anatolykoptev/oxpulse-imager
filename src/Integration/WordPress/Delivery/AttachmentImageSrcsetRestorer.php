@@ -111,16 +111,25 @@ final class AttachmentImageSrcsetRestorer
             if (empty($attr['sizes'])) {
                 $sizes = wp_calculate_image_sizes($sizeArray, $originalSrc, $imageMeta, $attachmentId);
                 if ($sizes) {
-                    // #127 Part 2 — core's default sizes derives its ceiling
-                    // from the image width, which over-declares whenever the
-                    // image sits in a column narrower than itself. Use the
-                    // $content_width global (the documented signal for the
-                    // main column width) as the ceiling when it is set and
-                    // smaller than the image width. This is the fallback for
-                    // browsers without sizes=auto support (Firefox, Safari);
-                    // Chromium gets the correct slot from auto.
+                    // #127 Part 2 — OPT-IN clamp of core's default sizes
+                    // ceiling to $content_width (the main column width).
+                    // Default OFF: a full-bleed hero is wider than the
+                    // content column, and clamping it makes Firefox/Safari
+                    // pick a candidate that is too small (blurry hero).
+                    // A site enables it via oxpulse_image_sizes_clamp_enabled
+                    // and can decide per image ($attr, $size, attachment).
+                    //
+                    // Even when enabled, only core's UNMODIFIED default
+                    // string is clamped; a customised sizes (theme or
+                    // wp_calculate_image_sizes filter) is never overridden.
+                    $coreDefault = sprintf('(max-width: %1$dpx) 100vw, %1$dpx', $width);
                     $contentWidth = isset($GLOBALS['content_width']) ? (int) $GLOBALS['content_width'] : 0;
-                    if ($contentWidth > 0 && $contentWidth < $width) {
+                    if (
+                        $sizes === $coreDefault
+                        && $contentWidth > 0
+                        && $contentWidth < $width
+                        && apply_filters('oxpulse_image_sizes_clamp_enabled', false, $attr, $size, $attachmentId)
+                    ) {
                         $sizes = sprintf('(max-width: %1$dpx) 100vw, %1$dpx', $contentWidth);
                     }
 
@@ -128,7 +137,7 @@ final class AttachmentImageSrcsetRestorer
                     // string per context, following the oxpulse_* convention.
                     // The filter receives the (possibly clamped) default and
                     // may replace it entirely.
-                    $sizes = apply_filters('oxpulse_image_sizes', $sizes, $sizeArray, $originalSrc, $imageMeta, $attachmentId);
+                    $sizes = apply_filters('oxpulse_image_sizes', $sizes, $sizeArray, $originalSrc, $imageMeta, $attachmentId, $attr, $size);
 
                     $attr['sizes'] = $sizes;
                 }

@@ -305,6 +305,7 @@ class AttachmentImageSrcsetRestorerTest extends TestCase
      */
     public function test_content_width_clamps_sizes_ceiling(): void
     {
+        add_filter('oxpulse_image_sizes_clamp_enabled', '__return_true');
         $GLOBALS['content_width'] = 300;
 
         $attr = $this->buildProxiedAttr();
@@ -369,6 +370,7 @@ class AttachmentImageSrcsetRestorerTest extends TestCase
     {
         if ($contentWidth !== null) {
             $GLOBALS['content_width'] = $contentWidth;
+            add_filter('oxpulse_image_sizes_clamp_enabled', '__return_true');
         }
 
         $attr = array_merge($this->buildProxiedAttr(), $attrOverrides);
@@ -403,5 +405,79 @@ class AttachmentImageSrcsetRestorerTest extends TestCase
             'non-lazy'     => [[], null],
             'clamped'      => [['loading' => 'lazy'], 300],
         ];
+    }
+
+    private function restoreWith(array $attrOverrides = [], string $size = 'foxiz_g1'): array
+    {
+        $attachment = new \stdClass();
+        $attachment->ID = 57942;
+        return apply_filters(
+            'wp_get_attachment_image_attributes',
+            array_merge($this->buildProxiedAttr(), $attrOverrides),
+            $attachment,
+            $size
+        );
+    }
+
+    /** Default OFF: a full-bleed hero must keep core's width-derived ceiling. */
+    public function test_content_width_does_not_clamp_by_default(): void
+    {
+        $GLOBALS['content_width'] = 300;
+        $result = $this->restoreWith();
+        unset($GLOBALS['content_width']);
+
+        $this->assertSame('(max-width: 330px) 100vw, 330px', $result['sizes']);
+    }
+
+    public function test_clamp_enabled_filter_receives_attr_size_and_attachment_id(): void
+    {
+        $GLOBALS['content_width'] = 300;
+        $seen = null;
+        add_filter('oxpulse_image_sizes_clamp_enabled', static function ($enabled, $attr, $size, $id) use (&$seen) {
+            $seen = [$attr['class'] ?? null, $size, $id];
+            return false; // site exempts this image
+        }, 10, 4);
+        $result = $this->restoreWith();
+        unset($GLOBALS['content_width']);
+
+        $this->assertSame(['attachment-foxiz_g1 size-foxiz_g1', 'foxiz_g1', 57942], $seen);
+        $this->assertSame('(max-width: 330px) 100vw, 330px', $result['sizes']);
+    }
+
+    /** Enabled, but a customised sizes string must never be overridden. */
+    public function test_clamp_leaves_customised_sizes_untouched(): void
+    {
+        add_filter('oxpulse_image_sizes_clamp_enabled', '__return_true');
+        add_filter('wp_calculate_image_sizes', static fn () => '(max-width: 600px) 90vw, 600px');
+        $GLOBALS['content_width'] = 300;
+        $result = $this->restoreWith();
+        unset($GLOBALS['content_width']);
+
+        $this->assertSame('(max-width: 600px) 90vw, 600px', $result['sizes']);
+    }
+
+    public function test_clamp_skipped_when_width_equals_content_width(): void
+    {
+        add_filter('oxpulse_image_sizes_clamp_enabled', '__return_true');
+        $GLOBALS['content_width'] = 330;
+        $result = $this->restoreWith();
+        unset($GLOBALS['content_width']);
+
+        $this->assertSame('(max-width: 330px) 100vw, 330px', $result['sizes']);
+    }
+
+    public function test_existing_auto_prefix_is_not_doubled(): void
+    {
+        $result = $this->restoreWith(['loading' => 'lazy', 'sizes' => 'auto, (max-width: 500px) 100vw, 500px']);
+
+        $this->assertSame('auto, (max-width: 500px) 100vw, 500px', $result['sizes']);
+    }
+
+    public function test_wp_img_tag_add_auto_sizes_false_suppresses_prefix(): void
+    {
+        add_filter('wp_img_tag_add_auto_sizes', '__return_false');
+        $result = $this->restoreWith(['loading' => 'lazy']);
+
+        $this->assertSame('(max-width: 330px) 100vw, 330px', $result['sizes']);
     }
 }

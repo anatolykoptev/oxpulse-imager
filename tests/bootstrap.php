@@ -297,6 +297,34 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return $map[$id] ?? false;
         }
     }
+    // Replica of core's wp_constrain_dimensions().
+    if (!function_exists('wp_constrain_dimensions')) {
+        function wp_constrain_dimensions($current_width, $current_height, $max_width = 0, $max_height = 0) {
+            if (!$max_width && !$max_height) {
+                return [$current_width, $current_height];
+            }
+            $width_ratio = $height_ratio = 1.0;
+            $did_width = $did_height = false;
+            if ($max_width > 0 && $current_width > 0 && $current_width > $max_width) {
+                $width_ratio = $max_width / $current_width;
+                $did_width = true;
+            }
+            if ($max_height > 0 && $current_height > 0 && $current_height > $max_height) {
+                $height_ratio = $max_height / $current_height;
+                $did_height = true;
+            }
+            if ($did_width && $did_height) {
+                $smaller = min($width_ratio, $height_ratio);
+            } elseif ($did_width) {
+                $smaller = $width_ratio;
+            } elseif ($did_height) {
+                $smaller = $height_ratio;
+            } else {
+                $smaller = 1.0;
+            }
+            return [max(1, (int) round($current_width * $smaller)), max(1, (int) round($current_height * $smaller))];
+        }
+    }
     if (!function_exists('wp_get_registered_image_subsizes')) {
         function wp_get_registered_image_subsizes() {
             return $GLOBALS['__oxpulse_registered_subsizes'] ?? [
