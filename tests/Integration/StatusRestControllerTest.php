@@ -80,6 +80,18 @@ class StatusRestControllerTest extends TestCase
         $this->assertFalse($controller->checkPermission());
     }
 
+    public function test_handle_status_reports_backend_flaps_and_mod_headers(): void
+    {
+        (new \OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache())->write('down');
+        (new \OXPulse\Imager\Infrastructure\Local\HeadersCapabilityCache())->write('no');
+
+        $data = (new StatusRestController($this->repository))->handleStatus()->get_data();
+
+        $this->assertSame(1, $data['backendFlaps']['total']);
+        $this->assertSame('down', $data['backendFlaps']['state']);
+        $this->assertSame('no', $data['modHeaders']);
+    }
+
     public function test_handle_status_returns_config_when_disabled(): void
     {
         $controller = new StatusRestController($this->repository);

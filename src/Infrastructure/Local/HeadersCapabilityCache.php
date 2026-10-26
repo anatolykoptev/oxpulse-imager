@@ -5,8 +5,7 @@
  * Persistent, non-autoloaded option written by CapabilityTester::recheck()
  * (write-time only — same triggers and the same OPTION_PROBE_VERSION-gated
  * re-probe as the rewrite probe) and read by the settings screen. Holds
- * only a DEFINITIVE 'yes' or 'no' together with the plugin version that
- * produced it and a timestamp; anything else reads as null (unknown).
+ * only a DEFINITIVE 'yes' or 'no' together with a timestamp; anything else reads as null (unknown).
  *
  * @package OXPulse\Imager\Infrastructure\Local
  * @copyright Copyright (c) 2026 Anatoly Koptev
@@ -41,9 +40,8 @@ final class HeadersCapabilityCache
             return;
         }
         update_option(self::OPTION, [
-            'result'  => $result,
-            'version' => defined('OXPULSE_IMAGER_VERSION') ? (string) OXPULSE_IMAGER_VERSION : '',
-            'at'      => time(),
+            'result' => $result,
+            'at'     => time(),
         ], false);
     }
 

@@ -7,11 +7,13 @@
  * AllowOverride forbids FileInfo) the block is skipped silently and
  * mixed-client caches can serve the wrong format. This probe finds out:
  * it writes a test .htaccess with `Header set X-Oxpulse-Probe "1"` plus a
- * static file into <cacheDir>/.probe-headers/, GETs the file and checks
+ * static file into a unique <cacheDir>/.probe-headers-<id>/ dir, GETs the file and checks
  * the response header.
  *
  *   header present   => 'yes'
- *   200, header absent => 'no'  (.htaccess ignored or mod_headers missing)
+ *   200 + probe body, header absent => 'no' (.htaccess ignored or
+ *                       mod_headers missing). A 200 with any other body
+ *                       (soft-200 login/CDN/HTML page) => 'unknown'.
  *   anything else    => 'unknown' (transport error, non-200, fs failure).
  *                       The caller never persists 'unknown'.
  *
@@ -31,7 +33,8 @@ namespace OXPulse\Imager\Infrastructure\Local;
 class HeaderSetProbe
 {
     public const PROBE_HEADER = 'x-oxpulse-probe';
-    private const PROBE_SUBDIR = '.probe-headers';
+    private const PROBE_SUBDIR_PREFIX = '.probe-headers-';
+    private const PROBE_BODY = 'ok';
     private const HTACCESS_CONTENT = "<IfModule mod_headers.c>\nHeader set X-Oxpulse-Probe \"1\"\n</IfModule>";
 
     public function __construct(
@@ -45,16 +48,21 @@ class HeaderSetProbe
      */
     public function probe(): string
     {
-        $probeDir = rtrim($this->cacheDir, '/') . '/' . self::PROBE_SUBDIR;
+        // Unique per probe: concurrent probes cannot delete each other's
+        // files (which would read as a false 'no').
+        $subdir = self::PROBE_SUBDIR_PREFIX . bin2hex(random_bytes(6));
+        $probeDir = rtrim($this->cacheDir, '/') . '/' . $subdir;
 
-        if (!$this->writeProbeFiles($probeDir)) {
+        try {
+            if (!$this->writeProbeFiles($probeDir)) {
+                return 'unknown';
+            }
+            // The query string is a cache-buster for page caches / CDNs.
+            $url = rtrim($this->probeBaseUrl, '/') . '/' . $subdir . '/probe.txt?oxp=' . time();
+            $resp = $this->requester->get($url);
+        } finally {
             LocalRewriteProbe::purgeProbeDir($this->cacheDir, $probeDir);
-            return 'unknown';
         }
-
-        $resp = $this->requester->get(rtrim($this->probeBaseUrl, '/') . '/' . self::PROBE_SUBDIR . '/probe.txt');
-
-        LocalRewriteProbe::purgeProbeDir($this->cacheDir, $probeDir);
 
         if (($resp['error'] ?? null) !== null || ($resp['status'] ?? 0) !== 200) {
             return 'unknown';
@@ -63,7 +71,12 @@ class HeaderSetProbe
         if (!is_array($headers)) {
             return 'unknown';
         }
-        return ($headers[self::PROBE_HEADER] ?? '') === '1' ? 'yes' : 'no';
+        if (($headers[self::PROBE_HEADER] ?? '') === '1') {
+            return 'yes';
+        }
+        // Header absent: only a 200 that really is our probe file proves
+        // .htaccess was read and the header was not applied.
+        return ($resp['body'] ?? '') === self::PROBE_BODY ? 'no' : 'unknown';
     }
 
     private function writeProbeFiles(string $probeDir): bool
@@ -75,6 +88,6 @@ class HeaderSetProbe
             }
         }
         return @file_put_contents($probeDir . '/.htaccess', self::HTACCESS_CONTENT) !== false
-            && @file_put_contents($probeDir . '/probe.txt', 'ok') !== false;
+            && @file_put_contents($probeDir . '/probe.txt', self::PROBE_BODY) !== false;
     }
 }

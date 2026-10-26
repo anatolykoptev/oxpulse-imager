@@ -193,7 +193,13 @@ class CapabilityTester
     public function recheckHeaders(): string
     {
         if (!$this->isApache()) {
-            $this->headersCache->clear();
+            // Clear a stale verdict only when the server is positively
+            // identified as non-Apache. WP-CLI / CLI cron has an empty
+            // SERVER_SOFTWARE: there we know nothing, so the cached
+            // verdict (probed from a web request) is left alone.
+            if ($this->serverSoftware() !== '') {
+                $this->headersCache->clear();
+            }
             return 'skipped';
         }
 
@@ -203,6 +209,15 @@ class CapabilityTester
             $this->headersCache->write($result);
         }
         return $result;
+    }
+
+    /**
+     * Raw SERVER_SOFTWARE ('' under WP-CLI / CLI cron).
+     */
+    protected function serverSoftware(): string
+    {
+        $server = sanitize_text_field(wp_unslash($_SERVER['SERVER_SOFTWARE'] ?? ''));
+        return is_string($server) ? $server : '';
     }
 
     /**
@@ -219,8 +234,8 @@ class CapabilityTester
         if (function_exists('apache_get_version')) {
             return true;
         }
-        $server = sanitize_text_field(wp_unslash($_SERVER['SERVER_SOFTWARE'] ?? ''));
-        if (is_string($server) && $server !== '') {
+        $server = $this->serverSoftware();
+        if ($server !== '') {
             return stripos($server, 'apache') !== false || stripos($server, 'litespeed') !== false;
         }
         return false;
@@ -251,13 +266,7 @@ class CapabilityTester
         return null;
     }
 
-    /**
-     * Lazily construct a real LocalRewriteProbe for production use.
-     *
-     * Uses the standard cache dir path + home_url() for the probe URL.
-     * Phase 2 will wire a properly-constructed probe via DI; this
-     * default exists so `new CapabilityTester()` works standalone.
-     */
+    /** #51: real HeaderSetProbe for production use (cache dir + home_url()). */
     private function buildDefaultHeadersProbe(): HeaderSetProbe
     {
         $wpContent = defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : (ABSPATH . '/wp-content');
@@ -267,6 +276,13 @@ class CapabilityTester
         return new HeaderSetProbe($cacheDir, $baseUrl, new WpRemoteHttpRequester());
     }
 
+    /**
+     * Lazily construct a real LocalRewriteProbe for production use.
+     *
+     * Uses the standard cache dir path + home_url() for the probe URL.
+     * Phase 2 will wire a properly-constructed probe via DI; this
+     * default exists so `new CapabilityTester()` works standalone.
+     */
     private function buildDefaultProbe(): LocalRewriteProbe
     {
         $wpContent = defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : (ABSPATH . '/wp-content');

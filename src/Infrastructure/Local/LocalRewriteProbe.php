@@ -129,7 +129,7 @@ class LocalRewriteProbe
 
         $cacheReal = realpath($cacheDir);
         $probeReal = realpath($probeDir);
-        if ($cacheReal === false || $probeReal === false) {
+        if ($cacheReal === false || $probeReal === false || $probeReal === $cacheReal) {
             return;
         }
         $prefix = $cacheReal . DIRECTORY_SEPARATOR;
