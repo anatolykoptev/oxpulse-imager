@@ -63,6 +63,10 @@ final readonly class DeliveryConfig
      *        maxWidth >= requested width wins. Empty = disabled (use
      *        defaultQuality for all sizes). Mixed forms are allowed
      *        (some tiers int, some per-format). Default empty (disabled).
+     * @param bool $lcpHygieneEnabled Whether to run the opt-in LCP tag-hygiene
+     *        pass on the full HTML response: at most one fetchpriority="high"
+     *        image (the LCP candidate), never loading="lazy" on it, sizes="auto, …"
+     *        on lazy images and a head preload hint. Default false.
      */
     public function __construct(
         public bool $enabled,
@@ -83,7 +87,8 @@ final readonly class DeliveryConfig
         public bool $pictureEnabled = false,
         public bool $rankMathCompatibility = true,
         public int $saveDataQualityReduction = 15,
-        public array $sizeQualityTiers = []
+        public array $sizeQualityTiers = [],
+        public bool $lcpHygieneEnabled = false
     ) {
         if (!in_array($sourceMode, ['http', 'local'], true)) {
             throw new \InvalidArgumentException('sourceMode must be "http" or "local".');
@@ -147,6 +152,7 @@ final readonly class DeliveryConfig
             rankMathCompatibility: $this->rankMathCompatibility,
             saveDataQualityReduction: $this->saveDataQualityReduction,
             sizeQualityTiers: $this->sizeQualityTiers,
+            lcpHygieneEnabled: $this->lcpHygieneEnabled,
         );
     }
 

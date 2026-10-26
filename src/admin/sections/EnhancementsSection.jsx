@@ -115,6 +115,19 @@ const EnhancementsSection = () => {
       </Card>
 
       <Card
+        title={__('LCP tag hygiene', 'oxpulse-imager')}
+        description={__('Theme-emitted fetchpriority="high" on every image defeats LCP prioritisation. This pass keeps it on one image (the likely LCP candidate), never lazy-loads that image, adds sizes="auto" to lazy images and preloads the candidate. Runs as a guarded output buffer on the full HTML response.', 'oxpulse-imager')}
+      >
+        <ToggleField
+          name="lcp_hygiene_enabled"
+          label={__('Normalise LCP image tags', 'oxpulse-imager')}
+          help={__('Off by default. Per-page opt-out: paste <!-- no-oxpulse --> into the template.', 'oxpulse-imager')}
+          checked={options.lcpHygieneEnabled}
+          onChange={(v) => setOption('lcpHygieneEnabled', v)}
+        />
+      </Card>
+
+      <Card
         title={
           <span className="oxp-flex oxp-items-center oxp-gap-1.5">
             {__('LQIP placeholders', 'oxpulse-imager')}

@@ -17,6 +17,7 @@ export const defaultOptions = {
   formatQuality: {},
   // Enhancements (Phase 5.1)
   bufferRewritingEnabled: false,
+  lcpHygieneEnabled: false,
   lqipEnabled: false,
   lqipBlur: 1,
   dprEnabled: false,

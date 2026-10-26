@@ -79,6 +79,11 @@ final class OptionSettingsRepository
     // Buffer rewriting (Ф2): ob_start + regex for theme-hardcoded <img> tags.
     public const OPTION_BUFFER_REWRITING_ENABLED = 'oxpulse_imager_buffer_rewriting_enabled';
 
+    // LCP tag hygiene (#133/#48/#49/#50): opt-in full-page pass that keeps
+    // fetchpriority="high" on one LCP candidate, never lazy-loads it, adds
+    // sizes="auto" to lazy images and preloads the candidate.
+    public const OPTION_LCP_HYGIENE_ENABLED = 'oxpulse_imager_lcp_hygiene_enabled';
+
     // <picture> element wrapping (Phase 1): wrap eligible content <img> tags in
     // <picture><source type="image/avif"><source type="image/webp"><img></picture>
     // so a modern browser negotiates AVIF client-side on standard Apache.
@@ -182,6 +187,7 @@ final class OptionSettingsRepository
             rankMathCompatibility: (bool) $this->memo(self::OPTION_RANKMATH_COMPATIBILITY, true),
             saveDataQualityReduction: (int) $this->memo(self::OPTION_SAVE_DATA_QUALITY_REDUCTION, 15),
             sizeQualityTiers: $this->loadSizeQualityTiers(),
+            lcpHygieneEnabled: (bool) $this->memo(self::OPTION_LCP_HYGIENE_ENABLED, false),
         );
     }
 
@@ -299,6 +305,11 @@ final class OptionSettingsRepository
         // Buffer rewriting (Ф2).
         if (array_key_exists('buffer_rewriting_enabled', $values)) {
             update_option(self::OPTION_BUFFER_REWRITING_ENABLED, (bool) $values['buffer_rewriting_enabled']);
+        }
+
+        // LCP tag hygiene (#133).
+        if (array_key_exists('lcp_hygiene_enabled', $values)) {
+            update_option(self::OPTION_LCP_HYGIENE_ENABLED, (bool) $values['lcp_hygiene_enabled']);
         }
 
         // <picture> element wrapping (Phase 1) — Pro-gated (PICTURE_ELEMENT).

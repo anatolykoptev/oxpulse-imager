@@ -56,6 +56,7 @@ use OXPulse\Imager\Integration\WordPress\Delivery\BufferRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ContentImgTagRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\ImageDownsizeRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\IntermediateSizeRewriter;
+use OXPulse\Imager\Integration\WordPress\Delivery\LcpTagHygiene;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
 use OXPulse\Imager\Integration\WordPress\Compatibility\RankMathCompatibility;
 use OXPulse\Imager\Integration\WordPress\Performance\CachePurger;
@@ -429,6 +430,16 @@ final class ServiceRegistrar
             // via pictureEnabled + the oxpulse_picture_enabled filter).
             $bufferRewriter = new BufferRewriter($rewriter, $delivery, $pictureWrapper);
             $bufferRewriter->register();
+        }
+
+        // LCP tag hygiene (#133/#48/#49/#50): opt-in, default OFF. Own output
+        // buffer (template_redirect 4 = outer to BufferRewriter's 5) so it
+        // works with or without bufferRewritingEnabled and sees final tags.
+        // The page-context guard battery is BufferRewriter::shouldBuffer()
+        // reused through a never-registered instance — one source of truth.
+        if ($delivery->lcpHygieneEnabled) {
+            $contextGuard = new BufferRewriter($rewriter, $delivery);
+            (new LcpTagHygiene($delivery, \Closure::fromCallable([$contextGuard, 'shouldBuffer'])))->register();
         }
 
         // Ф3: RankMath og:image compatibility. Restores direct attachment
