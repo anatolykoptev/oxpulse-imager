@@ -39,6 +39,14 @@ final class UrlShapeTest extends TestCase
         parent::tearDown();
     }
 
+    /** A gate whose probe verdict is 'ok' (the endpoint accepts cb:). */
+    private function provenGate(): SocialJpegCapabilityCache
+    {
+        $gate = SocialJpegCapabilityCache::forCacheBuster();
+        $gate->write('ok');
+        return $gate;
+    }
+
     private function resolver(string $version): ContentVersionResolver
     {
         return new class($version) implements ContentVersionResolver {
@@ -66,7 +74,8 @@ final class UrlShapeTest extends TestCase
             $signing,
             null,
             new ImgproxyBackend($delivery, $signing),
-            $versions
+            $versions,
+            $this->provenGate()
         );
     }
 
@@ -127,7 +136,7 @@ final class UrlShapeTest extends TestCase
         };
         $delivery = new DeliveryConfig(enabled: true, endpoint: 'https://imgproxy.example.com', allowedSources: ['https://example.com/wp-content/uploads/']);
         $signing = SigningConfig::fromHex('736563726574', '68656C6C6F');
-        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, null, $backend, $this->resolver('abc123'));
+        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, null, $backend, $this->resolver('abc123'), $this->provenGate());
 
         $rewriter->rewriteSocialImage(self::SRC, 1200, 630);
 
@@ -198,6 +207,15 @@ final class UrlShapeTest extends TestCase
         $this->assertStringNotContainsString('cb:', $url(), 'probe said no');
     }
 
+    public function test_resolver_without_a_gate_is_fail_closed(): void
+    {
+        $delivery = new DeliveryConfig(enabled: true, endpoint: 'https://imgproxy.example.com', allowedSources: ['https://example.com/wp-content/uploads/']);
+        $signing = SigningConfig::fromHex('736563726574', '68656C6C6F');
+        $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing, null, new ImgproxyBackend($delivery, $signing), $this->resolver('abc123'));
+
+        $this->assertStringNotContainsString('cb:', $rewriter->rewrite(self::SRC, 800, 0, 'content')->url);
+    }
+
     private function requester(int $status, string $type, ?string $error = null): HttpRequester
     {
         return new class($status, $type, $error) implements HttpRequester {
@@ -226,32 +244,169 @@ final class UrlShapeTest extends TestCase
     {
         $req = $this->requester(200, 'image/webp');
         $this->assertTrue($this->probeVerdictFor($req));
-        $this->assertStringContainsString('/cb:probe/', $req->lastUrl, 'the probe must request the exact cb: URL shape');
+        $this->assertMatchesRegularExpression('#/cb:p[a-f0-9]{12}/#', $req->lastUrl, 'the probe must request a cb: URL carrying a nonce');
     }
 
-    public function test_probe_says_no_when_the_endpoint_rejects_cb(): void
+    public function test_every_probe_url_is_unique_so_no_cache_can_answer_it(): void
     {
-        // imgproxy answers 403 for a processing option outside the allowlist.
-        $this->assertFalse($this->probeVerdictFor($this->requester(403, 'text/plain')));
-        $this->assertFalse($this->probeVerdictFor($this->requester(0, '', 'timeout')));
-        $this->assertFalse($this->probeVerdictFor($this->requester(200, 'text/html')));
+        $a = $this->requester(200, 'image/webp');
+        $b = $this->requester(200, 'image/webp');
+        $this->probeVerdictFor($a);
+        $this->probeVerdictFor($b);
+        $this->assertNotSame($a->lastUrl, $b->lastUrl);
     }
 
-    public function test_probe_with_no_source_image_never_upgrades_to_ok(): void
+    /** Only 400/403 are definitive rejects of a signed URL with a good source. */
+    public function test_probe_says_no_only_on_a_definitive_reject(): void
+    {
+        foreach ([400, 403] as $status) {
+            $this->assertFalse($this->probeVerdictFor($this->requester($status, 'text/plain')), (string) $status);
+            $this->assertSame('no', SocialJpegCapabilityCache::forCacheBuster()->readVerdict(), (string) $status);
+            SocialJpegCapabilityCache::forCacheBuster()->clear();
+        }
+    }
+
+    /**
+     * A verdict flip changes every imgproxy URL and refills the nginx cache,
+     * so a blip (timeout, 5xx during a restart, 429, 404, a proxy HTML page)
+     * must keep the prior verdict — in BOTH directions.
+     */
+    public function test_transient_failures_keep_the_prior_verdict(): void
+    {
+        $blips = [
+            [0, '', 'timeout'], [502, 'text/html', null], [503, 'text/html', null],
+            [429, 'text/plain', null], [404, 'text/plain', null], [200, 'text/html', null],
+        ];
+        foreach (['ok', 'no'] as $prior) {
+            foreach ($blips as [$status, $type, $error]) {
+                SocialJpegCapabilityCache::forCacheBuster()->write($prior);
+                $this->probeVerdictFor($this->requester($status, $type, $error));
+                $this->assertSame($prior, SocialJpegCapabilityCache::forCacheBuster()->readVerdict(), "prior $prior, blip $status/$error");
+            }
+        }
+    }
+
+    public function test_probe_with_no_or_unauthorised_source_writes_nothing(): void
     {
         $this->assertFalse($this->probeVerdictFor($this->requester(200, 'image/webp'), null));
+        $this->assertFalse($this->probeVerdictFor($this->requester(200, 'image/webp'), 'https://evil.example/x.jpg'));
+        $this->assertNull(SocialJpegCapabilityCache::forCacheBuster()->readVerdict());
     }
 
-    public function test_probe_prior_ok_is_downgraded_when_endpoint_starts_rejecting(): void
+    public function test_probe_prior_ok_is_downgraded_by_a_definitive_reject(): void
     {
         $this->assertTrue($this->probeVerdictFor($this->requester(200, 'image/webp')));
         $this->assertFalse($this->probeVerdictFor($this->requester(403, 'text/plain')));
+    }
+
+    /** A quiet site must not lose `ok` to age alone. */
+    public function test_ok_verdict_does_not_expire_by_age(): void
+    {
+        $clock = 1_000_000;
+        $cache = SocialJpegCapabilityCache::forCacheBuster(static function () use (&$clock): int { return $clock; });
+        $cache->write('ok');
+        $clock += 10 * 365 * 86400;
+        $this->assertTrue($cache->readOk());
+    }
+
+    public function test_page_caches_are_purged_exactly_when_the_effective_state_changes(): void
+    {
+        $purges = 0;
+        $run = function (HttpRequester $r) use (&$purges): void {
+            $delivery = new DeliveryConfig(enabled: true, endpoint: 'https://imgproxy.example.com', allowedSources: ['https://example.com/wp-content/uploads/']);
+            $signing = SigningConfig::fromHex('736563726574', '68656C6C6F');
+            (new CacheBusterCapabilityProbe($delivery, $signing, $r, SocialJpegCapabilityCache::forCacheBuster(), static fn () => self::SRC, static function () use (&$purges): void { $purges++; }))->run();
+        };
+
+        $run($this->requester(200, 'image/webp'));   // never probed -> ok: URLs change
+        $this->assertSame(1, $purges, 'no -> ok');
+        $run($this->requester(200, 'image/webp'));   // ok -> ok
+        $this->assertSame(1, $purges, 'unchanged verdict must not purge');
+        $run($this->requester(503, 'text/html'));    // blip
+        $this->assertSame(1, $purges, 'blip must not purge');
+        $run($this->requester(403, 'text/plain'));   // ok -> no
+        $this->assertSame(2, $purges, 'ok -> no');
+        $run($this->requester(403, 'text/plain'));   // no -> no
+        $this->assertSame(2, $purges);
     }
 
     public function test_cachebuster_verdict_does_not_touch_the_social_jpeg_verdict(): void
     {
         SocialJpegCapabilityCache::forCacheBuster()->write('ok');
         $this->assertFalse((new SocialJpegCapabilityCache())->readOk());
+    }
+
+    // --- size / scaled variants (core's attachment_url_to_postid is an exact match) ---
+
+    private const DIR = 'https://example.com/wp-content/uploads/2026/07/';
+
+    private function attachmentWithSizes(): void
+    {
+        $GLOBALS['__oxpulse_url_to_id'] = [self::DIR . 'photo.jpg' => 7, self::DIR . 'big-scaled.jpg' => 8];
+        $GLOBALS['__oxpulse_post_meta'] = [
+            7 => [AttachmentContentVersion::META_KEY => 'v7stamp'],
+            8 => [AttachmentContentVersion::META_KEY => 'v8stamp'],
+        ];
+        $GLOBALS['__oxpulse_attachment_meta'] = [
+            7 => ['sizes' => ['thumbnail' => ['file' => 'photo-150x150.jpg'], 'medium' => ['file' => 'photo-300x200.jpg']]],
+            8 => ['original_image' => 'big.jpg', 'sizes' => ['medium' => ['file' => 'big-scaled-300x200.jpg']]],
+        ];
+    }
+
+    public function test_size_variant_url_resolves_to_its_attachment(): void
+    {
+        $this->attachmentWithSizes();
+        $r = new AttachmentContentVersion();
+
+        $this->assertSame('v7stamp', $r->versionFor(self::DIR . 'photo-300x200.jpg'));
+        $this->assertSame('v8stamp', $r->versionFor(self::DIR . 'big-scaled-300x200.jpg'), 'sized variant of a scaled image');
+    }
+
+    public function test_pre_scaling_original_url_resolves_to_the_scaled_attachment(): void
+    {
+        $this->attachmentWithSizes();
+
+        $this->assertSame('v8stamp', (new AttachmentContentVersion())->versionFor(self::DIR . 'big.jpg'));
+        $this->assertSame('v8stamp', (new AttachmentContentVersion())->versionFor(self::DIR . 'big-scaled.jpg'), 'exact scaled file');
+    }
+
+    /** `photo-100x100.jpg` is a real upload name, not a size of `photo.jpg`. */
+    public function test_a_filename_that_merely_looks_like_a_size_does_not_resolve_to_another_attachment(): void
+    {
+        $this->attachmentWithSizes();
+
+        $this->assertSame('', (new AttachmentContentVersion())->versionFor(self::DIR . 'photo-100x100.jpg'));
+        // A plain file whose "-scaled" sibling exists but did not come from it.
+        $this->assertSame('', (new AttachmentContentVersion())->versionFor(self::DIR . 'other.jpg'));
+    }
+
+    /** `big.jpg` is NOT the pre-scaling original of `big-scaled.jpg` unless its metadata says so. */
+    public function test_scaled_sibling_with_a_different_original_is_not_matched(): void
+    {
+        $this->attachmentWithSizes();
+        $GLOBALS['__oxpulse_attachment_meta'][8]['original_image'] = 'something-else.jpg';
+
+        $this->assertSame('', (new AttachmentContentVersion())->versionFor(self::DIR . 'big.jpg'));
+    }
+
+    /** A persistent object cache (Redis) hands ids back as strings. */
+    public function test_object_cache_hit_returned_as_a_string_is_honoured(): void
+    {
+        $this->attachmentWithSizes();
+        $GLOBALS['__oxpulse_obj_cache']['oxpulse_imager']['id:' . md5(self::DIR . 'photo.jpg')] = '7';
+
+        $this->assertSame('v7stamp', (new AttachmentContentVersion())->versionFor(self::DIR . 'photo.jpg'));
+        $this->assertArrayNotHasKey('__oxpulse_url_to_id_calls', $GLOBALS, 'a cache hit must not query');
+    }
+
+    public function test_variant_lookup_costs_one_extra_query_and_is_memoised(): void
+    {
+        $this->attachmentWithSizes();
+        $r = new AttachmentContentVersion();
+        $r->versionFor(self::DIR . 'photo-300x200.jpg');
+        $r->versionFor(self::DIR . 'photo-300x200.jpg');
+
+        $this->assertSame(2, $GLOBALS['__oxpulse_url_to_id_calls'], 'exact + one stripped lookup, once');
     }
 
     // --- negative lookups ---
@@ -263,7 +418,8 @@ final class UrlShapeTest extends TestCase
         $this->assertSame('', (new AttachmentContentVersion())->versionFor($url));
         $this->assertSame('', (new AttachmentContentVersion())->versionFor($url . '?x=1'));
 
-        $this->assertSame(1, $GLOBALS['__oxpulse_url_to_id_calls'], 'second instance must hit the object-cache negative entry');
+        // First instance: exact + the one `-scaled` candidate; the second must add nothing.
+        $this->assertSame(2, $GLOBALS['__oxpulse_url_to_id_calls'], 'second instance must hit the object-cache negative entry');
     }
 
     // --- srcset_dpr fn: ---

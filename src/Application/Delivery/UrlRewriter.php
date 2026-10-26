@@ -321,11 +321,6 @@ final class UrlRewriter
     }
 
     /**
-     * Record a log entry if a logger is attached. No-op when no
-     * logger is configured (the default — logging is opt-in via
-     * diagnostic_level).
-     */
-    /**
      * Content-version token for a source URL ('' = none). Fail-safe: a
      * resolver failure yields an unversioned URL, never a broken one.
      */
@@ -337,9 +332,9 @@ final class UrlRewriter
         // Capability gate: emit `cb:` only when a probe proved the endpoint
         // accepts it (IMGPROXY_ALLOWED_PROCESSING_OPTIONS may omit it, which
         // would turn every versioned URL into a 4xx). Unknown / failed /
-        // stale verdict -> no version -> today's URL. null gate = ungated
-        // (direct construction in tests).
-        if ($this->versionCapability !== null && !$this->versionCapability->readOk()) {
+        // missing verdict -> no version -> today's URL. A resolver without a
+        // gate is fail-CLOSED: the gate is not optional.
+        if ($this->versionCapability === null || !$this->versionCapability->readOk()) {
             return '';
         }
         try {
@@ -349,6 +344,11 @@ final class UrlRewriter
         }
     }
 
+    /**
+     * Record a log entry if a logger is attached. No-op when no
+     * logger is configured (the default — logging is opt-in via
+     * diagnostic_level).
+     */
     private function log(LogEntry $entry): void
     {
         if ($this->logger !== null) {

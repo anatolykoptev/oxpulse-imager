@@ -292,4 +292,18 @@ class ServiceRegistrarSocialJpegCapabilityTest extends TestCase
         ServiceRegistrar::recheckCacheBusterCapability(new GetImageStub(status: 200, contentType: 'image/webp'), null, $this->sourceProvider());
         $this->assertSame(0, did_action('oxpulse_recheck_cachebuster'));
     }
+
+    public function test_cachebuster_verdict_change_purges_page_caches_through_the_existing_purger(): void
+    {
+        $this->configureImgproxyLocal();
+        $cache = SocialJpegCapabilityCache::forCacheBuster();
+
+        ServiceRegistrar::recheckCacheBusterCapability(new GetImageStub(status: 200, contentType: 'image/webp'), $cache, $this->sourceProvider());
+
+        $this->assertTrue($cache->readOk());
+        $this->assertSame(1, did_action('oxpulse_purge_page_cache'), 'CachePurger::purge() must run when the verdict flips');
+
+        ServiceRegistrar::recheckCacheBusterCapability(new GetImageStub(status: 200, contentType: 'image/webp'), $cache, $this->sourceProvider());
+        $this->assertSame(1, did_action('oxpulse_purge_page_cache'), 'no purge when the verdict is unchanged');
+    }
 }

@@ -1143,7 +1143,11 @@ final class ServiceRegistrar
             $signing,
             $requester ?? new WpRemoteHttpRequester(),
             $cache ?? SocialJpegCapabilityCache::forCacheBuster(),
-            $sourceProvider ?? self::newestImageSource(...)
+            $sourceProvider ?? self::newestImageSource(...),
+            // A verdict flip changes every image URL; cached pages baked the old ones.
+            static function (): void {
+                (new CachePurger())->purge();
+            }
         );
         $probe->run();
 

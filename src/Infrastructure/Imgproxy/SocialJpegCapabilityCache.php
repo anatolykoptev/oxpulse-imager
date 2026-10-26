@@ -52,7 +52,8 @@ final class SocialJpegCapabilityCache
     public function __construct(
         ?callable $now = null,
         private string $option = self::OPTION,
-        private string $checkedAtOption = self::OPTION_CHECKED_AT
+        private string $checkedAtOption = self::OPTION_CHECKED_AT,
+        private bool $expires = true
     ) {
         $this->now = $now;
     }
@@ -64,7 +65,18 @@ final class SocialJpegCapabilityCache
      */
     public static function forCacheBuster(?callable $now = null): self
     {
-        return new self($now, self::CACHEBUSTER_OPTION, self::CACHEBUSTER_OPTION_CHECKED_AT);
+        // No age expiry: the last DEFINITIVE verdict stands until a
+        // definitive opposite one arrives. Expiring `ok` into false on a
+        // quiet site would flip every imgproxy URL (and refill the nginx
+        // cache) without any change at the endpoint.
+        return new self($now, self::CACHEBUSTER_OPTION, self::CACHEBUSTER_OPTION_CHECKED_AT, false);
+    }
+
+    /** Raw stored verdict: 'ok', 'no', or null when never written. */
+    public function readVerdict(): ?string
+    {
+        $value = get_option($this->option, null);
+        return $value === 'ok' || $value === 'no' ? $value : null;
     }
 
     /**
@@ -79,6 +91,9 @@ final class SocialJpegCapabilityCache
         $value = get_option($this->option, null);
         if ($value !== 'ok') {
             return false;
+        }
+        if (!$this->expires) {
+            return true;
         }
 
         $checkedAt = get_option($this->checkedAtOption, null);
