@@ -12,7 +12,8 @@
  * control supports middle-click / open-in-new-tab / copy-link — a
  * `<button onClick={() => window.open()}>` cannot. `target`/`rel` are
  * forwarded via `...props`; callers set `target="_blank"
- * rel="noopener noreferrer"` for external links.
+ * rel="noopener noreferrer"` for external links. With `disabled` set,
+ * falls back to a `<button disabled>` — an `<a>` cannot be disabled.
  */
 
 import clsx from 'clsx';
@@ -45,7 +46,7 @@ const Button = ({
 
   const classes = clsx(base, variants[variant], sizes[size], className);
 
-  if (href !== null) {
+  if (href !== null && !disabled) {
     return (
       <a
         href={href}
