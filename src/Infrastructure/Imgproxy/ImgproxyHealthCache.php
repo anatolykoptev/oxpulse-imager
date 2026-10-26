@@ -38,6 +38,8 @@ final class ImgproxyHealthCache
     /** Option key for the cached imgproxy health probe result (persistent, not autoloaded). */
     public const OPTION = 'oxpulse_imgproxy_health';
 
+    public function __construct(private ?ImgproxyFlapLog $flaps = null) {}
+
     /**
      * Read the cached health state. OPTIMISTIC: returns 'up' when the
      * option is unset OR holds a garbage value (a corrupted cache
@@ -66,7 +68,14 @@ final class ImgproxyHealthCache
         if ($state !== 'up' && $state !== 'down') {
             return;
         }
+        // #137: the previous verdict is read the same way read() does
+        // (unset/garbage = optimistic 'up'), so a first-ever 'up' is not
+        // a flip but a first-ever 'down' is.
+        $previous = $this->read();
         update_option(self::OPTION, $state, false);
+        if ($previous !== $state) {
+            ($this->flaps ?? new ImgproxyFlapLog())->record($state);
+        }
     }
 
     /**

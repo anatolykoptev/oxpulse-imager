@@ -57,6 +57,8 @@ class CapabilityTester
 {
     private ?LocalRewriteProbe $probe;
     private OptionSettingsRepository $repository;
+    private ?HeaderSetProbe $headersProbe;
+    private HeadersCapabilityCache $headersCache;
 
     /**
      * @param LocalRewriteProbe|null $probe Inject a stub for tests; null
@@ -66,13 +68,21 @@ class CapabilityTester
      *   null lazily constructs the canonical repository so all capability
      *   option reads/writes route through it (no direct get_option /
      *   update_option / delete_option in this class).
+     * @param HeaderSetProbe|null $headersProbe #51: inject a stub for tests.
+     *   Only touched by recheckHeaders().
+     * @param HeadersCapabilityCache|null $headersCache #51: cache for the
+     *   mod_headers verdict.
      */
     public function __construct(
         ?LocalRewriteProbe $probe = null,
         ?OptionSettingsRepository $repository = null,
+        ?HeaderSetProbe $headersProbe = null,
+        ?HeadersCapabilityCache $headersCache = null,
     ) {
         $this->probe = $probe;
         $this->repository = $repository ?? new OptionSettingsRepository();
+        $this->headersProbe = $headersProbe;
+        $this->headersCache = $headersCache ?? new HeadersCapabilityCache();
     }
 
     /**
@@ -165,6 +175,37 @@ class CapabilityTester
     }
 
     /**
+     * #51: probe whether `Header set` works from .htaccess (mod_headers
+     * loaded + AllowOverride FileInfo), so the `Vary: Accept` block that
+     * HtaccessGenerator emits behind `<IfModule mod_headers.c>` is known
+     * to take effect.
+     *
+     * WRITE-TIME ONLY, called next to recheck() by
+     * ServiceRegistrar::recheckRewriteCapability() — i.e. on every trigger
+     * of the rewrite probe, including the OPTION_PROBE_VERSION-gated
+     * re-probe. A no-op on non-Apache hosts (nginx has no .htaccess):
+     * detected with the same isApache() the rewrite heuristic uses, and
+     * any stale verdict is cleared. Persists ONLY a definitive 'yes'/'no';
+     * 'unknown' leaves the previous verdict alone.
+     *
+     * @return string 'yes' | 'no' | 'unknown' | 'skipped' (not Apache)
+     */
+    public function recheckHeaders(): string
+    {
+        if (!$this->isApache()) {
+            $this->headersCache->clear();
+            return 'skipped';
+        }
+
+        $probe = $this->headersProbe ?? $this->buildDefaultHeadersProbe();
+        $result = $probe->probe();
+        if ($result === 'yes' || $result === 'no') {
+            $this->headersCache->write($result);
+        }
+        return $result;
+    }
+
+    /**
      * Detect whether the server is Apache.
      *
      * Uses apache_get_version() when available (mod_php SAPI), and falls
@@ -217,6 +258,15 @@ class CapabilityTester
      * Phase 2 will wire a properly-constructed probe via DI; this
      * default exists so `new CapabilityTester()` works standalone.
      */
+    private function buildDefaultHeadersProbe(): HeaderSetProbe
+    {
+        $wpContent = defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : (ABSPATH . '/wp-content');
+        $cacheDir = $wpContent . '/cache/oxpulse';
+        $baseUrl = home_url('/wp-content/cache/oxpulse');
+
+        return new HeaderSetProbe($cacheDir, $baseUrl, new WpRemoteHttpRequester());
+    }
+
     private function buildDefaultProbe(): LocalRewriteProbe
     {
         $wpContent = defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR : (ABSPATH . '/wp-content');

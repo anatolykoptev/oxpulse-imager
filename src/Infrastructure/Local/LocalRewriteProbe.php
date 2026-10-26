@@ -113,11 +113,21 @@ class LocalRewriteProbe
      */
     private function cleanup(string $probeDir): void
     {
+        self::purgeProbeDir($this->cacheDir, $probeDir);
+    }
+
+    /**
+     * Containment-guarded recursive purge of a probe scratch dir.
+     * Shared with HeaderSetProbe (#51) so both probes clean up through
+     * the one realpath-guarded implementation.
+     */
+    public static function purgeProbeDir(string $cacheDir, string $probeDir): void
+    {
         if (!is_dir($probeDir)) {
             return;
         }
 
-        $cacheReal = realpath($this->cacheDir);
+        $cacheReal = realpath($cacheDir);
         $probeReal = realpath($probeDir);
         if ($cacheReal === false || $probeReal === false) {
             return;
@@ -140,7 +150,7 @@ class LocalRewriteProbe
                 // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- plugin-owned cache scratch; direct unlink avoids the wp_delete_file filter, no WP_Filesystem needed.
                 @unlink($path);
             } elseif (is_dir($path)) {
-                $this->cleanup($path);
+                self::purgeProbeDir($cacheDir, $path);
             } else {
                 // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- plugin-owned cache scratch; direct unlink avoids the wp_delete_file filter, no WP_Filesystem needed.
                 @unlink($path);

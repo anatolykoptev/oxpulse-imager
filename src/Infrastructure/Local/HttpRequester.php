@@ -28,7 +28,8 @@ interface HttpRequester
      * Issue an HTTP GET.
      *
      * @param string $url
-     * @return array{status: int, body: string, error: ?string}
+     * @return array{status: int, body: string, error: ?string, headers?: array<string,string>}
+     *   - headers: optional, lower-cased response header map (#51).
      *   - status: HTTP response code, or 0 on transport failure.
      *   - body:   response body (empty string on failure).
      *   - error:  non-null when a transport error occurred.

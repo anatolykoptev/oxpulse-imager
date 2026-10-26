@@ -19,6 +19,8 @@ namespace OXPulse\Imager\Integration\WordPress\Admin;
 use OXPulse\Imager\Application\Delivery\UrlRewriterFactory;
 use OXPulse\Imager\Application\Health\HealthCheckService;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyFlapLog;
+use OXPulse\Imager\Infrastructure\Local\HeadersCapabilityCache;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use WP_Error;
 use WP_REST_Request;
@@ -29,11 +31,19 @@ final class StatusRestController
 {
     private OptionSettingsRepository $repository;
     private HealthCheckService $healthCheck;
+    private ImgproxyFlapLog $flapLog;
+    private HeadersCapabilityCache $headersCache;
 
-    public function __construct(OptionSettingsRepository $repository, ?HealthCheckService $healthCheck = null)
-    {
+    public function __construct(
+        OptionSettingsRepository $repository,
+        ?HealthCheckService $healthCheck = null,
+        ?ImgproxyFlapLog $flapLog = null,
+        ?HeadersCapabilityCache $headersCache = null,
+    ) {
         $this->repository = $repository;
         $this->healthCheck = $healthCheck ?? new HealthCheckService(new WordPressHealthClient());
+        $this->flapLog = $flapLog ?? new ImgproxyFlapLog();
+        $this->headersCache = $headersCache ?? new HeadersCapabilityCache();
     }
 
     public function register(): void
@@ -101,6 +111,10 @@ final class StatusRestController
                 'configured' => $signing !== null,
             ],
             'health' => null,
+            // #137: imgproxy up/down flips recorded by ImgproxyHealthCache.
+            'backendFlaps' => $this->flapLog->summary(),
+            // #51: 'yes' | 'no' | null (never probed / non-Apache).
+            'modHeaders' => $this->headersCache->read(),
         ];
 
         // Run health check if endpoint is configured.

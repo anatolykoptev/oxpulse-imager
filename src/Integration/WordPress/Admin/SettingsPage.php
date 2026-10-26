@@ -24,8 +24,10 @@ use OXPulse\Imager\Application\Delivery\DeliveryBackendFactory;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
+use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyFlapLog;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
+use OXPulse\Imager\Infrastructure\Local\HeadersCapabilityCache;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use OXPulse\Imager\Infrastructure\WordPress\AssetManifest;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
@@ -41,17 +43,23 @@ final class SettingsPage
     private ImageTransformer $imageTransformer;
     private ImgproxyHealthCache $imgproxyHealthCache;
     private CapabilityTester $capabilityTester;
+    private ImgproxyFlapLog $flapLog;
+    private HeadersCapabilityCache $headersCache;
 
     public function __construct(
         ?OptionSettingsRepository $repository = null,
         ?ImageTransformer $imageTransformer = null,
         ?ImgproxyHealthCache $imgproxyHealthCache = null,
         ?CapabilityTester $capabilityTester = null,
+        ?ImgproxyFlapLog $flapLog = null,
+        ?HeadersCapabilityCache $headersCache = null,
     ) {
         $this->repository = $repository ?? new OptionSettingsRepository();
         $this->imageTransformer = $imageTransformer ?? new ImageTransformer();
         $this->imgproxyHealthCache = $imgproxyHealthCache ?? new ImgproxyHealthCache();
         $this->capabilityTester = $capabilityTester ?? new CapabilityTester(null, $this->repository);
+        $this->flapLog = $flapLog ?? new ImgproxyFlapLog();
+        $this->headersCache = $headersCache ?? new HeadersCapabilityCache();
     }
 
     public function register(): void
@@ -92,6 +100,14 @@ final class SettingsPage
             <strong><?php echo esc_html__('Active delivery:', 'oxpulse-imager'); ?></strong>
             <?php echo esc_html($this->buildDeliveryStatusLine()); ?>
         </p>
+        <?php $flapLine = $this->buildFlapLine(); ?>
+        <?php if ($flapLine !== '') : ?>
+        <p class="oxpulse-flaps"><?php echo esc_html($flapLine); ?></p>
+        <?php endif; ?>
+        <?php $headersWarning = $this->buildHeadersWarning(); ?>
+        <?php if ($headersWarning !== '') : ?>
+        <div class="notice notice-warning inline oxpulse-headers-warning"><p><?php echo esc_html($headersWarning); ?></p></div>
+        <?php endif; ?>
         <div id="oxpulse-admin-root"></div>
         <?php
     }
@@ -142,6 +158,56 @@ final class SettingsPage
         }
 
         return __('Active delivery: Passthrough (no optimization)', 'oxpulse-imager');
+    }
+
+    /**
+     * #137: one-line imgproxy flap summary for the status area, from the
+     * ImgproxyFlapLog that ImgproxyHealthCache::write() maintains. Empty
+     * string when imgproxy is not the configured backend or no flip has
+     * ever been recorded. Cached data only — no network I/O.
+     *
+     * Flips are observed only when a probe runs (activation, settings
+     * save, hourly cron, version re-probe), so this is coarse, not a
+     * request-level outage count.
+     */
+    public function buildFlapLine(?int $now = null): string
+    {
+        if ($this->repository->loadDeliveryConfig()->isLocalBackendActive()) {
+            return '';
+        }
+        $summary = $this->flapLog->summary($now);
+        if ($summary['total'] === 0) {
+            return '';
+        }
+        return sprintf(
+            /* translators: 1: flips in last 24h (may end in +), 2: total flips, 3: new state (up/down), 4: UTC date-time of the last flip */
+            __('Imgproxy flaps: %1$s in the last 24h, %2$d in total; last flip to %3$s at %4$s UTC.', 'oxpulse-imager'),
+            (string) $summary['recent'] . ($summary['recentCapped'] ? '+' : ''),
+            $summary['total'],
+            $summary['state'] === 'down' ? 'down' : 'up',
+            gmdate('Y-m-d H:i', $summary['last'])
+        );
+    }
+
+    /**
+     * #51: warning shown when the live probe found `Header set` does not
+     * work from .htaccess (mod_headers missing or AllowOverride FileInfo
+     * denied). Only a definitive cached 'no' with LocalBackend active
+     * warns; never-probed, unknown and nginx hosts (the probe never
+     * persists there) stay silent.
+     */
+    public function buildHeadersWarning(): string
+    {
+        if (!$this->repository->loadDeliveryConfig()->isLocalBackendActive()) {
+            return '';
+        }
+        if ($this->headersCache->read() !== 'no') {
+            return '';
+        }
+        return __(
+            'Apache mod_headers is not available for the cache directory, so the "Vary: Accept" header on delivered images is not being sent. A CDN or browser cache may serve the wrong image format to mixed clients. Ask your host to enable mod_headers and AllowOverride FileInfo, or add "Vary: Accept" for wp-content/cache/oxpulse/ in your server or CDN configuration.',
+            'oxpulse-imager'
+        );
     }
 
     /**
