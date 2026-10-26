@@ -100,8 +100,13 @@ final class ImageDownsizeRewriter
     private function resolveDimensions(int $id, $size): array
     {
         // Array size: [width, height] directly.
+        // Core treats an array size as a bounding BOX (crop = false), so
+        // fit it to the original's aspect ratio instead of passing the box
+        // through as a crop target (a [2048, 2048] box on a 3:2 original
+        // otherwise becomes rs:fill:2048:2048 — a square, upscaled crop with
+        // 1:1 width/height attributes that defeat srcset ratio matching).
         if (is_array($size) && count($size) >= 2) {
-            return [(int) $size[0], (int) $size[1]];
+            return $this->fitToOriginal($id, (int) $size[0], (int) $size[1]);
         }
 
         $sizeName = is_string($size) ? $size : '';
@@ -130,6 +135,14 @@ final class ImageDownsizeRewriter
         if (isset($registered[$sizeName])) {
             $w = (int) ($registered[$sizeName]['width'] ?? 0);
             $h = (int) ($registered[$sizeName]['height'] ?? 0);
+            // A non-cropped subsize (core: medium, large, 1536x1536,
+            // 2048x2048, ...) is a bounding box, not a crop target. Fit it
+            // to the original's aspect ratio; hard-cropped sizes keep their
+            // configured dimensions. A missing 'crop' key keeps the old
+            // behaviour.
+            if (array_key_exists('crop', $registered[$sizeName]) && !$registered[$sizeName]['crop']) {
+                return $this->fitToOriginal($id, $w, $h);
+            }
             // WP uses 0 as "unlimited" for one dimension. Keep as-is —
             // imgproxy treats 0 as "auto" in rs:fit.
             return [$w, $h];
@@ -137,5 +150,31 @@ final class ImageDownsizeRewriter
 
         // Unknown size — let imgproxy use the original dimensions.
         return [0, 0];
+    }
+
+    /**
+     * Fit a bounding box to the original's aspect ratio without upscaling
+     * (core's wp_constrain_dimensions). Returns the box unchanged when the
+     * original's dimensions are unknown.
+     *
+     * @return array{0:int,1:int}
+     */
+    private function fitToOriginal(int $id, int $boxWidth, int $boxHeight): array
+    {
+        if ($boxWidth <= 0 && $boxHeight <= 0) {
+            return [$boxWidth, $boxHeight];
+        }
+        $meta = wp_get_attachment_metadata($id);
+        if (
+            !is_array($meta)
+            || !isset($meta['width'], $meta['height'])
+            || (int) $meta['width'] < 1
+            || (int) $meta['height'] < 1
+            || !function_exists('wp_constrain_dimensions')
+        ) {
+            return [$boxWidth, $boxHeight];
+        }
+        [$w, $h] = wp_constrain_dimensions((int) $meta['width'], (int) $meta['height'], $boxWidth, $boxHeight);
+        return [(int) $w, (int) $h];
     }
 }

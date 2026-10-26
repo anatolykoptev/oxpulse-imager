@@ -233,4 +233,55 @@ class ImageDownsizeRewriterTest extends TestCase
         $this->assertSame(0, $result[1]);
         $this->assertSame(0, $result[2]);
     }
+
+    /**
+     * Live piter hero: a [2048, 2048] box on a non-square original became
+     * rs:fill:2048:2048 with 1:1 attributes. A box must fit the original.
+     */
+    public function test_array_box_is_fitted_to_original_aspect_ratio(): void
+    {
+        // Original is 2048x1536 (4:3).
+        $result = $this->downsizeRewriter->rewrite(false, 42, [1024, 1024]);
+
+        $this->assertSame(1024, $result[1]);
+        $this->assertSame(768, $result[2]);
+        $this->assertStringContainsString('rs:fill:1024:768', $result[0]);
+    }
+
+    public function test_non_cropped_registered_size_is_fitted_not_cropped_square(): void
+    {
+        $GLOBALS['__oxpulse_registered_subsizes'] = [
+            '2048x2048' => ['width' => 2048, 'height' => 2048, 'crop' => false],
+        ];
+        $GLOBALS['__oxpulse_attachment_meta'][42]['width'] = 848;
+        $GLOBALS['__oxpulse_attachment_meta'][42]['height'] = 560;
+        $result = $this->downsizeRewriter->rewrite(false, 42, '2048x2048');
+        unset($GLOBALS['__oxpulse_registered_subsizes']);
+
+        // No upscale, original aspect ratio kept.
+        $this->assertSame(848, $result[1]);
+        $this->assertSame(560, $result[2]);
+        $this->assertStringNotContainsString('rs:fill:2048:2048', $result[0]);
+    }
+
+    public function test_hard_cropped_registered_size_keeps_configured_box(): void
+    {
+        $GLOBALS['__oxpulse_registered_subsizes'] = [
+            'square' => ['width' => 500, 'height' => 500, 'crop' => true],
+        ];
+        $result = $this->downsizeRewriter->rewrite(false, 42, 'square');
+        unset($GLOBALS['__oxpulse_registered_subsizes']);
+
+        $this->assertSame(500, $result[1]);
+        $this->assertSame(500, $result[2]);
+    }
+
+    public function test_box_is_unchanged_when_original_dimensions_unknown(): void
+    {
+        unset($GLOBALS['__oxpulse_attachment_meta'][42]['width'], $GLOBALS['__oxpulse_attachment_meta'][42]['height']);
+        $result = $this->downsizeRewriter->rewrite(false, 42, [800, 800]);
+
+        $this->assertSame(800, $result[1]);
+        $this->assertSame(800, $result[2]);
+    }
 }

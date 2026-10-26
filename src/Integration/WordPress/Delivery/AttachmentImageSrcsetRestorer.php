@@ -111,8 +111,60 @@ final class AttachmentImageSrcsetRestorer
             if (empty($attr['sizes'])) {
                 $sizes = wp_calculate_image_sizes($sizeArray, $originalSrc, $imageMeta, $attachmentId);
                 if ($sizes) {
+                    // #127 Part 2 — OPT-IN clamp of core's default sizes
+                    // ceiling to $content_width (the main column width).
+                    // Default OFF: a full-bleed hero is wider than the
+                    // content column, and clamping it makes Firefox/Safari
+                    // pick a candidate that is too small (blurry hero).
+                    // A site enables it via oxpulse_image_sizes_clamp_enabled
+                    // and can decide per image ($attr, $size, attachment).
+                    //
+                    // Even when enabled, only core's UNMODIFIED default
+                    // string is clamped; a customised sizes (theme or
+                    // wp_calculate_image_sizes filter) is never overridden.
+                    $coreDefault = sprintf('(max-width: %1$dpx) 100vw, %1$dpx', $width);
+                    $contentWidth = isset($GLOBALS['content_width']) ? (int) $GLOBALS['content_width'] : 0;
+                    if (
+                        $sizes === $coreDefault
+                        && $contentWidth > 0
+                        && $contentWidth < $width
+                        && apply_filters('oxpulse_image_sizes_clamp_enabled', false, $attr, $size, $attachmentId)
+                    ) {
+                        $sizes = sprintf('(max-width: %1$dpx) 100vw, %1$dpx', $contentWidth);
+                    }
+
+                    // #127 Part 2 — let an operator supply a precise sizes
+                    // string per context, following the oxpulse_* convention.
+                    // The filter receives the (possibly clamped) default and
+                    // may replace it entirely.
+                    $sizes = apply_filters('oxpulse_image_sizes', $sizes, $sizeArray, $originalSrc, $imageMeta, $attachmentId, $attr, $size);
+
                     $attr['sizes'] = $sizes;
                 }
+            }
+
+            // #127 Part 1 — replicate core's auto-sizes step from
+            // wp_get_attachment_image() (wp-includes/media.php lines
+            // 1146-1157). Core adds 'auto, ' before the
+            // wp_get_attachment_image_attributes filter fires, but only
+            // when $attr['sizes'] is already set at that point. Because
+            // our proxied src defeated core's srcset computation, sizes
+            // was unset when the auto-sizes step ran, so core skipped it.
+            // We set sizes above (priority 99, after that step), so we
+            // must add the auto prefix ourselves, mirroring core's exact
+            // conditions. The CSS guard (wp_print_auto_sizes_contain_css_fix,
+            // hooked on wp_head by core) keys off the [sizes^="auto,"]
+            // attribute selector and applies regardless of who added
+            // auto, so our path inherits it for free.
+            $addAutoSizes = apply_filters('wp_img_tag_add_auto_sizes', true);
+            if (
+                $addAutoSizes
+                && isset($attr['loading'])
+                && 'lazy' === $attr['loading']
+                && isset($attr['sizes'])
+                && !wp_sizes_attribute_includes_valid_auto($attr['sizes'])
+            ) {
+                $attr['sizes'] = 'auto, ' . $attr['sizes'];
             }
         }
 

@@ -297,6 +297,34 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return $map[$id] ?? false;
         }
     }
+    // Replica of core's wp_constrain_dimensions().
+    if (!function_exists('wp_constrain_dimensions')) {
+        function wp_constrain_dimensions($current_width, $current_height, $max_width = 0, $max_height = 0) {
+            if (!$max_width && !$max_height) {
+                return [$current_width, $current_height];
+            }
+            $width_ratio = $height_ratio = 1.0;
+            $did_width = $did_height = false;
+            if ($max_width > 0 && $current_width > 0 && $current_width > $max_width) {
+                $width_ratio = $max_width / $current_width;
+                $did_width = true;
+            }
+            if ($max_height > 0 && $current_height > 0 && $current_height > $max_height) {
+                $height_ratio = $max_height / $current_height;
+                $did_height = true;
+            }
+            if ($did_width && $did_height) {
+                $smaller = min($width_ratio, $height_ratio);
+            } elseif ($did_width) {
+                $smaller = $width_ratio;
+            } elseif ($did_height) {
+                $smaller = $height_ratio;
+            } else {
+                $smaller = 1.0;
+            }
+            return [max(1, (int) round($current_width * $smaller)), max(1, (int) round($current_height * $smaller))];
+        }
+    }
     if (!function_exists('wp_get_registered_image_subsizes')) {
         function wp_get_registered_image_subsizes() {
             return $GLOBALS['__oxpulse_registered_subsizes'] ?? [
@@ -398,6 +426,14 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             }
             $sizes = sprintf('(max-width: %1$dpx) 100vw, %1$dpx', $width);
             return apply_filters('wp_calculate_image_sizes', $sizes, $size, $image_src, $image_meta, $attachment_id);
+        }
+    }
+    // #127: wp_sizes_attribute_includes_valid_auto stub (WP 6.7+).
+    // Mirrors core: true when 'auto' is the first comma-separated entry.
+    if (!function_exists('wp_sizes_attribute_includes_valid_auto')) {
+        function wp_sizes_attribute_includes_valid_auto(string $sizes_attr): bool {
+            $parts = explode(',', $sizes_attr, 2);
+            return 'auto' === strtolower(trim($parts[0], " \t\f\r\n"));
         }
     }
     if (!function_exists('get_posts')) {
