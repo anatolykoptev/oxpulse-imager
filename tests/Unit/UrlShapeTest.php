@@ -216,15 +216,33 @@ final class UrlShapeTest extends TestCase
         $this->assertStringNotContainsString('cb:', $rewriter->rewrite(self::SRC, 800, 0, 'content')->url);
     }
 
-    private function requester(int $status, string $type, ?string $error = null): HttpRequester
-    {
-        return new class($status, $type, $error) implements HttpRequester {
+    /**
+     * Scripted endpoint. The `cb:` request gets ($status, $type, $error); the
+     * CONTROL request (same URL without `cb:`) gets the control* triple.
+     */
+    private function requester(
+        int $status,
+        string $type,
+        ?string $error = null,
+        int $controlStatus = 200,
+        string $controlType = 'image/webp',
+        ?string $controlError = null
+    ): HttpRequester {
+        return new class($status, $type, $error, $controlStatus, $controlType, $controlError) implements HttpRequester {
             public ?string $lastUrl = null;
-            public function __construct(private int $s, private string $t, private ?string $e) {}
+            public int $calls = 0;
+            public function __construct(
+                private int $s, private string $t, private ?string $e,
+                private int $cs, private string $ct, private ?string $ce
+            ) {}
             public function get(string $url): array { return ['status' => 0, 'body' => '', 'error' => 'n/a']; }
             public function head(string $url): array { return ['status' => 0, 'body' => '', 'error' => 'n/a']; }
             public function getImage(string $url): array
             {
+                $this->calls++;
+                if (!str_contains($url, '/cb:')) {
+                    return ['status' => $this->cs, 'content_type' => $this->ct, 'error' => $this->ce];
+                }
                 $this->lastUrl = $url;
                 return ['status' => $this->s, 'content_type' => $this->t, 'error' => $this->e];
             }
@@ -256,26 +274,53 @@ final class UrlShapeTest extends TestCase
         $this->assertNotSame($a->lastUrl, $b->lastUrl);
     }
 
-    /** Only 400/403 are definitive rejects of a signed URL with a good source. */
-    public function test_probe_says_no_only_on_a_definitive_reject(): void
+    /**
+     * imgproxy answers a processing option outside
+     * IMGPROXY_ALLOWED_PROCESSING_OPTIONS with 404 "Invalid URL" (v4.0.11
+     * options/parser/errors.go newForbiddenOptionError). With a healthy
+     * control request that is a definitive `no`, even over a prior `ok`.
+     */
+    public function test_cb_refused_while_control_is_fine_is_a_definitive_no(): void
     {
-        foreach ([400, 403] as $status) {
+        foreach ([404, 400, 403] as $status) {
+            SocialJpegCapabilityCache::forCacheBuster()->write('ok');
             $this->assertFalse($this->probeVerdictFor($this->requester($status, 'text/plain')), (string) $status);
             $this->assertSame('no', SocialJpegCapabilityCache::forCacheBuster()->readVerdict(), (string) $status);
-            SocialJpegCapabilityCache::forCacheBuster()->clear();
         }
+    }
+
+    /** Both 404 (source gone, wrong endpoint): the probe learned nothing about cb. */
+    public function test_control_failure_keeps_the_prior_verdict_whatever_cb_returned(): void
+    {
+        $controls = [[404, 'text/plain', null], [502, 'text/html', null], [503, 'text/html', null], [429, 'text/plain', null], [0, '', 'timeout'], [200, 'text/html', null]];
+        foreach (['ok', 'no'] as $prior) {
+            foreach ($controls as [$cs, $ct, $ce]) {
+                foreach ([[404, 'text/plain', null], [200, 'image/webp', null]] as [$s2, $t2, $e2]) {
+                    SocialJpegCapabilityCache::forCacheBuster()->write($prior);
+                    $this->probeVerdictFor($this->requester($s2, $t2, $e2, $cs, $ct, $ce));
+                    $this->assertSame($prior, SocialJpegCapabilityCache::forCacheBuster()->readVerdict(), "prior $prior, control $cs/$ce, cb $s2");
+                }
+            }
+        }
+    }
+
+    public function test_control_is_sent_first_and_without_cb(): void
+    {
+        $req = $this->requester(200, 'image/webp');
+        $this->probeVerdictFor($req);
+        $this->assertSame(2, $req->calls);
     }
 
     /**
      * A verdict flip changes every imgproxy URL and refills the nginx cache,
-     * so a blip (timeout, 5xx during a restart, 429, 404, a proxy HTML page)
+     * so a blip on the cb: request (timeout, 5xx, 429, a proxy HTML page)
      * must keep the prior verdict — in BOTH directions.
      */
     public function test_transient_failures_keep_the_prior_verdict(): void
     {
         $blips = [
             [0, '', 'timeout'], [502, 'text/html', null], [503, 'text/html', null],
-            [429, 'text/plain', null], [404, 'text/plain', null], [200, 'text/html', null],
+            [429, 'text/plain', null], [200, 'text/html', null],
         ];
         foreach (['ok', 'no'] as $prior) {
             foreach ($blips as [$status, $type, $error]) {

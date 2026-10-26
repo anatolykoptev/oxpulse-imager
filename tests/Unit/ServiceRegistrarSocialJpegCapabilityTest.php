@@ -306,4 +306,20 @@ class ServiceRegistrarSocialJpegCapabilityTest extends TestCase
         ServiceRegistrar::recheckCacheBusterCapability(new GetImageStub(status: 200, contentType: 'image/webp'), $cache, $this->sourceProvider());
         $this->assertSame(1, did_action('oxpulse_purge_page_cache'), 'no purge when the verdict is unchanged');
     }
+
+    /** An `ok` earned on the old endpoint must not survive an endpoint change. */
+    public function test_endpoint_change_resets_the_cachebuster_verdict_before_reprobing(): void
+    {
+        $this->configureImgproxyLocal();
+        $cache = SocialJpegCapabilityCache::forCacheBuster();
+        $cache->write('ok');
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+
+        $this->findUpdatedOptionCallback()(OptionSettingsRepository::OPTION_ENDPOINT);
+
+        // The re-probe in this process has no usable source, so nothing re-earns `ok`.
+        $this->assertNull($cache->readVerdict());
+        $this->assertFalse($cache->readOk());
+    }
 }

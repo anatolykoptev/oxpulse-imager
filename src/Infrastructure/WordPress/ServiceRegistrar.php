@@ -1513,6 +1513,10 @@ final class ServiceRegistrar
                 // Both probes are self-guarding — exactly one fires
                 // for the new endpoint state (endpoint set → imgproxy
                 // probe; endpoint empty → rewrite-capability probe).
+                // An `ok` earned on the OLD endpoint says nothing about the
+                // new one: forget it (unknown reads as "no cb", fail-safe)
+                // before the re-probe decides.
+                SocialJpegCapabilityCache::forCacheBuster()->clear();
                 $recheckCapability();
                 $recheckImgproxy();
                 $recheckSocialJpeg();

@@ -9,12 +9,12 @@
  * nonce so no cache layer can answer it.
  *
  * Verdict rules (a flip changes EVERY imgproxy URL and refills the nginx
- * cache, so only definitive answers move it):
- * - 200 + image/*            -> 'ok'.
- * - 400 or 403               -> 'no' (imgproxy's answer to a disallowed
- *                               option on a signed URL with a good source).
- * - anything else (transport error, 5xx, 429, 404, odd content type,
- *   unauthorised/missing source) -> nothing written; the prior verdict stands.
+ * cache, so only definitive answers move it). A control request — the same
+ * signed URL without `cb:` — must return 200 image first, otherwise nothing
+ * is written. Then:
+ * - cb: 200 + image/*        -> 'ok'.
+ * - cb: 400 / 403 / 404      -> 'no' (a forbidden option is a 404 in imgproxy).
+ * - cb: transport error, 5xx, 429, odd content type -> nothing written.
  *
  * When the effective state (verdict === 'ok') changes, the page caches are
  * purged through the injected callable (production: CachePurger::purge()),
@@ -64,32 +64,41 @@ final class CacheBusterCapabilityProbe
             return;
         }
 
-        $req = new TransformRequest(
-            sourceUrl: $decision->fsPath ?? (string) $decision->url,
-            width: 64,
-            height: 0,
-            resize: 'fit',
-            format: $this->delivery->outputFormat,
-            context: 'cb_probe',
-            sourceMode: $decision->fsPath !== null ? 'local' : 'http',
-            // Unique per probe: piter's nginx caches imgproxy 200s, which
-            // would otherwise answer a later probe from cache.
-            version: 'p' . bin2hex(random_bytes(6)),
+        // Same signed URL twice: a CONTROL without `cb:` and the `cb:` probe.
+        // imgproxy answers a disallowed option (IMGPROXY_ALLOWED_PROCESSING_
+        // OPTIONS) with 404 "Invalid URL" — v4.0.11 options/parser/errors.go
+        // newForbiddenOptionError — the same status as a missing source, so a
+        // 404 alone proves nothing. Only "control fine, cb: refused" does.
+        // The width is random so neither URL can be answered from a cache.
+        $width = 64 + random_int(0, 4000);
+        $make = fn (string $version): string => (new ImgproxyBackend($this->delivery, $this->signing))->generate(
+            new TransformRequest(
+                sourceUrl: $decision->fsPath ?? (string) $decision->url,
+                width: $width,
+                height: 0,
+                resize: 'fit',
+                format: $this->delivery->outputFormat,
+                context: 'cb_probe',
+                sourceMode: $decision->fsPath !== null ? 'local' : 'http',
+                version: $version,
+            )
         );
 
-        $probeUrl = (new ImgproxyBackend($this->delivery, $this->signing))->generate($req);
-        $res = $this->requester->getImage($probeUrl);
+        if (!$this->isImage($this->requester->getImage($make('')))) {
+            // Source missing, 5xx, timeout, 429...: the endpoint told us
+            // nothing about `cb`. Keep the prior verdict.
+            return;
+        }
 
+        // Unique per probe (piter's nginx caches imgproxy 200s).
+        $res = $this->requester->getImage($make('p' . bin2hex(random_bytes(6))));
         $status = (int) ($res['status'] ?? 0);
-        if (($res['error'] ?? null) === null
-            && $status === 200
-            && str_starts_with(strtolower($res['content_type'] ?? ''), 'image/')
-        ) {
+        if ($this->isImage($res)) {
             $verdict = 'ok';
-        } elseif (($res['error'] ?? null) === null && ($status === 400 || $status === 403)) {
+        } elseif (($res['error'] ?? null) === null && in_array($status, [400, 403, 404], true)) {
             $verdict = 'no';
         } else {
-            return;
+            return; // transient failure on the cb: request only
         }
 
         $wasOk = $this->cache->readVerdict() === 'ok';
@@ -102,5 +111,13 @@ final class CacheBusterCapabilityProbe
                 // A purge failure must never break the probe.
             }
         }
+    }
+
+    /** @param array{status?: int, content_type?: string, error?: ?string} $res */
+    private function isImage(array $res): bool
+    {
+        return ($res['error'] ?? null) === null
+            && (int) ($res['status'] ?? 0) === 200
+            && str_starts_with(strtolower($res['content_type'] ?? ''), 'image/');
     }
 }
