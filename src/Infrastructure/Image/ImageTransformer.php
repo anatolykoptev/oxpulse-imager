@@ -320,23 +320,6 @@ class ImageTransformer
         return function_exists('imagewebp');
     }
 
-    /**
-     * Whether Imagick has the AVIF delegate (extension_loaded + the
-     * build's delegate list includes AVIF). Guarded in try/catch —
-     * queryFormats can throw on odd builds.
-     */
-    protected function hasImagickAvif(): bool
-    {
-        if (!$this->hasImagick()) {
-            return false;
-        }
-        try {
-            return \Imagick::queryFormats('AVIF') !== [];
-        } catch (\Throwable $e) {
-            return false;
-        }
-    }
-
     protected function hasGdAvif(): bool
     {
         return function_exists('imageavif');
