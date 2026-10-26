@@ -58,6 +58,9 @@ final class BufferRewriter
     private const PAGE_BUILDER_GET_KEYS = [
         'fl_builder', 'et_fb', 'bricks', 'breakdance',
         'ct_builder', 'elementor-preview', 'fb-edit',
+        // WPBakery frontend editor (#55). Its backend editor is covered
+        // by is_admin(); the frontend editor loads the public page.
+        'vc_editable', 'vc_action',
     ];
 
     private UrlRewriter $rewriter;
@@ -266,28 +269,32 @@ final class BufferRewriter
         // is linear and safe — it grabs everything until the next quote.
         //
         // \x27 = single quote (avoid ' which can be confused in PHP).
-        $pattern = '#(<img[^>]+(?:\bsrc|\bdata-src)=["\x27])([^"\x27]+/wp-content/[^"\x27]+\.(?:'
+        // The attribute alternation is explicit (#55): \bsrc alone already
+        // matches the tail of data-lazy-src (the hyphen is a word boundary),
+        // but that was an accident, not a contract.
+        $pattern = '#(<img[^>]+(?:\bsrc|\bdata-src|\bdata-lazy-src)=["\x27])([^"\x27]+/wp-content/[^"\x27]+\.(?:'
             . self::SOURCE_EXTENSIONS
             . '))(["\x27][^>]*>)#i';
 
-        return preg_replace_callback($pattern, function (array $m) use ($pictureSpans, $html): string {
-            $prefix = $m[1];
-            $url = $m[2];
-            $suffix = $m[3];
-            $fullTag = $m[0];
+        // PREG_OFFSET_CAPTURE: every $m[n] is [text, byteOffset]. The offset
+        // is relative to the original subject — the same coordinate space
+        // findPictureSpans() uses (#55).
+        $rewrittenHtml = preg_replace_callback($pattern, function (array $m) use ($pictureSpans): string {
+            $prefix = $m[1][0];
+            $url = $m[2][0];
+            $suffix = $m[3][0];
+            $fullTag = $m[0][0];
+            $matchOffset = $m[0][1];
 
             // #43 Phase 3 — tag-level idempotency: skip already-marked.
             if ($this->hasOxpulseMarker($fullTag) || $this->hasSpNoWebpClass($fullTag)) {
                 return $fullTag;
             }
 
-            // #43 Phase 3 — skip <img> inside a <picture> element. The
-            // match offset is computed via the prefix position in $html.
-            // preg_replace_callback doesn't give us the offset directly,
-            // so we locate the tag in the full buffer. This is a linear
-            // search per match — acceptable because the number of <img>
-            // matches per page is small (<100 typically).
-            if ($this->isInsidePicture($fullTag, $html, $pictureSpans)) {
+            // #43 Phase 3 — skip <img> inside a <picture> element, using
+            // the REAL match offset (#55: a strpos on the tag text resolved
+            // duplicate identical tags to the first occurrence).
+            if ($this->isInsidePicture($matchOffset, strlen($fullTag), $pictureSpans)) {
                 return $fullTag;
             }
 
@@ -328,35 +335,46 @@ final class BufferRewriter
                 && apply_filters('oxpulse_picture_enabled', $this->delivery->pictureEnabled)
                 && oxpulse_license_gate()->isPro()
             ) {
-                // Skip <picture> wrapping for JS-lazy images (data-src): a
-                // <source srcset> is resolved EAGERLY by the browser at
-                // parse time, which would defeat the theme's lazy-loader
-                // and eager-load every below-the-fold image. The lazy
-                // <img> still gets imgproxy delivery via the src rewrite
-                // above; AVIF for lazy images (via a lazy-loader-specific
-                // data-srcset) is a future enhancement. Native
-                // loading="lazy" on a plain src <img> is unaffected — it
-                // is honored on the inner <img> inside the <picture>.
-                if (str_contains($prefix, 'data-src=')) {
-                    return $rewritten;
+                // JS-lazy images (#77): a <source srcset> is resolved EAGERLY
+                // by the browser at parse time, which would defeat the
+                // theme's lazy-loader and eager-load every below-the-fold
+                // image. A <source> WITHOUT srcset is skipped by source
+                // selection, so a lazy image is only wrapped when its
+                // loader is known to swap <source data-srcset> -> srcset
+                // on unveil (lazysizes; vanilla-lazyload via the filter).
+                // Any other loader keeps today's behaviour: the src rewrite
+                // above (WebP delivery) and no <picture>. Native
+                // loading="lazy" on a plain src <img> is not JS-lazy and is
+                // honored on the inner <img> inside the <picture>.
+                $sourceAttr = 'srcset';
+                $lazy = $this->isJsLazy($prefix, $fullTag);
+                if ($lazy) {
+                    $sourceAttr = $this->lazySourceAttribute($fullTag);
+                    if ($sourceAttr === null) {
+                        return $rewritten;
+                    }
                 }
 
                 // Extract the ORIGINAL srcset from the full matched tag
-                // ($m[0]) — the buffer does NOT rewrite srcset, so the
-                // tag's srcset is still the pre-rewrite value. Pass '' when
-                // absent (the wrapper then builds single-URL <source>s).
-                $originalSrcset = $this->extractSrcsetAttribute($fullTag);
+                // — the buffer does NOT rewrite srcset, so the tag's srcset
+                // is still the pre-rewrite value. Pass '' when absent (the
+                // wrapper then builds single-URL <source>s).
+                $originalSrcset = $this->extractSrcsetAttribute($fullTag, $lazy);
                 $rewritten = $this->pictureWrapper->wrap(
                     $rewritten,
                     $url,
                     $originalSrcset,
                     $width,
-                    $height
+                    $height,
+                    $sourceAttr
                 );
             }
 
             return $rewritten;
-        }, $html);
+        }, $html, -1, $count, PREG_OFFSET_CAPTURE);
+
+        // Never-blank: a PCRE failure returns null — keep the input.
+        return $rewrittenHtml ?? $html;
     }
 
     /**
@@ -385,12 +403,12 @@ final class BufferRewriter
 
         $attrPattern = '#\bstyle\s*=\s*(["\x27])((?:(?!\1).)*?background(?:(?!\1).)*?)\1#i';
 
-        return (string) preg_replace_callback($attrPattern, function (array $attr): string {
+        return preg_replace_callback($attrPattern, function (array $attr): string {
             $quote = $attr[1];
             $css = $attr[2];
 
             $urlPattern = '#url\(\s*(["\x27]?)([^"\x27()\s]+/wp-content/[^"\x27()\s]+\.(?:' . self::SOURCE_EXTENSIONS . '))\1\s*\)#i';
-            $rewrittenCss = (string) preg_replace_callback($urlPattern, function (array $m): string {
+            $rewrittenCss = preg_replace_callback($urlPattern, function (array $m): string {
                 $result = $this->rewriter->rewrite($m[2], 0, 0, 'buffer_bg');
                 if (!$result->rewritten) {
                     return $m[0];
@@ -399,10 +417,10 @@ final class BufferRewriter
                 // base64url/imgproxy-options charset, safe for both; escape
                 // for the surrounding HTML attribute anyway (#73 discipline).
                 return 'url(' . htmlspecialchars($result->url, ENT_QUOTES, 'UTF-8') . ')';
-            }, $css);
+            }, $css) ?? $css;
 
             return 'style=' . $quote . $rewrittenCss . $quote;
-        }, $html);
+        }, $html) ?? $html;
     }
 
     /**
@@ -419,7 +437,7 @@ final class BufferRewriter
             return $html;
         }
 
-        return (string) preg_replace_callback('#<link\b[^>]*>#i', function (array $m): string {
+        return preg_replace_callback('#<link\b[^>]*>#i', function (array $m): string {
             $tag = $m[0];
             if (
                 !preg_match('#\brel\s*=\s*["\x27]preload["\x27]#i', $tag)
@@ -441,7 +459,7 @@ final class BufferRewriter
                 'href=' . $href[1] . htmlspecialchars($result->url, ENT_QUOTES, 'UTF-8') . $href[1],
                 $tag
             );
-        }, $html);
+        }, $html) ?? $html;
     }
 
     private function findPictureSpans(string $html): array
@@ -464,21 +482,14 @@ final class BufferRewriter
     }
 
     /**
-     * Whether a tag occurrence falls inside any <picture> span. We
-     * locate the tag's first occurrence at or after the last known
-     * search cursor — this is a linear scan but bounded by the number
-     * of <img> matches (small per page).
+     * Whether the tag at byte offset $pos (length $length) falls inside
+     * any <picture> span. $pos is the real preg match offset (#55).
+     *
+     * @param array<int, array{0:int, 1:int}> $pictureSpans
      */
-    private function isInsidePicture(string $tag, string $html, array $pictureSpans): bool
+    private function isInsidePicture(int $pos, int $length, array $pictureSpans): bool
     {
-        if ($pictureSpans === []) {
-            return false;
-        }
-        $pos = strpos($html, $tag);
-        if ($pos === false) {
-            return false;
-        }
-        $tagEnd = $pos + strlen($tag);
+        $tagEnd = $pos + $length;
         foreach ($pictureSpans as [$start, $end]) {
             if ($pos >= $start && $tagEnd <= $end) {
                 return true;
@@ -536,18 +547,70 @@ final class BufferRewriter
     }
 
     /**
-     * Phase 1b — extract the srcset attribute value from a full <img> tag
-     * (the original matched tag $m[0]). Returns '' when the tag has no
-     * srcset. The buffer does NOT rewrite srcset, so this is the ORIGINAL
-     * pre-rewrite srcset — exactly what PictureElementWrapper::wrap() needs
-     * to build per-format <source> srcset candidates (passing the already-
-     * rewritten srcset would cause every candidate to be rejected by the
-     * proxy-loop / already-rewritten guard). Handles double + single quotes.
+     * Whether the matched tag is JS-lazy: the URL we matched sits in an
+     * attribute other than a plain `src` (data-src, data-lazy-src, ...),
+     * or the tag carries a lazy data-* attribute or the lazysizes
+     * `lazyload` class anywhere. Decided from the FULL tag (#77), not just
+     * the prefix — a lazy attribute in the suffix must count too.
      */
-    private function extractSrcsetAttribute(string $imgTag): string
+    private function isJsLazy(string $prefix, string $fullTag): bool
     {
-        if (preg_match('/\bsrcset=["\x27]([^"\x27]*)["\x27]/i', $imgTag, $m)) {
-            return $m[1];
+        if (preg_match('/([\w-]+)\s*=\s*["\x27]$/', $prefix, $a) && strtolower($a[1]) !== 'src') {
+            return true;
+        }
+        if (preg_match('/(?<![\w-])data-(?:lazy-)?src(?:set)?\s*=/i', $fullTag)) {
+            return true;
+        }
+        return $this->hasClassToken($fullTag, 'lazyload');
+    }
+
+    /**
+     * The attribute name a lazy-loader swaps onto <source> elements, or
+     * null when the loader is unknown (the tag is then left unwrapped).
+     *
+     * Detected contracts (verified against the loader source):
+     * - lazysizes 5.3.2 (`lazyload` class): handleSources() copies
+     *   `data-srcset` -> `srcset` on every <source> of the img's <picture>.
+     * Other loaders (vanilla-lazyload `data-srcset` on `.lazy`, WP Rocket,
+     * Jetpack, Foxiz built-in, ...) are not guessed; an operator can opt a
+     * site in via the oxpulse_lazy_picture_source_attribute filter.
+     */
+    private function lazySourceAttribute(string $fullTag): ?string
+    {
+        $attr = $this->hasClassToken($fullTag, 'lazyload') ? 'data-srcset' : null;
+        $attr = apply_filters('oxpulse_lazy_picture_source_attribute', $attr, $fullTag);
+        if (!is_string($attr) || !preg_match('/^data-[a-z][a-z0-9-]*$/', $attr)) {
+            return null;
+        }
+        return $attr;
+    }
+
+    private function hasClassToken(string $imgTag, string $token): bool
+    {
+        if (!preg_match('/(?<![\w-])class\s*=\s*["\x27]([^"\x27]*)["\x27]/i', $imgTag, $m)) {
+            return false;
+        }
+        return in_array($token, preg_split('/\s+/', $m[1]) ?: [], true);
+    }
+
+    /**
+     * Phase 1b — extract the srcset value from a full <img> tag. Returns
+     * '' when the tag has none. The buffer does NOT rewrite srcset, so
+     * this is the ORIGINAL pre-rewrite srcset — exactly what
+     * PictureElementWrapper::wrap() needs to build per-format <source>
+     * candidates. Handles double + single quotes.
+     *
+     * Attribute names are matched exactly (#77): a lazy tag prefers
+     * data-srcset / data-lazy-srcset (its real candidates; a plain srcset
+     * on such a tag is a placeholder), a non-lazy tag reads only srcset.
+     */
+    private function extractSrcsetAttribute(string $imgTag, bool $lazy = false): string
+    {
+        $names = $lazy ? ['data-srcset', 'data-lazy-srcset', 'srcset'] : ['srcset'];
+        foreach ($names as $name) {
+            if (preg_match('/(?<![\w-])' . preg_quote($name, '/') . '\s*=\s*["\x27]([^"\x27]*)["\x27]/i', $imgTag, $m)) {
+                return $m[1];
+            }
         }
         return '';
     }

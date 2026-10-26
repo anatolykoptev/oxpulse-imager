@@ -714,4 +714,205 @@ class BufferRewriterTest extends TestCase
         $this->assertStringNotContainsString('data-oxpulse-picture', $result);
         $this->assertStringNotContainsString('imgproxy.test', $result);
     }
+
+    // --- #55: BufferRewriter refinements ---
+
+    private const IMG_A = '<img src="https://example.com/wp-content/uploads/dup.jpg" alt="dup">';
+    private const IMG_PICTURE_A = '<picture><source type="image/webp" srcset="x.webp"><img src="https://example.com/wp-content/uploads/dup.jpg" alt="dup"></picture>';
+
+    public function test_duplicate_tag_standalone_then_inside_picture_uses_real_offset(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $result = $rewriter->rewrite($this->wrap(self::IMG_A . self::IMG_PICTURE_A));
+
+        // Standalone one is rewritten; the one inside <picture> is left alone.
+        $this->assertSame(1, substr_count($result, 'imgproxy.example.com'), 'only the standalone <img> may be rewritten');
+        $this->assertStringContainsString(
+            '<source type="image/webp" srcset="x.webp"><img src="https://example.com/wp-content/uploads/dup.jpg" alt="dup"></picture>',
+            $result,
+            'the <img> inside <picture> must stay untouched'
+        );
+    }
+
+    public function test_duplicate_tag_inside_picture_then_standalone_uses_real_offset(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $result = $rewriter->rewrite($this->wrap(self::IMG_PICTURE_A . self::IMG_A));
+
+        $this->assertSame(1, substr_count($result, 'imgproxy.example.com'), 'the standalone <img> after a <picture> must be rewritten');
+        $this->assertStringContainsString(
+            '<img src="https://example.com/wp-content/uploads/dup.jpg" alt="dup"></picture>',
+            $result,
+            'the <img> inside <picture> must stay untouched'
+        );
+    }
+
+    public function test_should_buffer_skips_wpbakery_frontend_editor(): void
+    {
+        foreach (['vc_editable', 'vc_action'] as $key) {
+            $_GET[$key] = '1';
+            try {
+                $this->assertFalse($this->createBufferRewriter()->shouldBuffer(), $key . ' must disable the buffer');
+            } finally {
+                unset($_GET[$key]);
+            }
+        }
+    }
+
+    public function test_rewrites_data_lazy_src_attribute(): void
+    {
+        $rewriter = $this->createBufferRewriter();
+        $result = $rewriter->rewrite($this->wrap('<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" data-lazy-src="https://example.com/wp-content/uploads/lazy.jpg" alt="x">'));
+
+        $this->assertStringContainsString('data-lazy-src="https://imgproxy.example.com/', $result);
+        $this->assertStringNotContainsString('data-lazy-src="https://example.com/', $result);
+    }
+
+    public function test_never_blank_when_pcre_fails(): void
+    {
+        // An unterminated style attribute makes the background pass exhaust
+        // pcre.backtrack_limit (JIT off) while the <img> pass still succeeds,
+        // so the failure is NOT swallowed by the rewrite() try/catch. A
+        // `(string) null` cast there would blank the whole page.
+        $html = '<html><body><img src="https://example.com/wp-content/uploads/a.jpg" alt="a">'
+            . '<div style="background' . str_repeat('a', 1500000) . '</div></body></html>';
+        $jit = ini_get('pcre.jit');
+        ini_set('pcre.jit', '0');
+        try {
+            $result = $this->createBufferRewriter()->rewrite($html);
+        } finally {
+            ini_set('pcre.jit', (string) $jit);
+        }
+        $this->assertNotSame('', $result, 'a PCRE failure must never blank the page');
+        $this->assertStringContainsString('<img', $result);
+        $this->assertStringContainsString('<div style="background', $result);
+    }
+
+    // --- #77: AVIF for JS-lazy images without eager-loading them ---
+
+    private const GIF = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+
+    /**
+     * Parse-time oracle: a browser fetches `src` of an <img> and `srcset`
+     * of an <img>/<source> at parse time. Return every such URL that
+     * points at the delivery host. DOM-parsed so data-srcset cannot be
+     * mistaken for srcset.
+     *
+     * @return list<string>
+     */
+    private function parseTimeFetches(string $html, string $host): array
+    {
+        $doc = new \DOMDocument();
+        $prev = libxml_use_internal_errors(true);
+        $doc->loadHTML($html);
+        libxml_clear_errors();
+        libxml_use_internal_errors($prev);
+
+        $fetches = [];
+        foreach (['img', 'source'] as $tag) {
+            foreach ($doc->getElementsByTagName($tag) as $el) {
+                foreach (['src', 'srcset'] as $attr) {
+                    $value = $el->getAttribute($attr);
+                    if ($value !== '' && str_contains($value, $host)) {
+                        $fetches[] = $tag . '[' . $attr . ']=' . $value;
+                    }
+                }
+            }
+        }
+        return $fetches;
+    }
+
+    private function lazysizesTag(string $class = 'lazyload'): string
+    {
+        return '<img class="' . $class . '" src="' . self::GIF . '" data-src="https://example.com/wp-content/uploads/lazy.jpg"'
+            . ' data-srcset="https://example.com/wp-content/uploads/lazy-400.jpg 400w, https://example.com/wp-content/uploads/lazy-800.jpg 800w"'
+            . ' sizes="(max-width: 800px) 100vw, 800px" width="800" height="600" alt="lazy">';
+    }
+
+    public function test_lazysizes_image_gets_avif_sources_that_fetch_nothing_at_parse_time(): void
+    {
+        $result = $this->createBufferRewriterWithPicture()->rewrite($this->wrap($this->lazysizesTag()));
+
+        $this->assertSame(1, substr_count($result, '<picture'), 'lazysizes image should be wrapped');
+        $this->assertSame(
+            [],
+            $this->parseTimeFetches($result, 'imgproxy.test'),
+            'a parse-time browser must fetch NO variant for a below-fold lazy image'
+        );
+        // The variants are present, but only under data-srcset (the contract lazysizes swaps).
+        preg_match_all('/<source\b[^>]*>/i', $result, $sources);
+        $this->assertCount(2, $sources[0]);
+        $this->assertStringContainsString('type="image/avif"', $sources[0][0]);
+        $this->assertStringContainsString('data-srcset="https://imgproxy.test/avif/', $sources[0][0]);
+        $this->assertStringContainsString('400w', $sources[0][0]);
+        $this->assertStringContainsString('type="image/webp"', $sources[0][1]);
+        $this->assertStringContainsString('data-srcset="https://imgproxy.test/webp/', $sources[0][1]);
+        // The inner <img> keeps its placeholder src and its lazy data-src.
+        $this->assertStringContainsString('src="' . self::GIF . '"', $result);
+        $this->assertStringContainsString('data-src="https://imgproxy.test/', $result);
+    }
+
+    public function test_unknown_lazy_loader_is_not_wrapped(): void
+    {
+        // class="lazy" + data-src is the vanilla-lazyload default but is too
+        // generic to assume; no contract detected -> no <picture>.
+        $result = $this->createBufferRewriterWithPicture()->rewrite($this->wrap($this->lazysizesTag('lazy')));
+
+        $this->assertStringNotContainsString('<picture', $result);
+        $this->assertSame([], $this->parseTimeFetches($result, 'imgproxy.test'));
+        $this->assertStringContainsString('data-src="https://imgproxy.test/', $result, 'src rewrite still applies');
+    }
+
+    public function test_data_lazy_src_image_is_never_wrapped(): void
+    {
+        // WP Rocket / Jetpack style. Their loaders are not known to swap
+        // <source> attributes; a wrapped tag would eager-load via srcset.
+        $tag = '<img src="' . self::GIF . '" data-lazy-src="https://example.com/wp-content/uploads/l.jpg" data-lazy-srcset="https://example.com/wp-content/uploads/l-400.jpg 400w" width="400" height="300" alt="x">';
+        $result = $this->createBufferRewriterWithPicture()->rewrite($this->wrap($tag));
+
+        $this->assertStringNotContainsString('<picture', $result);
+        $this->assertSame([], $this->parseTimeFetches($result, 'imgproxy.test'));
+        $this->assertStringContainsString('data-lazy-src="https://imgproxy.test/', $result);
+    }
+
+    public function test_lazy_attribute_after_matched_src_still_counts_as_lazy(): void
+    {
+        // The matched URL sits in plain src; the lazy marker is in the suffix.
+        $tag = '<img src="https://example.com/wp-content/uploads/a.jpg" data-src="https://cdn.example.org/b.jpg" alt="x">';
+        $result = $this->createBufferRewriterWithPicture()->rewrite($this->wrap($tag));
+
+        $this->assertStringNotContainsString('<picture', $result);
+    }
+
+    public function test_lazy_picture_requires_picture_enabled(): void
+    {
+        $result = $this->createBufferRewriterWithPicture(pictureEnabled: false)->rewrite($this->wrap($this->lazysizesTag()));
+
+        $this->assertStringNotContainsString('<picture', $result);
+        $this->assertStringNotContainsString('<source', $result);
+    }
+
+    public function test_filter_can_opt_a_loader_in_and_invalid_values_are_rejected(): void
+    {
+        add_filter('oxpulse_lazy_picture_source_attribute', fn ($attr) => 'data-srcset');
+        $result = $this->createBufferRewriterWithPicture()->rewrite($this->wrap($this->lazysizesTag('lazy')));
+        $this->assertSame(1, substr_count($result, '<picture'));
+        $this->assertSame([], $this->parseTimeFetches($result, 'imgproxy.test'));
+
+        // A filter that returns a fetch-triggering name must be refused.
+        $GLOBALS['__oxpulse_filters'] = [];
+        add_filter('oxpulse_lazy_picture_source_attribute', fn ($attr) => 'srcset');
+        $result = $this->createBufferRewriterWithPicture()->rewrite($this->wrap($this->lazysizesTag('lazy')));
+        $this->assertStringNotContainsString('<picture', $result);
+    }
+
+    public function test_native_lazy_image_is_still_wrapped_with_real_srcset(): void
+    {
+        // Control: loading="lazy" with a plain src is native-lazy, not JS-lazy.
+        $tag = '<img src="https://example.com/wp-content/uploads/n.jpg" loading="lazy" width="400" height="300" alt="n">';
+        $result = $this->createBufferRewriterWithPicture()->rewrite($this->wrap($tag));
+
+        $this->assertSame(1, substr_count($result, '<picture'));
+        $this->assertStringContainsString(' srcset="https://imgproxy.test/avif/', $result);
+    }
 }

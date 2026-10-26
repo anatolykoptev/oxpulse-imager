@@ -79,13 +79,18 @@ final class PictureElementWrapper
      *        proxy-loop / already-rewritten guard.
      * @param int $width Layout width hint (0 = unknown).
      * @param int $height Layout height hint (0 = unknown).
+     * @param string $sourceSrcsetAttr Attribute that carries the candidate
+     *        list on each <source>. 'srcset' (default) is fetched by the
+     *        browser at parse time. A `data-*` name (JS-lazy images, #77) is
+     *        ignored by source selection, so nothing is fetched until the
+     *        lazy-loader swaps it to srcset.
      * @return string The <img> unchanged when no format can be rewritten
      *         (fallback-guard) or the input is empty; otherwise
      *         <picture style="display:contents"><source type="image/avif" ...><source type="image/webp" ...><img ...></picture>.
      *         The enable gate lives solely in the caller
      *         (ContentImgTagRewriter, via apply_filters('oxpulse_picture_enabled')).
      */
-    public function wrap(string $imgTag, string $originalSrc, string $originalSrcset, int $width, int $height): string
+    public function wrap(string $imgTag, string $originalSrc, string $originalSrcset, int $width, int $height, string $sourceSrcsetAttr = 'srcset'): string
     {
         if ($imgTag === '' || $originalSrc === '') {
             return $imgTag;
@@ -114,7 +119,7 @@ final class PictureElementWrapper
         // actually rewrote (rewritten === true) get a <source> — the
         // fallback-guard: never emit a <source> with a non-rewritten
         // (original) URL.
-        $sources = $this->buildSources($imgTag, $originalSrc, $originalSrcset, $width, $height);
+        $sources = $this->buildSources($imgTag, $originalSrc, $originalSrcset, $width, $height, $sourceSrcsetAttr);
 
         // Fallback-guard: if NO format produced a <source>, return the
         // <img> unchanged — never emit a <picture> whose only working
@@ -162,7 +167,7 @@ final class PictureElementWrapper
      * @return list<string> <source> HTML strings, AVIF-first. Empty
      *         when no format could be rewritten (fallback-guard).
      */
-    private function buildSources(string $imgTag, string $originalSrc, string $originalSrcset, int $width, int $height): array
+    private function buildSources(string $imgTag, string $originalSrc, string $originalSrcset, int $width, int $height, string $sourceSrcsetAttr = 'srcset'): array
     {
         $innerSizes = $this->extractAttribute($imgTag, 'sizes');
 
@@ -184,7 +189,7 @@ final class PictureElementWrapper
                 $srcset = htmlspecialchars($result->url, ENT_QUOTES, 'UTF-8');
             }
 
-            $source = '<source type="' . $mimeType . '" srcset="' . $srcset . '"';
+            $source = '<source type="' . $mimeType . '" ' . $sourceSrcsetAttr . '="' . $srcset . '"';
             if ($innerSizes !== '') {
                 $source .= ' sizes="' . htmlspecialchars($innerSizes, ENT_QUOTES, 'UTF-8') . '"';
             }
@@ -279,7 +284,7 @@ final class PictureElementWrapper
      */
     private function extractAttribute(string $imgTag, string $attr): string
     {
-        if (preg_match('/\b' . preg_quote($attr, '/') . '=["\']([^"\']*)["\']/i', $imgTag, $m)) {
+        if (preg_match('/(?<![\w-])' . preg_quote($attr, '/') . '=["\']([^"\']*)["\']/i', $imgTag, $m)) {
             return $m[1];
         }
         return '';
