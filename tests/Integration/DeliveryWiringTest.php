@@ -174,8 +174,12 @@ class DeliveryWiringTest extends TestCase
         $r2 = $rewriter->rewrite($url, 400, 0, 'srcset');
         $r3 = $rewriter->rewrite($url, 400, 0, 'attachment');
 
-        $this->assertSame($r1->url, $r2->url);
-        $this->assertSame($r2->url, $r3->url);
+        // Context is diagnostic only, except srcset omits the fn: segment (#131).
+        $this->assertSame($r1->url, $r3->url);
+        $this->assertStringNotContainsString('/fn:', $r2->url);
+        // Same path apart from the signature (first segment) and fn:.
+        $strip = static fn (string $u): string => (string) preg_replace('#^([^/]+//[^/]+)/[^/]+#', '$1', preg_replace('#/fn:[^/]+#', '', $u));
+        $this->assertSame($strip($r1->url), $strip($r2->url));
 
         // Output format should be applied.
         $this->assertStringContainsString('@avif', $r1->url);

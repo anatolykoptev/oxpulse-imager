@@ -104,6 +104,9 @@ final class Uninstaller
         'oxpulse_imgproxy_health',
         // ImgproxyFlapLog::OPTION — bounded up/down flip history (#137).
         'oxpulse_imgproxy_flaps',
+        // SocialJpegCapabilityCache::forCacheBuster() verdict (#132).
+        'oxpulse_imgproxy_cachebuster',
+        'oxpulse_imgproxy_cachebuster_checked_at',
     ];
 
     /**

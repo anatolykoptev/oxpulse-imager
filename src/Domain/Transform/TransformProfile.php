@@ -76,6 +76,13 @@ final class TransformProfile
             $parts[] = $this->watermarkOption($request->watermark);
         }
 
+        // Content version (imgproxy `cachebuster`, short form `cb`). It does
+        // not affect processing; it changes the signed path so a replaced
+        // source file (same path, new bytes) maps to a new cache key.
+        if ($request->version !== '') {
+            $parts[] = 'cb:' . $request->version;
+        }
+
         // Format is specified as @extension in the path builder, not as
         // a processing option. This avoids redundant format specification.
 

@@ -39,15 +39,44 @@ final class SocialJpegCapabilityCache
     /** Option key for the checked-at timestamp (persistent, not autoloaded). */
     public const OPTION_CHECKED_AT = 'oxpulse_imgproxy_social_jpeg_checked_at';
 
+    /** Option keys for the cache-buster (`cb:`) verdict — same mechanism, own keys (#132). */
+    public const CACHEBUSTER_OPTION = 'oxpulse_imgproxy_cachebuster';
+    public const CACHEBUSTER_OPTION_CHECKED_AT = 'oxpulse_imgproxy_cachebuster_checked_at';
+
     /** TTL in seconds (~3h). A stale 'ok' degrades to false until a re-probe. */
     public const TTL = 10800;
 
     /** @var callable|null Clock injector for tests: returns int (unix timestamp). */
     private $now;
 
-    public function __construct(?callable $now = null)
-    {
+    public function __construct(
+        ?callable $now = null,
+        private string $option = self::OPTION,
+        private string $checkedAtOption = self::OPTION_CHECKED_AT,
+        private bool $expires = true
+    ) {
         $this->now = $now;
+    }
+
+    /**
+     * The verdict store for "does this imgproxy accept the `cb:` option?".
+     * Many installs set IMGPROXY_ALLOWED_PROCESSING_OPTIONS without `cb`;
+     * an unprobed / failed / stale verdict reads false → URLs stay unversioned.
+     */
+    public static function forCacheBuster(?callable $now = null): self
+    {
+        // No age expiry: the last DEFINITIVE verdict stands until a
+        // definitive opposite one arrives. Expiring `ok` into false on a
+        // quiet site would flip every imgproxy URL (and refill the nginx
+        // cache) without any change at the endpoint.
+        return new self($now, self::CACHEBUSTER_OPTION, self::CACHEBUSTER_OPTION_CHECKED_AT, false);
+    }
+
+    /** Raw stored verdict: 'ok', 'no', or null when never written. */
+    public function readVerdict(): ?string
+    {
+        $value = get_option($this->option, null);
+        return $value === 'ok' || $value === 'no' ? $value : null;
     }
 
     /**
@@ -59,12 +88,15 @@ final class SocialJpegCapabilityCache
      */
     public function readOk(): bool
     {
-        $value = get_option(self::OPTION, null);
+        $value = get_option($this->option, null);
         if ($value !== 'ok') {
             return false;
         }
+        if (!$this->expires) {
+            return true;
+        }
 
-        $checkedAt = get_option(self::OPTION_CHECKED_AT, null);
+        $checkedAt = get_option($this->checkedAtOption, null);
         if (!is_string($checkedAt) || !ctype_digit($checkedAt)) {
             return false;
         }
@@ -92,8 +124,8 @@ final class SocialJpegCapabilityCache
         }
 
         $now = $this->now !== null ? (int) ($this->now)() : time();
-        update_option(self::OPTION, $verdict, false);
-        update_option(self::OPTION_CHECKED_AT, (string) $now, false);
+        update_option($this->option, $verdict, false);
+        update_option($this->checkedAtOption, (string) $now, false);
     }
 
     /**
@@ -102,7 +134,7 @@ final class SocialJpegCapabilityCache
      */
     public function clear(): void
     {
-        delete_option(self::OPTION);
-        delete_option(self::OPTION_CHECKED_AT);
+        delete_option($this->option);
+        delete_option($this->checkedAtOption);
     }
 }

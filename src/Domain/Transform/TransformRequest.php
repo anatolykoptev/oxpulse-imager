@@ -42,6 +42,11 @@ final readonly class TransformRequest
      *        serving it at its natural size. Used for the social preset:
      *        og:image declares fixed dimensions and the served file must
      *        match them. Default false = never enlarge (imgproxy default).
+     * @param string $version Content-version token (`[a-z0-9]{1,16}`) of the
+     *        source attachment, or '' for none. TransformProfile emits it as
+     *        the imgproxy `cb:` (cachebuster) option so it is part of the
+     *        SIGNED PATH — a replaced file keeps its path, so without it an
+     *        nginx `proxy_cache` keyed on `$uri` keeps serving stale bytes.
      */
     public function __construct(
         public string $sourceUrl,
@@ -57,7 +62,8 @@ final readonly class TransformRequest
         public array $formatQuality = [],
         public string $sourceMode = 'http',
         public bool $extensionFormat = false,
-        public bool $enlarge = false
+        public bool $enlarge = false,
+        public string $version = ''
     ) {
         if ($width < 0 || $width > 10000) {
             throw new \InvalidArgumentException('Width must be between 0 and 10000.');
@@ -73,6 +79,9 @@ final readonly class TransformRequest
         }
         if ($blur < 0 || $blur > 100) {
             throw new \InvalidArgumentException('Blur must be between 0 and 100.');
+        }
+        if ($version !== '' && preg_match('/^[a-z0-9]{1,16}$/', $version) !== 1) {
+            throw new \InvalidArgumentException('Version must match [a-z0-9]{1,16}.');
         }
         if (!in_array($sourceMode, ['http', 'local'], true)) {
             throw new \InvalidArgumentException('sourceMode must be "http" or "local".');

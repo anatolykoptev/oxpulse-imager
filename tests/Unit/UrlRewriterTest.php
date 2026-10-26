@@ -197,16 +197,20 @@ class UrlRewriterTest extends TestCase
         $this->assertSame('source_not_in_allowlist', $result->reason);
     }
 
-    public function test_context_does_not_affect_url_output(): void
+    public function test_context_is_diagnostic_only_except_srcset_drops_fn(): void
     {
         $rewriter = $this->createRewriter();
         $url = 'https://example.com/wp-content/uploads/img.jpg';
 
         $fromContent = $rewriter->rewrite($url, 0, 0, 'content');
+        $fromAttachment = $rewriter->rewrite($url, 0, 0, 'attachment');
         $fromSrcset = $rewriter->rewrite($url, 0, 0, 'srcset');
 
-        // Context is diagnostic only, does not change the signed URL.
-        $this->assertSame($fromContent->url, $fromSrcset->url);
+        // Context is diagnostic only for every context but srcset (#131),
+        // which omits the fn: SEO-filename segment.
+        $this->assertSame($fromContent->url, $fromAttachment->url);
+        $this->assertStringContainsString('/fn:', $fromContent->url);
+        $this->assertStringNotContainsString('/fn:', $fromSrcset->url);
     }
 
     public function test_auto_format_omits_at_suffix_for_accept_negotiation(): void

@@ -261,4 +261,65 @@ class ServiceRegistrarSocialJpegCapabilityTest extends TestCase
         }
         return null;
     }
+
+    // ─── cache-buster (cb:) probe triggers (#132) ────────────────────
+    // An unprobed verdict silently means "no versioned URLs", so each
+    // trigger that refreshes the verdict is pinned.
+
+    public function test_cachebuster_probe_fires_on_cron_version_update_and_endpoint_change(): void
+    {
+        $this->configureImgproxyLocal();
+        $plugin = $this->buildPluginStub();
+
+        $this->invokePrivate('registerImgproxyHealthCron', [$plugin]);
+        do_action('oxpulse_imgproxy_health_recheck');
+        $this->assertSame(1, did_action('oxpulse_recheck_cachebuster'), 'hourly cron');
+
+        $GLOBALS['__oxpulse_is_admin'] = true;
+        update_option(OptionSettingsRepository::OPTION_PROBE_VERSION, '0.0.9');
+        $this->invokePrivate('maybeReprobeOnVersionUpdate');
+        $this->assertSame(2, did_action('oxpulse_recheck_cachebuster'), 'version-gated re-probe');
+
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+        $callback = $this->findUpdatedOptionCallback();
+        $callback(OptionSettingsRepository::OPTION_ENDPOINT);
+        $this->assertSame(3, did_action('oxpulse_recheck_cachebuster'), 'endpoint change');
+    }
+
+    public function test_cachebuster_probe_is_noop_when_endpoint_empty(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, '');
+        ServiceRegistrar::recheckCacheBusterCapability(new GetImageStub(status: 200, contentType: 'image/webp'), null, $this->sourceProvider());
+        $this->assertSame(0, did_action('oxpulse_recheck_cachebuster'));
+    }
+
+    public function test_cachebuster_verdict_change_purges_page_caches_through_the_existing_purger(): void
+    {
+        $this->configureImgproxyLocal();
+        $cache = SocialJpegCapabilityCache::forCacheBuster();
+
+        ServiceRegistrar::recheckCacheBusterCapability(new GetImageStub(status: 200, contentType: 'image/webp'), $cache, $this->sourceProvider());
+
+        $this->assertTrue($cache->readOk());
+        $this->assertSame(1, did_action('oxpulse_purge_page_cache'), 'CachePurger::purge() must run when the verdict flips');
+
+        ServiceRegistrar::recheckCacheBusterCapability(new GetImageStub(status: 200, contentType: 'image/webp'), $cache, $this->sourceProvider());
+        $this->assertSame(1, did_action('oxpulse_purge_page_cache'), 'no purge when the verdict is unchanged');
+    }
+
+    /** An `ok` earned on the old endpoint must not survive an endpoint change. */
+    public function test_endpoint_change_resets_the_cachebuster_verdict_before_reprobing(): void
+    {
+        $this->configureImgproxyLocal();
+        $cache = SocialJpegCapabilityCache::forCacheBuster();
+        $cache->write('ok');
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+
+        $this->findUpdatedOptionCallback()(OptionSettingsRepository::OPTION_ENDPOINT);
+
+        // The re-probe in this process has no usable source, so nothing re-earns `ok`.
+        $this->assertNull($cache->readVerdict());
+        $this->assertFalse($cache->readOk());
+    }
 }
