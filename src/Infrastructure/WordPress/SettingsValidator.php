@@ -220,6 +220,9 @@ final class SettingsValidator
         // Buffer rewriting (Ф2) — boolean toggle.
         $values['buffer_rewriting_enabled'] = !empty($input['buffer_rewriting_enabled']);
 
+        // LCP tag hygiene (#133) — boolean toggle, default off.
+        $values['lcp_hygiene_enabled'] = !empty($input['lcp_hygiene_enabled']);
+
         // RankMath compatibility (Ф3) — boolean toggle, default true.
         $values['rankmath_compatibility'] = !empty($input['rankmath_compatibility']);
 

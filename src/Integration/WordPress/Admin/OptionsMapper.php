@@ -51,6 +51,9 @@ final class OptionsMapper
         // Full-page coverage (#136): buffer-rewrites theme imgs, CSS
         // backgrounds in style attributes, and image preload hints.
         'bufferRewritingEnabled' => 'buffer_rewriting_enabled',
+        // LCP tag hygiene (#133): one fetchpriority=high image, no lazy LCP,
+        // sizes=auto on lazy images, head preload for the LCP candidate.
+        'lcpHygieneEnabled'   => 'lcp_hygiene_enabled',
         // <picture> element wrapping (Phase 1) — Pro-gated (PICTURE_ELEMENT).
         // The SPA toggle + this mapper entry + the validator producer + the
         // save branch land as a cohesive unit with the license UI.

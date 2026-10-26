@@ -719,6 +719,18 @@ msgstr ""
 msgid "Fail-safe: any parse doubt leaves the original bytes untouched. Per-page opt-out: paste <!-- no-oxpulse --> into the template."
 msgstr ""
 
+msgid "LCP tag hygiene"
+msgstr ""
+
+msgid "Theme-emitted fetchpriority=\"high\" on every image defeats LCP prioritisation. This pass keeps it on one image (the likely LCP candidate), never lazy-loads that image, adds sizes=\"auto\" to lazy images and preloads the candidate. Runs as a guarded output buffer on the full HTML response."
+msgstr ""
+
+msgid "Normalise LCP image tags"
+msgstr ""
+
+msgid "Off by default. Per-page opt-out: paste <!-- no-oxpulse --> into the template."
+msgstr ""
+
 msgid "LQIP placeholders"
 msgstr ""
 

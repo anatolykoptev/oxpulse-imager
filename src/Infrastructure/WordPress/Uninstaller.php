@@ -71,6 +71,8 @@ final class Uninstaller
         'oxpulse_imager_local_base_path',
         // Buffer rewriting (Ф2).
         'oxpulse_imager_buffer_rewriting_enabled',
+        // LCP tag hygiene (#133).
+        'oxpulse_imager_lcp_hygiene_enabled',
         // <picture> wrapping (Phase 1).
         'oxpulse_imager_picture_enabled',
         // RankMath compatibility (Ф3).
