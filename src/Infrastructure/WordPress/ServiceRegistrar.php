@@ -47,6 +47,7 @@ use OXPulse\Imager\Integration\WordPress\Admin\OptionsRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\PrewarmRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsPage;
 use OXPulse\Imager\Integration\WordPress\Admin\StatusRestController;
+use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentContentVersion;
 use OXPulse\Imager\Integration\WordPress\Cli\CliServiceProvider;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcsetRestorer;
@@ -118,6 +119,7 @@ final class ServiceRegistrar
         self::registerImgproxyHealthCron($plugin);
         self::registerCacheCleanupCron($plugin);
         self::registerLocalCacheInvalidation($plugin);
+        self::registerContentVersionStamp();
         self::registerLocalDeliverySettingsSync($plugin);
         self::registerImgproxyDeliveryGate();
         self::registerPictureGate();
@@ -789,6 +791,19 @@ final class ServiceRegistrar
     private static function deliveryEnabled(): bool
     {
         return (bool) get_option(OXPULSE_IMAGER_OPTION_PREFIX . 'enabled', false);
+    }
+
+    /**
+     * Stamp attachments on every metadata update so replaced files get a
+     * new content version (#132). See AttachmentContentVersion.
+     */
+    private static function registerContentVersionStamp(): void
+    {
+        // Unconditional: media replacement runs in wp-admin, with delivery
+        // possibly disabled or imgproxy health-gated Down at that moment.
+        // Priority 20: after other plugins have finished editing the
+        // metadata, so the stamp reflects the final state.
+        add_filter('wp_update_attachment_metadata', [AttachmentContentVersion::class, 'stamp'], 20, 2);
     }
 
     /**

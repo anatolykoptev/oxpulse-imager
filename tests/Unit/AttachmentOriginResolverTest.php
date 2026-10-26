@@ -117,6 +117,41 @@ final class AttachmentOriginResolverTest extends TestCase
     }
 
     /**
+     * #149: when the `wp-content/uploads` marker runs into the filename the
+     * tail must be cut from the DIRECTORY only (core's
+     * _wp_get_attachment_relative_path + wp_basename), not from the whole
+     * path — otherwise the filename is mangled to "-photo.jpg" (404).
+     */
+    public function test_resolve_marker_inside_filename_is_not_mangled(): void
+    {
+        $GLOBALS['__oxpulse_post_meta'] = [
+            42 => ['_wp_attached_file' => '2024/01/wp-content/uploads-photo.jpg'],
+        ];
+
+        $url = AttachmentOriginResolver::resolveOriginalUrl(42);
+
+        $this->assertSame('https://example.com/wp-content/uploads/2024/01/wp-content/uploads-photo.jpg', $url);
+    }
+
+    /** The dirname split must keep every directory below the marker. */
+    public function test_resolve_legacy_absolute_path_keeps_all_subdirectories(): void
+    {
+        $GLOBALS['__oxpulse_upload_dir'] = [
+            'baseurl' => 'https://example.com/wp-content/uploads',
+            'basedir' => '/other/wp-content/uploads',
+            'error'   => false,
+        ];
+        $GLOBALS['__oxpulse_post_meta'] = [
+            42 => ['_wp_attached_file' => '/legacy/wp-content/uploads/2024/01/photo.jpg'],
+        ];
+
+        $this->assertSame(
+            'https://example.com/wp-content/uploads/2024/01/photo.jpg',
+            AttachmentOriginResolver::resolveOriginalUrl(42)
+        );
+    }
+
+    /**
      * On an SSL front end, core upgrades the resolved URL to https via
      * set_url_scheme() — an og:image must never emit http://.
      */

@@ -51,10 +51,12 @@ final class AttachmentOriginResolver
             $url = str_replace($uploads['basedir'], $uploads['baseurl'], $attachedFile);
         } elseif (str_contains($attachedFile, 'wp-content/uploads')) {
             // Absolute path outside basedir but still under
-            // wp-content/uploads → take the part after it (core's
-            // back-compat branch for pre-2.7 uploads).
-            $relative = substr($attachedFile, strpos($attachedFile, 'wp-content/uploads') + 18);
-            $url = rtrim($uploads['baseurl'], '/') . '/' . ltrim($relative, '/');
+            // wp-content/uploads (core's back-compat branch for pre-2.7
+            // uploads). Split like core's _wp_get_attachment_relative_path():
+            // cut the marker out of the DIRECTORY part only, then append the
+            // basename — a marker inside the filename must stay intact.
+            $url = rtrim($uploads['baseurl'], '/') . '/'
+                . self::relativeDir($attachedFile) . wp_basename($attachedFile);
         } else {
             // Relative to the uploads base.
             $url = rtrim($uploads['baseurl'], '/') . '/' . ltrim($attachedFile, '/');
@@ -67,6 +69,25 @@ final class AttachmentOriginResolver
         }
 
         return $url;
+    }
+
+    /**
+     * Directory of an attached file relative to the uploads base, with a
+     * trailing slash ('' for a bare filename). Mirrors core's
+     * _wp_get_attachment_relative_path(), which takes the FULL file path and
+     * applies dirname() itself.
+     */
+    private static function relativeDir(string $file): string
+    {
+        $dirname = dirname($file);
+        if ($dirname === '.') {
+            return '';
+        }
+        $marker = strpos($dirname, 'wp-content/uploads');
+        if ($marker !== false) {
+            $dirname = ltrim(substr($dirname, $marker + 18), '/');
+        }
+        return $dirname === '' ? '' : trim($dirname, '/') . '/';
     }
 
     /**

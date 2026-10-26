@@ -53,7 +53,8 @@ final class UrlRewriter
         DeliveryConfig $delivery,
         ?SigningConfig $signing,
         ?DiagnosticLoggerInterface $logger = null,
-        private ?DeliveryBackend $backend = null
+        private ?DeliveryBackend $backend = null,
+        private ?ContentVersionResolver $versions = null
     ) {
         $this->policy = $policy;
         $this->delivery = $delivery;
@@ -194,9 +195,12 @@ final class UrlRewriter
                 // natural size and the declared dims lie. enlarge is the
                 // rs: 4th argument — inside the allowed `rs` option name.
                 enlarge: true,
+                version: $this->contentVersion($sourceUrl),
             );
 
-            $filename = $this->buildContentDispositionFilename($sourceUrl, 'jpeg');
+            // 'jpg', not 'jpeg': the URL extension is `.jpg` (ImgproxyPathBuilder
+            // maps jpeg -> jpg), so the Save-As filename must match it.
+            $filename = $this->buildContentDispositionFilename($sourceUrl, 'jpg');
 
             $url = $this->backend()->socialSafeUrl($request, $filename);
             if ($url === null) {
@@ -295,9 +299,15 @@ final class UrlRewriter
                 watermark: $this->delivery->watermark,
                 formatQuality: $formatQuality,
                 sourceMode: $sourceMode,
+                version: $this->contentVersion($sourceUrl),
             );
 
-            $filename = $this->buildContentDispositionFilename($sourceUrl, $format);
+            // Srcset candidates skip the Content-Disposition (`fn:`) option:
+            // image search reads src / <a href>, never srcset, and the
+            // segment repeated across hundreds of candidates is dead weight.
+            $filename = $context === 'srcset'
+                ? null
+                : $this->buildContentDispositionFilename($sourceUrl, $format);
 
             $url = $this->backend()->generate($request, $filename);
             $this->log(LogEntry::rewritten($context, $sourceUrl, $width));
@@ -314,6 +324,22 @@ final class UrlRewriter
      * logger is configured (the default — logging is opt-in via
      * diagnostic_level).
      */
+    /**
+     * Content-version token for a source URL ('' = none). Fail-safe: a
+     * resolver failure yields an unversioned URL, never a broken one.
+     */
+    private function contentVersion(string $sourceUrl): string
+    {
+        if ($this->versions === null) {
+            return '';
+        }
+        try {
+            return $this->versions->versionFor($sourceUrl);
+        } catch (\Throwable $e) {
+            return '';
+        }
+    }
+
     private function log(LogEntry $entry): void
     {
         if ($this->logger !== null) {
@@ -386,6 +412,7 @@ final class UrlRewriter
                 watermark: null, // Never watermark the placeholder
                 formatQuality: [],
                 sourceMode: $sourceMode,
+                version: $this->contentVersion($sourceUrl),
             );
 
             return RewriteResult::rewritten($this->backend()->generate($request));
@@ -451,6 +478,7 @@ final class UrlRewriter
                 watermark: $this->delivery->watermark,
                 formatQuality: $this->delivery->formatQuality,
                 sourceMode: $sourceMode,
+                version: $this->contentVersion($sourceUrl),
             );
 
             $filename = $this->buildContentDispositionFilename($sourceUrl, $this->delivery->outputFormat);
