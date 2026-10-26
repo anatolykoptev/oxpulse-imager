@@ -85,6 +85,8 @@ final class Uninstaller
         'oxpulse_imager_rewrite_capability',
         'oxpulse_imager_rewrite_capability_checked_at',
         'oxpulse_imager_probe_version',
+        // HeadersCapabilityCache::OPTION — mod_headers verdict (#51).
+        'oxpulse_imager_headers_capability',
         // Admin-notice dismissed keys (#43 Phase 5).
         'oxpulse_imager_admin_notice_dismissed',
         // #93: LocalBackend cache size cap (MB). Default-only + filter;
@@ -100,6 +102,8 @@ final class Uninstaller
     public const STANDALONE_OPTIONS = [
         // ImgproxyHealthCache::OPTION — persistent health verdict (#81).
         'oxpulse_imgproxy_health',
+        // ImgproxyFlapLog::OPTION — bounded up/down flip history (#137).
+        'oxpulse_imgproxy_flaps',
     ];
 
     /**

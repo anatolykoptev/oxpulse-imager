@@ -899,6 +899,9 @@ final class ServiceRegistrar
 
         $tester = $tester ?? new CapabilityTester();
         $tester->recheck();
+        // #51: mod_headers (`Header set Vary`) capability — same triggers,
+        // no-op on non-Apache.
+        $tester->recheckHeaders();
         // #43 Phase 2 fold-in: marker action replaces the removed
         // $recheckCallCount test counter. Tests assert via
         // did_action('oxpulse_recheck_rewrite_capability') — no

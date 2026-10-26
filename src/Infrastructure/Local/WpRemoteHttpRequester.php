@@ -32,7 +32,17 @@ class WpRemoteHttpRequester implements HttpRequester
         $status = (int) wp_remote_retrieve_response_code($response);
         $body = (string) wp_remote_retrieve_body($response);
 
-        return ['status' => $status, 'body' => $body, 'error' => null];
+        // #51: response headers (lower-cased names) so a capability probe
+        // can check a header set by .htaccess. Additive key — existing
+        // callers and test stubs that omit it are unaffected.
+        $raw = wp_remote_retrieve_headers($response);
+        $rawArray = is_object($raw) && method_exists($raw, 'getAll') ? $raw->getAll() : (array) $raw;
+        $headers = [];
+        foreach ($rawArray as $name => $value) {
+            $headers[strtolower((string) $name)] = is_array($value) ? implode(', ', $value) : (string) $value;
+        }
+
+        return ['status' => $status, 'body' => $body, 'error' => null, 'headers' => $headers];
     }
 
     /**

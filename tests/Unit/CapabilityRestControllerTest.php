@@ -107,6 +107,15 @@ class CapabilityRestControllerTest extends TestCase
         $this->assertTrue($tester->invalidateBeforeRecheck, 'invalidateCache() must run BEFORE recheck()');
     }
 
+    public function test_reprobe_also_rechecks_mod_headers_and_returns_the_verdict(): void
+    {
+        $tester = new StubCapabilityTester('yes');
+        $response = (new CapabilityRestController($tester))->handleReprobe();
+
+        $this->assertTrue($tester->headersCalled, 'recheckHeaders() must be called by the re-test button');
+        $this->assertSame('no', $response->get_data()['modHeaders']);
+    }
+
     public function test_reprobe_returns_yes_when_probe_succeeds(): void
     {
         $tester = new StubCapabilityTester('yes');
@@ -161,6 +170,7 @@ class StubCapabilityTester extends CapabilityTester
 {
     public bool $invalidateCalled = false;
     public bool $recheckCalled = false;
+    public bool $headersCalled = false;
     public bool $invalidateBeforeRecheck = false;
     private string $recheckResult;
 
@@ -178,6 +188,12 @@ class StubCapabilityTester extends CapabilityTester
         if (!$this->recheckCalled) {
             $this->invalidateBeforeRecheck = true;
         }
+    }
+
+    public function recheckHeaders(): string
+    {
+        $this->headersCalled = true;
+        return 'no';
     }
 
     public function recheck(): string

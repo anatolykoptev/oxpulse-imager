@@ -109,9 +109,13 @@ final class CapabilityRestController
         // 'unknown' — a prior definitive value is cleared first).
         $this->tester->invalidateCache();
         $capability = $this->tester->recheck();
+        // #51: re-probe mod_headers too, so the Vary warning clears once
+        // the operator has fixed it.
+        $modHeaders = $this->tester->recheckHeaders();
 
         return rest_ensure_response([
             'capability'  => $capability,
+            'modHeaders'  => $modHeaders,
             'checked_at'  => $this->repository->loadRewriteCapabilityCheckedAt(),
         ]);
     }
