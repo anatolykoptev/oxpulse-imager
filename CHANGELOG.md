@@ -59,6 +59,22 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.13](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.12...v0.1.13) (2026-10-26)
+
+
+### Added
+
+* **ops:** imgproxy flap visibility + origin-fallback recipe ([#137](https://github.com/anatolykoptev/oxpulse-imager/issues/137)), mod_headers probe ([#51](https://github.com/anatolykoptev/oxpulse-imager/issues/51)) ([#158](https://github.com/anatolykoptev/oxpulse-imager/issues/158)) ([24c03d2](https://github.com/anatolykoptev/oxpulse-imager/commit/24c03d2c5a37efde72d2fa8065d20df4d26f12ff))
+* opt-in LCP tag hygiene pass ([#133](https://github.com/anatolykoptev/oxpulse-imager/issues/133), [#48](https://github.com/anatolykoptev/oxpulse-imager/issues/48), [#49](https://github.com/anatolykoptev/oxpulse-imager/issues/49), [#50](https://github.com/anatolykoptev/oxpulse-imager/issues/50)) ([#156](https://github.com/anatolykoptev/oxpulse-imager/issues/156)) ([26fec2f](https://github.com/anatolykoptev/oxpulse-imager/commit/26fec2f22d3366ecd3624801139c3b08f18eddd2))
+
+
+### Fixed
+
+* **buffer:** real match offset, WPBakery keys, never-blank, AVIF for lazysizes images ([#55](https://github.com/anatolykoptev/oxpulse-imager/issues/55), [#77](https://github.com/anatolykoptev/oxpulse-imager/issues/77)) ([#157](https://github.com/anatolykoptev/oxpulse-imager/issues/157)) ([3feeca7](https://github.com/anatolykoptev/oxpulse-imager/commit/3feeca7d2e7c39f9dabba7de6627ea6655bc2885))
+* **config:** seed signing secrets + allowed_sources; harden memo, autoload stamp, license rebake; picture-toggle save safety ([#155](https://github.com/anatolykoptev/oxpulse-imager/issues/155)) ([45425a6](https://github.com/anatolykoptev/oxpulse-imager/commit/45425a6220a782271f18e494b38af5647cce5534))
+* **delivery:** URL shape — content version (cb:), srcset fn: drop, uploads tail split ([#159](https://github.com/anatolykoptev/oxpulse-imager/issues/159)) ([af4b85a](https://github.com/anatolykoptev/oxpulse-imager/commit/af4b85aa3ca08ccab93a77237d20df644c1d01dc))
+* restore sizes=auto prefix + clamp sizes ceiling to content_width ([#129](https://github.com/anatolykoptev/oxpulse-imager/issues/129)) ([6a9b82d](https://github.com/anatolykoptev/oxpulse-imager/commit/6a9b82dc6e3e16d16a48560232cef4032e4fb47c))
+
 ## [0.1.12](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.11...v0.1.12) (2026-10-22)
 
 
