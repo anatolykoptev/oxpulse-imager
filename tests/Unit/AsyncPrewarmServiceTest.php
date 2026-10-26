@@ -21,6 +21,8 @@ use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 class AsyncPrewarmServiceTest extends TestCase
@@ -235,20 +237,16 @@ class AsyncPrewarmServiceTest extends TestCase
         $this->assertFalse(AsyncPrewarmService::isWpCronDisabled());
     }
 
-    /**
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function test_isWpCronDisabled_returns_true_when_disabled_true(): void
     {
         define('DISABLE_WP_CRON', true);
         $this->assertTrue(AsyncPrewarmService::isWpCronDisabled());
     }
 
-    /**
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function test_isWpCronDisabled_returns_true_when_disabled_truthy_string(): void
     {
         // Some hosts write `define('DISABLE_WP_CRON', 'true');` — a
@@ -257,10 +255,8 @@ class AsyncPrewarmServiceTest extends TestCase
         $this->assertTrue(AsyncPrewarmService::isWpCronDisabled());
     }
 
-    /**
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function test_isWpCronDisabled_returns_false_when_defined_false(): void
     {
         // `define('DISABLE_WP_CRON', false)` is NOT disabled — the
@@ -269,10 +265,8 @@ class AsyncPrewarmServiceTest extends TestCase
         $this->assertFalse(AsyncPrewarmService::isWpCronDisabled());
     }
 
-    /**
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function test_createJob_does_not_schedule_cron_when_disabled(): void
     {
         define('DISABLE_WP_CRON', true);

@@ -36,6 +36,7 @@ use OXPulse\Imager\Infrastructure\Local\HttpRequester;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use OXPulse\Imager\Infrastructure\Local\LocalBackendProvider;
 use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class DeliveryBackendRegistryTest extends TestCase
@@ -255,9 +256,8 @@ class DeliveryBackendRegistryTest extends TestCase
      * NON-array (null / scalar / false) must NOT drop the core
      * providers — the registry falls back to the 3 core providers
      * instead of emitting a PHP 8 foreach-warning and yielding 0.
-     *
-     * @dataProvider nonArrayFilterReturns
      */
+    #[DataProvider('nonArrayFilterReturns')]
     public function test_default_registry_falls_back_to_core_when_filter_returns_non_array($badReturn): void
     {
         add_filter('oxpulse_delivery_backends', static function () use ($badReturn) {
