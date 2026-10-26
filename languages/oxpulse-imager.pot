@@ -711,7 +711,7 @@ msgstr ""
 msgid "Wrap images in <picture> with per-format sources"
 msgstr ""
 
-msgid "When enabled, content <img> tags are wrapped in <picture><source type=\"image/avif\"><source type=\"image/webp\"><img></picture> for browser-negotiated format delivery."
+msgid "When enabled, content <img> tags are wrapped in <picture><source type=\"image/avif\"><source type=\"image/webp\"><img></picture> for browser-negotiated format delivery. Only freshly rendered <img> tags are wrapped: already-rewritten or cached content (carrying data-oxpulse) is skipped until you flush the cache or re-save the post. Off by default."
 msgstr ""
 
 msgid "Full-page coverage"
@@ -886,6 +886,9 @@ msgid "Partial secrets detected. Please set both key and salt."
 msgstr ""
 
 msgid "No secrets configured. Generate a key and salt to enable signed URL delivery."
+msgstr ""
+
+msgid "Not configured for imgproxy. Enter the key and salt of your imgproxy server; until then original image URLs are served."
 msgstr ""
 
 msgid "Delivery"

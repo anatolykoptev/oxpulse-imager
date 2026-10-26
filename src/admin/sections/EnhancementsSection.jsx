@@ -92,7 +92,7 @@ const EnhancementsSection = () => {
             <ToggleField
               name="picture_enabled"
               label={__('Wrap images in <picture> with per-format sources', 'oxpulse-imager')}
-              help={__('When enabled, content <img> tags are wrapped in <picture><source type="image/avif"><source type="image/webp"><img></picture> for browser-negotiated format delivery.', 'oxpulse-imager')}
+              help={__('When enabled, content <img> tags are wrapped in <picture><source type="image/avif"><source type="image/webp"><img></picture> for browser-negotiated format delivery. Only freshly rendered <img> tags are wrapped: already-rewritten or cached content (carrying data-oxpulse) is skipped until you flush the cache or re-save the post. Off by default.', 'oxpulse-imager')}
               checked={options.pictureEnabled}
               onChange={(v) => setOption('pictureEnabled', v)}
               disabled={locked}

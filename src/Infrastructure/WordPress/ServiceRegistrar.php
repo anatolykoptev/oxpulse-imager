@@ -58,6 +58,7 @@ use OXPulse\Imager\Integration\WordPress\Delivery\ImageDownsizeRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\IntermediateSizeRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\LcpTagHygiene;
 use OXPulse\Imager\Integration\WordPress\Delivery\SrcsetRewriter;
+use OXPulse\Imager\Domain\Diagnostics\LogEntry;
 use OXPulse\Imager\Integration\WordPress\Compatibility\RankMathCompatibility;
 use OXPulse\Imager\Integration\WordPress\Performance\CachePurger;
 use OXPulse\Imager\Integration\WordPress\Performance\OptimizationDetectiveIntegration;
@@ -124,6 +125,45 @@ final class ServiceRegistrar
         self::maybeMigrateAutoload();
         self::maybeGrandfatherPreFreemiusInstalls();
         self::maybeRebakeAvifOnLicenseChange();
+        self::registerFreemiusLicenseRebake();
+        // #147: self-heal already-installed sites whose signing secrets /
+        // allowed_sources were never seeded (non-interactive installs).
+        // Capability-gated: admin_init also fires for anonymous
+        // admin-ajax.php / admin-post.php requests, which must never
+        // write secrets.
+        add_action('admin_init', static function (): void {
+            if (current_user_can('manage_options')) {
+                self::seedMissingConfig();
+            }
+        });
+    }
+
+    /**
+     * #147: seed the signing secrets + allowed_sources a non-interactive
+     * install never produces (see OptionSettingsRepository::seedMissingConfig
+     * for the rules). Called from the activation hook and, as a self-heal
+     * for installs that predate it, on admin_init. Idempotent: a no-op
+     * once the values exist, and never overwrites an existing value.
+     *
+     * Delivery is re-installed explicitly after a seed: allowed_sources
+     * is not a watched key of the updated_option listener, and a fresh
+     * option fires added_option, not updated_option.
+     */
+    public static function seedMissingConfig(): void
+    {
+        $uploads = function_exists('wp_get_upload_dir') ? wp_get_upload_dir() : [];
+        $origin = (string) ($uploads['baseurl'] ?? '');
+        // Seed on the scheme pages are served with (home_url): an http
+        // baseurl behind an https proxy would otherwise never match the
+        // https image URLs in content and SourcePolicy would deny them all.
+        $scheme = (string) parse_url((string) home_url(), PHP_URL_SCHEME);
+        if ($origin !== '' && ($scheme === 'http' || $scheme === 'https')) {
+            $origin = (string) preg_replace('#^https?://#i', $scheme . '://', $origin);
+        }
+        $seeded = (new OptionSettingsRepository())->seedMissingConfig($origin);
+        if ($seeded !== []) {
+            self::installLocalDelivery();
+        }
     }
 
     /**
@@ -316,6 +356,13 @@ final class ServiceRegistrar
         );
 
         $logger = self::diagnosticLogger();
+
+        // #147: delivery is enabled but would silently preserve every URL
+        // (no signing secrets / empty allowlist). Surface it in the
+        // diagnostic log (codes only, never values; level 'off' drops it).
+        foreach ($repository->configProblems() as $problem) {
+            $logger->log(LogEntry::preserved('config', '', 0, $problem));
+        }
 
         // Dispatch 3: select the delivery backend via the factory seam.
         // imgproxy endpoint non-empty → ImgproxyBackend (byte-identical
@@ -1098,8 +1145,10 @@ final class ServiceRegistrar
      * 6.7) flips the autoload flag in a single UPDATE without touching
      * the stored values — no data migration, no dual source of truth.
      *
-     * Gated on OPTION_SCHEMA_VERSION < 2 so it runs at most once per
-     * install, then stamps schema_version=2. Admin-only (the flip is
+     * Gated on OPTION_SCHEMA_VERSION < 2 so it runs until it succeeds,
+     * then stamps schema_version=2 (only once the flip took effect).
+     * A fresh install is stamped schema=1 by activation, so on it this
+     * runs once as a no-op flip (the options are already autoload=yes). Admin-only (the flip is
      * a one-time housekeeping write, never on the front-end read path).
      * Idempotent: a re-run after schema_version=2 is a no-op.
      */
@@ -1112,14 +1161,51 @@ final class ServiceRegistrar
             return;
         }
 
-        $repository = new OptionSettingsRepository();
         $schemaVersion = (int) get_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 1);
         if ($schemaVersion >= 2) {
             return;
         }
 
-        wp_set_options_autoload(OptionSettingsRepository::AUTOLOAD_OPTION_KEYS, true);
+        $results = wp_set_options_autoload(OptionSettingsRepository::AUTOLOAD_OPTION_KEYS, true);
+
+        // Stamp only when every hot option is now autoloaded, so a
+        // failed or partial flip (DB error) is retried on the next admin
+        // load instead of being stamped done forever (#105). WordPress
+        // returns [option => bool] where true means "this call changed
+        // the row": an option that already had autoload=yes (or does not
+        // exist) reports false, so false alone is not a failure. Judge
+        // by the resulting state instead.
+        if (!self::hotOptionsAutoloaded(is_array($results) ? $results : [])) {
+            return;
+        }
         update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 2);
+    }
+
+    /**
+     * True when every hot option is either reported updated by
+     * wp_set_options_autoload() or already in the autoloaded set.
+     * An option absent from the DB has nothing to flip and is fine
+     * (activation / the first save creates it with autoload=yes).
+     *
+     * @param array<string,bool> $results wp_set_options_autoload() result.
+     */
+    private static function hotOptionsAutoloaded(array $results): bool
+    {
+        $missing = new \stdClass();
+        $autoloaded = null;
+        foreach (OptionSettingsRepository::AUTOLOAD_OPTION_KEYS as $key) {
+            if (!empty($results[$key])) {
+                continue;
+            }
+            if (get_option($key, $missing) === $missing) {
+                continue;
+            }
+            $autoloaded ??= function_exists('wp_load_alloptions') ? wp_load_alloptions(true) : [];
+            if (!array_key_exists($key, $autoloaded)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -1198,6 +1284,46 @@ final class ServiceRegistrar
             return;
         }
 
+        self::rebakeAvifIfLicenseDrifted();
+    }
+
+    /**
+     * #112: close the front-end downgrade-leak window. The admin-poll
+     * self-heal above only runs on the next admin page load, so after a
+     * Pro->free flip a LocalBackend site keeps serving AVIF until then.
+     * Freemius fires `after_license_change` the moment its plan state
+     * changes; re-bake right there.
+     *
+     * Registered only when the SDK actually loaded (oxpulse_fs() is null
+     * when freemius/ is missing) and only against an instance exposing
+     * add_action(). `oxpulse_fs_loaded` cannot be used: it fires from the
+     * main plugin file BEFORE Plugin::load() reaches this class.
+     */
+    private static function registerFreemiusLicenseRebake(): void
+    {
+        if (!function_exists('oxpulse_fs')) {
+            return;
+        }
+        $fs = oxpulse_fs();
+        if (!is_object($fs) || !method_exists($fs, 'add_action')) {
+            return;
+        }
+
+        $fs->add_action('after_license_change', static function (): void {
+            self::rebakeAvifIfLicenseDrifted();
+        });
+    }
+
+    /**
+     * Compare the current isPro() to the stored bake sentinel and
+     * regenerate the LocalBackend endpoint on drift. Shared by the
+     * admin-poll self-heal and the Freemius license-change hook so the
+     * two cannot diverge. Not admin-gated: the license-change hook can
+     * fire from cron/REST/front-end, and the work is a write-time
+     * housekeeping step either way.
+     */
+    private static function rebakeAvifIfLicenseDrifted(): void
+    {
         $currentPro = self::isPro();
         $bakedPro = get_option('oxpulse_avif_baked_pro', null);
 
@@ -1210,19 +1336,18 @@ final class ServiceRegistrar
             return;
         }
 
-        $bakedProBool = (bool) $bakedPro;
-        if ($bakedProBool === $currentPro) {
+        if ((bool) $bakedPro === $currentPro) {
             return; // No drift — idempotent no-op.
         }
 
-        // Drift detected. For a LocalBackend site (endpoint===''),
-        // regenerate the endpoint so the baked constant reflects the
-        // new license state. For an imgproxy site there's no baked
-        // endpoint to regenerate — skip the install call. The stored
-        // flag is updated in both cases so a later switch-to-local
-        // bakes the correct value.
-        $endpoint = get_option(OptionSettingsRepository::OPTION_ENDPOINT, '');
-        if ($endpoint === '') {
+        // Drift detected. For a LocalBackend site regenerate the endpoint
+        // so the baked constant reflects the new license state. For an
+        // imgproxy site there's no baked endpoint to regenerate — skip
+        // the install call. The stored flag is updated in both cases so a
+        // later switch-to-local bakes the correct value. The predicate is
+        // the resolved config (#111), not the raw option: one source of
+        // truth for "is this a LocalBackend site".
+        if ((new OptionSettingsRepository())->loadDeliveryConfig()->isLocalBackendActive()) {
             self::installLocalDelivery();
             do_action('oxpulse_rebaked_avif');
         }

@@ -174,11 +174,13 @@ function oxpulse_imager_activate(): void {
     oxpulse_imager_grant_capability();
 
     // Phase 6 Dispatch 3: generate the LocalBackend miss-endpoint +
-    // cache .htaccess when LocalBackend is active. No-op at fresh
-    // activation (delivery disabled, no signing secrets yet) — the
-    // real generation fires on settings-save once the operator
-    // configures secrets without an imgproxy endpoint.
+    // cache .htaccess when LocalBackend is active. Signing secrets and
+    // allowed_sources are seeded first (#147) so "activate + enable" is
+    // a sufficient sequence for a non-interactive install; the seed
+    // never overwrites an existing value. Delivery stays disabled until
+    // an administrator enables it.
     if (class_exists(\OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::class)) {
+        \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::seedMissingConfig();
         \OXPulse\Imager\Infrastructure\WordPress\ServiceRegistrar::installLocalDelivery();
         // #43 Phase 1 review (BLOCKER wire): probe rewrite capability
         // at activation when LocalBackend is active (endpoint empty).
