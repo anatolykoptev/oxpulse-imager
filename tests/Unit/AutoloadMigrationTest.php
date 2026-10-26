@@ -32,7 +32,7 @@ class AutoloadMigrationTest extends TestCase
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['__oxpulse_options'], $GLOBALS['__oxpulse_autoload'], $GLOBALS['__oxpulse_is_admin']);
+        unset($GLOBALS['__oxpulse_options'], $GLOBALS['__oxpulse_autoload'], $GLOBALS['__oxpulse_is_admin'], $GLOBALS['__oxpulse_autoload_fail']);
     }
 
     /**
@@ -158,5 +158,43 @@ class AutoloadMigrationTest extends TestCase
 
         $this->assertSame([], $GLOBALS['__oxpulse_autoload']);
         $this->assertSame(1, (int) get_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION));
+    }
+
+    // ── #105: stamp only when the flip took effect ──────────────────
+
+    public function test_failed_flip_does_not_stamp_schema_version_and_is_retried(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 1);
+        update_option(OptionSettingsRepository::OPTION_ENABLED, true, false);
+        update_option(OptionSettingsRepository::OPTION_ALLOWED_SOURCES, ['https://s.test/'], false);
+
+        $GLOBALS['__oxpulse_is_admin'] = true;
+        $GLOBALS['__oxpulse_autoload_fail'] = true; // DB error: nothing flipped.
+        $this->runMigration();
+
+        $this->assertSame(
+            1,
+            (int) get_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION),
+            'a failed flip must leave schema_version=1 so the next admin load retries',
+        );
+
+        // The DB recovers: the retry flips and stamps.
+        unset($GLOBALS['__oxpulse_autoload_fail']);
+        $this->runMigration();
+        $this->assertSame(2, (int) get_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION));
+    }
+
+    public function test_options_already_autoloaded_still_stamp_schema_version(): void
+    {
+        // Fresh install: activation stamps schema=1 and stores the hot
+        // options autoload=yes, so wp_set_options_autoload() reports
+        // "nothing changed" (false) for every key. That is success, not
+        // failure — otherwise the migration would retry on every load.
+        oxpulse_imager_activate();
+        $GLOBALS['__oxpulse_is_admin'] = true;
+
+        $this->runMigration();
+
+        $this->assertSame(2, (int) get_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION));
     }
 }

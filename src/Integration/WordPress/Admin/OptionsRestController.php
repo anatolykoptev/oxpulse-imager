@@ -200,6 +200,20 @@ final class OptionsRestController
             }
         }
 
+        // <picture> is Pro-gated and handleGet() reports it as false
+        // under free, so the SPA's full-payload save round-trips false.
+        // Persisting that would clobber a stored value on every
+        // unrelated settings save (and lose it across a Pro lapse), and
+        // the toggle is locked under free so it can never be an
+        // intentional change. Only a Pro save may write the flag.
+        // cache_max_mb has the same shape: loadCacheMaxMb() reports the
+        // default (512) under free, so the round-trip would overwrite a
+        // stored Pro value with it.
+        if (!ServiceRegistrar::isPro()) {
+            unset($values['picture_enabled']);
+            unset($values['cache_max_mb']);
+        }
+
         $this->repository->saveDeliverySettings($values);
 
         // Only save secrets if non-empty values were submitted. Empty
@@ -209,24 +223,12 @@ final class OptionsRestController
             $this->repository->saveSecrets($values['key'], $values['salt']);
         }
 
-        // Loose options (not part of DeliveryConfig).
-        if (array_key_exists('diagnostic_level', $values)) {
-            update_option(
-                OptionSettingsRepository::OPTION_DIAGNOSTIC_LEVEL,
-                $values['diagnostic_level']
-            );
-        }
-        if (array_key_exists('remove_on_uninstall', $values)) {
-            update_option(
-                OptionSettingsRepository::OPTION_REMOVE_ON_UNINSTALL,
-                (bool) $values['remove_on_uninstall']
-            );
-        }
+        // diagnostic_level / remove_on_uninstall are persisted by
+        // saveDeliverySettings() above; `onboarded` is not part of
+        // DeliveryConfig, so it goes through its own repository method
+        // (#104: direct update_option calls bypassed the memo refresh).
         if (array_key_exists('onboarded', $values)) {
-            update_option(
-                OptionSettingsRepository::OPTION_ONBOARDED,
-                (bool) $values['onboarded']
-            );
+            $this->repository->saveOnboarded((bool) $values['onboarded']);
         }
 
         // Return the authoritative persisted state.

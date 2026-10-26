@@ -153,4 +153,106 @@ class OptionsRestControllerTest extends TestCase
             'Free GET must return the default cache cap, ignoring the stored option',
         );
     }
+
+    // ─── #71: picture_enabled survives unrelated saves ───────────────
+
+    /**
+     * What the SPA does on Save: GET the options, change one field,
+     * POST the WHOLE object back (useOptionsStore::saveOptions).
+     */
+    private function spaRoundTrip(OptionsRestController $c, array $changes): void
+    {
+        $payload = $c->handleGet()->get_data();
+        unset($payload['secretStatus']);
+        $c->handleUpdate(new \WP_REST_Request(array_merge($payload, $changes)));
+    }
+
+    public function test_default_picture_enabled_is_off(): void
+    {
+        add_filter('oxpulse_is_pro', '__return_true');
+
+        $this->assertFalse($this->controller()->handleGet()->get_data()['pictureEnabled']);
+        $this->assertFalse((new OptionSettingsRepository())->loadDeliveryConfig()->pictureEnabled);
+    }
+
+    public function test_pro_unrelated_save_leaves_picture_enabled_unchanged_then_explicit_toggle_changes_it(): void
+    {
+        add_filter('oxpulse_is_pro', '__return_true');
+        update_option(OptionSettingsRepository::OPTION_PICTURE_ENABLED, true);
+        $c = $this->controller();
+
+        $this->spaRoundTrip($c, ['lqipEnabled' => true]);
+        $this->assertTrue(get_option(OptionSettingsRepository::OPTION_PICTURE_ENABLED), 'unrelated save must not touch the flag');
+        $this->assertTrue((bool) get_option(OptionSettingsRepository::OPTION_LQIP_ENABLED), 'the unrelated change did persist');
+
+        $this->spaRoundTrip($c, ['pictureEnabled' => false]);
+        $this->assertFalse(get_option(OptionSettingsRepository::OPTION_PICTURE_ENABLED), 'explicit toggle off must persist');
+
+        $this->spaRoundTrip($c, ['pictureEnabled' => true]);
+        $this->assertTrue(get_option(OptionSettingsRepository::OPTION_PICTURE_ENABLED), 'explicit toggle on must persist');
+    }
+
+    public function test_free_unrelated_save_does_not_clobber_a_stored_picture_flag(): void
+    {
+        // Free GET reports false, so the SPA round-trips false. Without
+        // the controller guard that false overwrites the stored true.
+        add_filter('oxpulse_is_pro', '__return_false');
+        update_option(OptionSettingsRepository::OPTION_PICTURE_ENABLED, true);
+
+        $this->spaRoundTrip($this->controller(), ['lqipEnabled' => true]);
+
+        $this->assertTrue(
+            get_option(OptionSettingsRepository::OPTION_PICTURE_ENABLED),
+            'a free-tier save must not overwrite the stored picture flag with the gated false',
+        );
+    }
+
+    public function test_free_tier_cannot_write_picture_flag_explicitly(): void
+    {
+        add_filter('oxpulse_is_pro', '__return_false');
+
+        $this->controller()->handleUpdate(new \WP_REST_Request(['pictureEnabled' => true]));
+
+        $this->assertNull(get_option(OptionSettingsRepository::OPTION_PICTURE_ENABLED, null));
+    }
+
+    // ─── #104: loose options persist through the repository ──────────
+
+    public function test_post_persists_onboarded_diagnostic_level_and_remove_on_uninstall(): void
+    {
+        $this->controller()->handleUpdate(new \WP_REST_Request([
+            'onboarded' => true,
+            'diagnosticLevel' => 'basic',
+            'removeOnUninstall' => true,
+        ]));
+
+        $this->assertTrue(get_option(OptionSettingsRepository::OPTION_ONBOARDED));
+        $this->assertSame('basic', get_option(OptionSettingsRepository::OPTION_DIAGNOSTIC_LEVEL));
+        $this->assertTrue(get_option(OptionSettingsRepository::OPTION_REMOVE_ON_UNINSTALL));
+    }
+
+    // ─── cache_max_mb: same free-tier clobber as picture_enabled ─────
+
+    public function test_free_unrelated_save_does_not_clobber_a_stored_cache_cap(): void
+    {
+        add_filter('oxpulse_is_pro', '__return_false');
+        update_option(OptionSettingsRepository::OPTION_CACHE_MAX_MB, 2048);
+
+        $this->spaRoundTrip($this->controller(), ['lqipEnabled' => true]);
+
+        $this->assertSame(2048, get_option(OptionSettingsRepository::OPTION_CACHE_MAX_MB));
+    }
+
+    public function test_pro_cache_cap_round_trips_and_changes_explicitly(): void
+    {
+        add_filter('oxpulse_is_pro', '__return_true');
+        update_option(OptionSettingsRepository::OPTION_CACHE_MAX_MB, 2048);
+        $c = $this->controller();
+
+        $this->spaRoundTrip($c, ['lqipEnabled' => true]);
+        $this->assertSame(2048, get_option(OptionSettingsRepository::OPTION_CACHE_MAX_MB));
+
+        $this->spaRoundTrip($c, ['cacheMaxMb' => 1024]);
+        $this->assertSame(1024, get_option(OptionSettingsRepository::OPTION_CACHE_MAX_MB));
+    }
 }

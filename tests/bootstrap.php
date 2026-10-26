@@ -135,6 +135,10 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     }
     if (!function_exists('add_option')) {
         function add_option($option, $value = '', $deprecated = '', $autoload = true) {
+            // Real WP: add_option() fails (false) when the row exists.
+            if (array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? [])) {
+                return false;
+            }
             $GLOBALS['__oxpulse_options'][$option] = $value;
             // #91: record the autoload arg so the activation-hook
             // test can verify hot defaults are stored autoload=yes.
@@ -177,10 +181,35 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     // the stored values — mirrors the real WP behavior.
     if (!function_exists('wp_set_options_autoload')) {
         function wp_set_options_autoload($options, $autoload) {
+            // Real WP returns [option => bool]: true only when THIS call
+            // changed the row's autoload value; false for an option that
+            // already had it, that does not exist, or whose UPDATE failed.
+            // $GLOBALS['__oxpulse_autoload_fail'] simulates a DB error.
+            $results = [];
             foreach ((array) $options as $option) {
+                if (!empty($GLOBALS['__oxpulse_autoload_fail'])) {
+                    $results[$option] = false;
+                    continue;
+                }
+                $exists = array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? []);
+                $changed = $exists && (($GLOBALS['__oxpulse_autoload'][$option] ?? null) !== (bool) $autoload);
                 $GLOBALS['__oxpulse_autoload'][$option] = (bool) $autoload;
+                $results[$option] = $changed;
             }
-            return true;
+            return $results;
+        }
+    }
+    // Autoloaded options map (mirrors wp_load_alloptions()): name => value
+    // for every stored option flagged autoload=yes in the test globals.
+    if (!function_exists('wp_load_alloptions')) {
+        function wp_load_alloptions($force_cache = false) {
+            $out = [];
+            foreach ($GLOBALS['__oxpulse_options'] ?? [] as $name => $value) {
+                if (!empty($GLOBALS['__oxpulse_autoload'][$name])) {
+                    $out[$name] = $value;
+                }
+            }
+            return $out;
         }
     }
     if (!function_exists('delete_transient')) {

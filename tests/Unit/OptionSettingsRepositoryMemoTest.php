@@ -264,4 +264,18 @@ class OptionSettingsRepositoryMemoTest extends TestCase
         $this->assertSame(15, $config->saveDataQualityReduction);
         $this->assertSame([], $config->sizeQualityTiers);
     }
+
+    // ── #106: cache identity includes the default ───────────────────
+
+    public function test_memo_does_not_leak_one_reads_default_into_another(): void
+    {
+        $memo = new \ReflectionMethod(OptionSettingsRepository::class, 'memo');
+
+        $this->assertSame('first', $memo->invoke($this->repository, 'oxpulse_imager_absent', 'first'));
+        $this->assertSame(
+            'second',
+            $memo->invoke($this->repository, 'oxpulse_imager_absent', 'second'),
+            'same key read with a different default must return that default, not the first-cached one',
+        );
+    }
 }

@@ -110,6 +110,9 @@ final class StatusRestController
             'signing' => [
                 'configured' => $signing !== null,
             ],
+            // #147: codes for the reasons delivery would silently do
+            // nothing (empty list = fully configured). Never values.
+            'configProblems' => $this->repository->configProblems(),
             'health' => null,
             // #137: imgproxy up/down flips recorded by ImgproxyHealthCache.
             'backendFlaps' => $this->flapLog->summary(),

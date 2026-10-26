@@ -82,7 +82,7 @@ Yes — this plugin is a bring-your-own-imgproxy integration. You need a self-ho
 
 = Can I use this with a hosted imgproxy service? =
 
-Yes, as long as the service provides a standard imgproxy endpoint with key/salt signing. Configure the endpoint URL and your signing secrets in the plugin settings.
+Yes, as long as the service provides a standard imgproxy endpoint with key/salt signing. Configure the endpoint URL and your signing secrets in the plugin settings. On activation the plugin generates a random key and salt for the built-in WebP delivery; these are flagged as auto-generated and are NOT used for an imgproxy endpoint. The flag clears by itself as soon as you save your imgproxy key and salt, in the settings screen or directly with `wp option update oxpulse_imager_key` / `oxpulse_imager_salt`.
 
 = Does this work with the Optimization Detective plugin? =
 
