@@ -232,4 +232,24 @@ class PictureElementWrapperTest extends TestCase
         preg_match('/\bsrcset=["\']([^"\']*)["\']/', $sourceTag, $m);
         return $m[1] ?? '';
     }
+
+    /**
+     * Behaviour change pinned (#157): sizes is matched by exact attribute
+     * name, so a preceding data-sizes="auto" (lazysizes) is no longer copied
+     * onto <source sizes>, and the real sizes attribute still is.
+     */
+    public function test_data_sizes_is_not_mistaken_for_sizes(): void
+    {
+        $wrapper = $this->createWrapper();
+        $src = 'https://example.com/wp-content/uploads/photo.jpg';
+
+        $onlyDataSizes = $wrapper->wrap('<img data-sizes="auto" src="' . $src . '" alt="x">', $src, '', 800, 600);
+        $this->assertStringNotContainsString('sizes=', implode('', $this->parsePicture($onlyDataSizes)['sources']));
+
+        $both = $wrapper->wrap('<img data-sizes="auto" sizes="100vw" src="' . $src . '" alt="x">', $src, '', 800, 600);
+        foreach ($this->parsePicture($both)['sources'] as $source) {
+            $this->assertStringContainsString('sizes="100vw"', $source);
+            $this->assertStringNotContainsString('sizes="auto"', $source);
+        }
+    }
 }
