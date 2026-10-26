@@ -8,8 +8,9 @@
  * wp_img_tag_add_auto_sizes() never sees the lazy flag. When everything is
  * high priority nothing is, and the real LCP image gets no preference.
  *
- * This opt-in pass (default OFF — lcpHygieneEnabled + the
- * oxpulse_lcp_hygiene_enabled filter) runs once on the full HTML response
+ * This opt-in pass (default OFF — the lcpHygieneEnabled option enables it;
+ * the oxpulse_lcp_hygiene_enabled filter can only DISABLE it at runtime,
+ * like oxpulse_buffer_rewrite_enabled) runs once on the full HTML response
  * in its OWN output buffer and:
  *
  *  1. Picks ONE LCP candidate by a deterministic heuristic that mirrors
@@ -52,7 +53,9 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Integration\WordPress\Delivery;
 
+use OXPulse\Imager\Application\Diagnostics\DiagnosticLoggerInterface;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
+use OXPulse\Imager\Domain\Diagnostics\LogEntry;
 
 final class LcpTagHygiene
 {
@@ -87,7 +90,14 @@ final class LcpTagHygiene
     private const HIDDEN_CLASSES = [
         'mobile-collapse', 'mobile-menu-wrap', 'mega-menu', 'mega-dropdown', 'sub-menu',
         'dropdown', 'dropdown-menu', 'offcanvas', 'off-canvas', 'modal', 'popup', 'popover',
+        'd-none', 'hidden', 'is-hidden', 'hide', 'mfp-hide',
     ];
+
+    /** Class prefixes that hide a container (Elementor: elementor-hidden-desktop, …). */
+    private const HIDDEN_CLASS_PREFIXES = ['elementor-hidden-'];
+
+    /** Unclosed-tag runaway guard: give up (page untouched) beyond this depth. */
+    private const MAX_STACK = 5000;
 
     /** One attribute, anchored with \G so values are never re-scanned as names. */
     private const ATTR_PATTERN = '#\G(?:\s|/)*+([^\s"\'<>/=]+)(?:\s*+=\s*+(?:"([^"]*)"|\'([^\']*)\'|([^\s"\'>]+)))?#';
@@ -97,14 +107,23 @@ final class LcpTagHygiene
     /** @var \Closure(): bool */
     private \Closure $shouldBuffer;
 
+    private ?DiagnosticLoggerInterface $logger;
+
     /**
      * @param \Closure(): bool $shouldBuffer The shared page-context guard
      *        battery (BufferRewriter::shouldBuffer) — one source of truth.
      */
-    public function __construct(DeliveryConfig $delivery, \Closure $shouldBuffer)
+    public function __construct(DeliveryConfig $delivery, \Closure $shouldBuffer, ?DiagnosticLoggerInterface $logger = null)
     {
         $this->delivery = $delivery;
         $this->shouldBuffer = $shouldBuffer;
+        $this->logger = $logger;
+    }
+
+    /** Silent no-op paths are visible at the plugin's diagnostic level. */
+    private function note(string $reason): void
+    {
+        $this->logger?->log(LogEntry::preserved('lcp_hygiene', '', 0, $reason));
     }
 
     public function register(): void
@@ -126,7 +145,11 @@ final class LcpTagHygiene
      */
     public function rewrite(string $html): string
     {
-        if ($html === '' || strlen($html) > self::MAX_BUFFER || !str_contains($html, '<img')) {
+        if ($html === '' || !str_contains(strtolower($html), '<img')) {
+            return $html;
+        }
+        if (strlen($html) > self::MAX_BUFFER) {
+            $this->note('buffer_too_large');
             return $html;
         }
         // Re-checked at rewrite time so a late filter still takes effect.
@@ -139,6 +162,7 @@ final class LcpTagHygiene
         try {
             return $this->apply($html);
         } catch (\Throwable $e) {
+            $this->note('throwable:' . get_class($e));
             return $html;
         }
     }
@@ -152,32 +176,49 @@ final class LcpTagHygiene
         // out (same length, so offsets map 1:1 onto $html): images and tags
         // inside them are neither candidates nor edited.
         $clean = preg_replace_callback(
-            '#<!--.*?-->|<(script|style|noscript|template)\b[^>]*>.*?</\1\s*>#is',
+            '#<!--.*?-->|<(script|style|noscript|template|textarea|title)\b[^>]*>.*?</\1\s*>#is',
             static fn(array $m): string => str_repeat(' ', strlen($m[0])),
             $html
         );
         if (!is_string($clean)) {
+            $this->note('analysis_failed');
             return $html;
         }
 
         $images = $this->collectImages($clean);
-        if ($images === null || $images === []) {
+        if ($images === null) {
+            $this->note('analysis_failed');
+            return $html;
+        }
+        if ($images === []) {
             return $html;
         }
 
         $candidate = $this->chooseCandidate($images);
+        if ($candidate === null) {
+            // Nothing is promoted, so nothing is demoted: the theme's own
+            // fetchpriority markers stay exactly as emitted.
+            $this->note('no_candidate');
+        }
         $autoSizes = (bool) apply_filters('wp_img_tag_add_auto_sizes', true);
 
+        // </head> is located in the blanked copy: a literal "</head>" inside a
+        // head <script> string or a comment must not be taken for the real one.
+        $headEnd = stripos($clean, '</head>');
+        $shift = 0;
         for ($i = count($images) - 1; $i >= 0; $i--) {
             $img = $images[$i];
-            $new = $this->rewriteTag($img['tag'], $img['attrs'], $i === $candidate, $autoSizes);
+            $new = $this->rewriteTag($img['tag'], $img['attrs'], $i === $candidate, $autoSizes, $candidate !== null);
             if ($new !== $img['tag']) {
                 $html = substr_replace($html, $new, $img['offset'], strlen($img['tag']));
+                if ($headEnd !== false && $img['offset'] < $headEnd) {
+                    $shift += strlen($new) - strlen($img['tag']);
+                }
             }
         }
 
-        if ($candidate !== null) {
-            $html = $this->insertPreload($html, $images[$candidate]);
+        if ($candidate !== null && $headEnd !== false) {
+            $html = $this->insertPreload($html, $images[$candidate], $headEnd, $shift, substr($clean, 0, $headEnd));
         }
 
         return $html;
@@ -193,9 +234,6 @@ final class LcpTagHygiene
      */
     private function collectImages(string $clean): ?array
     {
-        if (preg_match_all(self::TAG_PATTERN, $clean, $tags, PREG_SET_ORDER | PREG_OFFSET_CAPTURE) === false) {
-            return null;
-        }
         $hiddenClasses = array_map('strtolower', (array) apply_filters('oxpulse_lcp_excluded_classes', self::HIDDEN_CLASSES));
 
         /** @var list<array{0:string,1:bool,2:bool}> $stack name, hidden, picture */
@@ -203,8 +241,14 @@ final class LcpTagHygiene
         $hiddenDepth = 0;
         $pictureDepth = 0;
         $images = [];
+        $pos = 0;
 
-        foreach ($tags as $t) {
+        // preg_match with an offset instead of preg_match_all: a tag-dense page
+        // must not materialise one capture array per tag (an OOM is a fatal
+        // that no catch can recover from). Only <img> tags and the ancestry
+        // stack are retained.
+        while (preg_match(self::TAG_PATTERN, $clean, $t, PREG_OFFSET_CAPTURE, $pos) === 1) {
+            $pos = $t[0][1] + strlen($t[0][0]);
             $closing = $t[1][0] === '/';
             $name = strtolower($t[2][0]);
             if ($closing) {
@@ -222,8 +266,9 @@ final class LcpTagHygiene
                 continue;
             }
 
-            $attrs = $t[3][0] === '' ? [] : $this->parseAttributes($t[0][0], 1 + strlen($t[2][0]));
-            $hidden = $this->isHiddenContainer($name, $attrs, $hiddenClasses);
+            $needsAttrs = $name === 'img' || ($t[3][0] !== '' && preg_match('#class|hidden|style#i', $t[3][0]) === 1);
+            $attrs = $needsAttrs ? $this->parseAttributes($t[0][0], 1 + strlen($t[2][0])) : [];
+            $hidden = in_array($name, self::HIDDEN_ELEMENTS, true) || ($needsAttrs && $this->isHiddenContainer($name, $attrs, $hiddenClasses));
 
             if ($name === 'img') {
                 $images[] = [
@@ -237,6 +282,9 @@ final class LcpTagHygiene
             }
             if (in_array($name, self::VOID_ELEMENTS, true) || str_ends_with($t[0][0], '/>')) {
                 continue;
+            }
+            if (count($stack) >= self::MAX_STACK) {
+                return null;
             }
             $stack[] = [$name, $hidden, $name === 'picture'];
             $hiddenDepth += $hidden ? 1 : 0;
@@ -256,7 +304,7 @@ final class LcpTagHygiene
             return true;
         }
         $style = (string) ($this->attr($attrs, 'style')['value'] ?? '');
-        if ($style !== '' && preg_match('#display\s*:\s*none|visibility\s*:\s*hidden#i', $style)) {
+        if ($style !== '' && preg_match('#display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?:\.0*)?\s*(?:;|!|$)#i', $style)) {
             return true;
         }
         $class = (string) ($this->attr($attrs, 'class')['value'] ?? '');
@@ -264,6 +312,11 @@ final class LcpTagHygiene
             foreach (preg_split('/\s+/', strtolower($class)) ?: [] as $token) {
                 if (in_array($token, $hiddenClasses, true)) {
                     return true;
+                }
+                foreach (self::HIDDEN_CLASS_PREFIXES as $prefix) {
+                    if (str_starts_with($token, $prefix)) {
+                        return true;
+                    }
                 }
             }
         }
@@ -348,6 +401,7 @@ final class LcpTagHygiene
 
         $descriptors = [];
         $default = null;
+        $themeHero = false; // a theme-marked high image that only lacks width/height
         foreach ($images as $i => $img) {
             $a = $img['attrs'];
             $src = (string) ($this->attr($a, 'src')['value'] ?? '');
@@ -362,15 +416,27 @@ final class LcpTagHygiene
                 'class' => $class,
                 'hidden' => $img['hidden'],
                 'in_picture' => $img['picture'],
+                'fetchpriority' => $this->token($this->attr($a, 'fetchpriority')),
                 'tag' => $img['tag'],
             ];
-            if (
-                $default === null
-                && !$img['hidden']
+            if ($default !== null || $themeHero) {
+                continue;
+            }
+            $usable = !$img['hidden']
                 && $src !== '' && !str_starts_with(strtolower($src), 'data:')
+                && stripos($class, 'logo') === false;
+            if ($usable && $descriptors[$i]['fetchpriority'] === 'high' && ($width <= 0 || $height <= 0)) {
+                // The theme says "this is the hero" but gave no dimensions, so
+                // the size threshold cannot be applied. Trust the theme: keep
+                // its high and promote nothing below it (a lazy image further
+                // down the page must never outrank it).
+                $themeHero = true;
+                continue;
+            }
+            if (
+                $usable
                 && $width > 0 && $height > 0 && $width * $height >= $minPixels
-                && stripos($class, 'logo') === false
-                && $this->token($this->attr($a, 'fetchpriority')) !== 'low'
+                && $descriptors[$i]['fetchpriority'] !== 'low'
             ) {
                 $default = $i;
             }
@@ -386,7 +452,7 @@ final class LcpTagHygiene
     /**
      * @param list<array{name:string,value:?string,quote:string,start:int,end:int}> $attrs
      */
-    private function rewriteTag(string $tag, array $attrs, bool $isCandidate, bool $autoSizes): string
+    private function rewriteTag(string $tag, array $attrs, bool $isCandidate, bool $autoSizes, bool $stripOthers): string
     {
         /** @var list<array{0:int,1:int,2:string}> $edits start, end, replacement */
         $edits = [];
@@ -423,7 +489,7 @@ final class LcpTagHygiene
             }
         } else {
             foreach ($priorities as $a) {
-                if ($this->token($a) === 'high') {
+                if ($stripOthers && $this->token($a) === 'high') {
                     $edits[] = [$a['start'], $a['end'], ''];
                 }
             }
@@ -443,12 +509,21 @@ final class LcpTagHygiene
         if ($edits === [] && $insert === '') {
             return $tag;
         }
+        $original = $tag;
         usort($edits, static fn(array $x, array $y): int => $y[0] <=> $x[0]);
         foreach ($edits as [$start, $end, $replacement]) {
             $tag = substr_replace($tag, $replacement, $start, $end - $start);
         }
         // Insertion point (right after "<img") is before every attribute offset.
-        return substr_replace($tag, $insert, 4, 0);
+        $tag = substr_replace($tag, $insert, 4, 0);
+
+        // Removing the last attribute can glue an unquoted value to "/>"
+        // (height=200/> reads as the value "200/"). Restore the separator.
+        if (str_ends_with($tag, '/>') && preg_match('#[^\s"\'/]/>$#', $tag) === 1
+            && preg_match('#[\s"\']/>$#', $original) === 1) {
+            $tag = substr($tag, 0, -2) . ' />';
+        }
+        return $tag;
     }
 
     /** Core's wp_sizes_attribute_includes_valid_auto(): auto is the first entry. */
@@ -466,8 +541,11 @@ final class LcpTagHygiene
 
     /**
      * @param array{offset:int,tag:string,attrs:array,hidden:bool,picture:bool} $img
+     * @param int $headEnd Offset of </head> in the ORIGINAL (blanked) markup.
+     * @param int $shift Bytes added/removed by tag edits located before </head>.
+     * @param string $head Blanked markup of the head, for the existing-preload check.
      */
-    private function insertPreload(string $html, array $img): string
+    private function insertPreload(string $html, array $img, int $headEnd, int $shift, string $head): string
     {
         $attrs = $img['attrs'];
         $src = (string) ($this->attr($attrs, 'src')['value'] ?? '');
@@ -482,16 +560,10 @@ final class LcpTagHygiene
         if ($img['picture']) {
             return $html;
         }
-        $headEnd = stripos($html, '</head>');
-        if ($headEnd === false) {
-            return $html;
-        }
-        // Edits above only touch the body (after </head>), so $img['offset']
-        // is still a valid position for the comparison.
         if ($headEnd > $img['offset']) {
-            return $html;
+            return $html; // candidate is not after </head>
         }
-        if ($this->hasImagePreload(substr($html, 0, $headEnd), $src)) {
+        if ($this->hasImagePreload($head, $src)) {
             return $html;
         }
 
@@ -503,6 +575,16 @@ final class LcpTagHygiene
                 $link .= ' imagesizes="' . $this->quote($imageSizes) . '"';
             }
         }
+        // A preload whose CORS mode / referrer policy differs from the <img>
+        // is not reused by it — the image would download twice.
+        foreach (['crossorigin', 'referrerpolicy'] as $name) {
+            $attr = $this->attr($attrs, $name);
+            if ($attr !== null) {
+                $link .= $attr['value'] === null || $attr['value'] === ''
+                    ? ' ' . $name
+                    : ' ' . $name . '="' . $this->quote($attr['value']) . '"';
+            }
+        }
         $link .= ' fetchpriority="high">' . "\n";
 
         $descriptor = ['src' => $src, 'srcset' => $srcset, 'sizes' => $imageSizes, 'link' => $link];
@@ -510,7 +592,7 @@ final class LcpTagHygiene
             return $html;
         }
 
-        return substr_replace($html, $link, $headEnd, 0);
+        return substr_replace($html, $link, $headEnd + $shift, 0);
     }
 
     private function hasImagePreload(string $head, string $src): bool

@@ -432,14 +432,16 @@ final class ServiceRegistrar
             $bufferRewriter->register();
         }
 
-        // LCP tag hygiene (#133/#48/#49/#50): opt-in, default OFF. Own output
+        // LCP tag hygiene (#133/#48/#49/#50): opt-in, default OFF — the option
+        // enables it, the oxpulse_lcp_hygiene_enabled filter can only disable
+        // it at runtime (same shape as oxpulse_buffer_rewrite_enabled). Own output
         // buffer (template_redirect 4 = outer to BufferRewriter's 5) so it
         // works with or without bufferRewritingEnabled and sees final tags.
         // The page-context guard battery is BufferRewriter::shouldBuffer()
         // reused through a never-registered instance — one source of truth.
         if ($delivery->lcpHygieneEnabled) {
             $contextGuard = new BufferRewriter($rewriter, $delivery);
-            (new LcpTagHygiene($delivery, \Closure::fromCallable([$contextGuard, 'shouldBuffer'])))->register();
+            (new LcpTagHygiene($delivery, \Closure::fromCallable([$contextGuard, 'shouldBuffer']), self::diagnosticLogger()))->register();
         }
 
         // Ф3: RankMath og:image compatibility. Restores direct attachment

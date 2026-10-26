@@ -147,6 +147,16 @@ class OnboardingSaveRestTest extends TestCase
      * returns enabled:true AND every other option unchanged (partial-
      * merge preserved — unmentioned options keep their defaults).
      */
+    public function test_unrelated_partial_post_preserves_lcp_hygiene_flag(): void
+    {
+        $this->assertTrue($this->dispatchPost(['lcpHygieneEnabled' => true])->get_data()['lcpHygieneEnabled']);
+
+        $data = $this->dispatchPost(['diagnosticLevel' => 'basic'])->get_data();
+
+        $this->assertTrue($data['lcpHygieneEnabled'], 'an unrelated settings save reset lcp_hygiene_enabled');
+        $this->assertTrue((new OptionSettingsRepository())->loadDeliveryConfig()->lcpHygieneEnabled);
+    }
+
     public function test_partial_enabled_post_preserves_other_options(): void
     {
         // Pre-set a non-default diagnostic_level so we can prove the

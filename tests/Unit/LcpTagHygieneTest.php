@@ -250,7 +250,8 @@ class LcpTagHygieneTest extends TestCase
             . '<img fetchpriority="high" width="100" height="100" src="https://x.test/s.png">'
         );
         $out = $this->pass()->rewrite($html);
-        $this->assertSame(0, substr_count($out, 'fetchpriority="high"'));
+        // No candidate: nothing is promoted, so the theme's markers stay as emitted.
+        $this->assertSame($html, $out);
         $this->assertSame(0, substr_count($out, 'rel="preload"'));
     }
 
@@ -308,7 +309,157 @@ class LcpTagHygieneTest extends TestCase
 
         $GLOBALS['__oxpulse_filters'] = [];
         add_filter('oxpulse_lcp_candidate', static fn($default, array $all) => null, 10, 2);
-        $this->assertStringNotContainsString('fetchpriority="high"', $this->pass()->rewrite($html));
+        $themeHigh = $this->page($this->big('fetchpriority="high"', 'a') . $this->big('fetchpriority="high"', 'b'));
+        $this->assertSame($themeHigh, $this->pass()->rewrite($themeHigh), 'no candidate must not strip theme markers');
+    }
+
+    // ─── review round: </head>, glue, memory, hidden classes, hero, preload attrs ───
+
+    public function test_head_end_inside_head_script_string_does_not_receive_the_preload(): void
+    {
+        $head = '<script>var s = \'</head>\';</script>';
+        $out = $this->pass()->rewrite($this->page($this->big(), $head));
+
+        $this->assertStringContainsString("<script>var s = '</head>';</script>", $out, 'preload spliced into the JS string');
+        $this->assertSame(1, substr_count($out, 'rel="preload" as="image"'));
+        $this->assertGreaterThan(strpos($out, "';</script>"), strpos($out, 'rel="preload" as="image"'));
+        $this->assertLessThan(strpos($out, '<body>'), strpos($out, 'rel="preload" as="image"'));
+    }
+
+    public function test_head_end_inside_comment_does_not_lose_the_preload(): void
+    {
+        $out = $this->pass()->rewrite($this->page($this->big(), '<!-- </head> -->'));
+
+        $this->assertStringContainsString('<!-- </head> -->', $out);
+        $this->assertSame(1, substr_count($out, 'rel="preload" as="image"'));
+        $this->assertGreaterThan(strpos($out, '<!-- </head> -->'), strpos($out, 'rel="preload" as="image"'));
+    }
+
+    public function test_removing_last_attribute_does_not_glue_unquoted_value_to_self_close(): void
+    {
+        $html = $this->page(
+            $this->big('', 'lcp')
+            . '<img src=/b.jpg width=10 height=20 fetchpriority="high"/>'
+        );
+        $out = $this->pass()->rewrite($html);
+
+        $this->assertStringContainsString('<img src=/b.jpg width=10 height=20 />', $out);
+        $this->assertStringNotContainsString('height=20/>', $out);
+    }
+
+    public function test_tag_dense_page_does_not_build_a_per_tag_array(): void
+    {
+        $html = '<!DOCTYPE html><html><head></head><body>' . str_repeat('<i></i>', 140000)
+            . '<img width="600" height="400" src="https://x.test/a.jpg"></body></html>';
+        $this->assertLessThan(2 * 1024 * 1024, strlen($html));
+
+        memory_reset_peak_usage();
+        $before = memory_get_usage();
+        $out = $this->pass()->rewrite($html);
+        $delta = memory_get_peak_usage() - $before;
+
+        $this->assertNotSame($html, $out);
+        // preg_match_all(PREG_OFFSET_CAPTURE) over these 280k tags peaked at ~305 MB.
+        $this->assertLessThan(48 * 1024 * 1024, $delta, 'tag scan memory grows with tag count');
+    }
+
+    /** @return array<string,array{0:string}> */
+    public static function hiddenContainers(): array
+    {
+        return [
+            'elementor all devices' => ['<div class="elementor-hidden-desktop elementor-hidden-tablet elementor-hidden-mobile">'],
+            'elementor prefix'      => ['<div class="x elementor-hidden-phone">'],
+            'magnific popup'        => ['<div class="mfp-hide">'],
+            'bootstrap'             => ['<div class="d-none">'],
+            'hidden class'          => ['<div class="hidden">'],
+            'is-hidden'             => ['<div class="is-hidden">'],
+            'hide'                  => ['<div class="hide">'],
+            'opacity 0'             => ['<div style="opacity:0">'],
+            'opacity 0.0 important' => ['<div style="color:red;opacity: 0.0 !important">'],
+        ];
+    }
+
+    #[DataProvider('hiddenContainers')]
+    public function test_hidden_container_classes_are_skipped(string $open): void
+    {
+        $out = $this->pass()->rewrite($this->page($open . $this->big('', 'hid') . '</div>' . $this->big('', 'real')));
+        $this->assertStringContainsString('href="https://x.test/real.jpg"', $out);
+        $this->assertStringNotContainsString('href="https://x.test/hid.jpg"', $out);
+    }
+
+    public function test_opacity_half_is_not_hidden(): void
+    {
+        $out = $this->pass()->rewrite($this->page('<div style="opacity:0.5">' . $this->big('', 'half') . '</div>'));
+        $this->assertStringContainsString('href="https://x.test/half.jpg"', $out);
+    }
+
+    public function test_dimensionless_theme_hero_keeps_high_and_nothing_below_it_is_promoted(): void
+    {
+        $html = $this->page(
+            '<img fetchpriority="high" src="https://x.test/hero.jpg">'
+            . $this->big('loading="lazy"', 'below')
+        );
+        $out = $this->pass()->rewrite($html);
+
+        $this->assertSame($html, $out, 'a lazy image below the theme hero was promoted');
+    }
+
+    public function test_dimensionless_hero_logo_is_not_mistaken_for_the_hero(): void
+    {
+        $html = $this->page('<img class="logo" fetchpriority="high" src="https://x.test/l.png">' . $this->big('', 'real'));
+        $out = $this->pass()->rewrite($html);
+        $this->assertStringContainsString('href="https://x.test/real.jpg"', $out);
+    }
+
+    public function test_preload_copies_crossorigin_and_referrerpolicy(): void
+    {
+        $out = $this->pass()->rewrite($this->page($this->big('crossorigin="use-credentials" referrerpolicy="no-referrer"')));
+        $this->assertMatchesRegularExpression('#<link rel="preload" as="image"[^>]* crossorigin="use-credentials" referrerpolicy="no-referrer"#', $out);
+
+        $out = $this->pass()->rewrite($this->page($this->big('crossorigin')));
+        $this->assertMatchesRegularExpression('#<link rel="preload" as="image"[^>]* crossorigin fetchpriority#', $out);
+    }
+
+    public function test_uppercase_img_and_raw_text_elements(): void
+    {
+        $out = $this->pass()->rewrite($this->page('<IMG fetchpriority="high" WIDTH="600" HEIGHT="400" SRC="https://x.test/up.jpg">'));
+        $this->assertStringContainsString('href="https://x.test/up.jpg"', $out);
+
+        $body = '<textarea>' . $this->big('', 'ta') . '</textarea>' . $this->big('', 'real');
+        $out = $this->pass()->rewrite($this->page($body, '<title>' . $this->big('', 'ti') . '</title>'));
+        $this->assertStringContainsString('href="https://x.test/real.jpg"', $out);
+        $this->assertSame(1, substr_count($out, 'rel="preload" as="image"'));
+    }
+
+    public function test_silent_noop_paths_are_logged(): void
+    {
+        $log = new class implements \OXPulse\Imager\Application\Diagnostics\DiagnosticLoggerInterface {
+            /** @var list<string> */
+            public array $reasons = [];
+            public function log(\OXPulse\Imager\Domain\Diagnostics\LogEntry $entry): void
+            {
+                $this->reasons[] = $entry->reason;
+            }
+            public function getEntries(): array { return []; }
+            public function getSummary(): array { return []; }
+            public function flush(): void {}
+            public function warning(string $message): void {}
+        };
+        $pass = new LcpTagHygiene(
+            new DeliveryConfig(true, 'https://imgproxy.example.com', [], lcpHygieneEnabled: true),
+            static fn(): bool => true,
+            $log
+        );
+
+        $big = '<html><body><img src="x">' . str_repeat(' ', 2 * 1024 * 1024) . '</body></html>';
+        $pass->rewrite($big);
+        $pass->rewrite($this->page('<img width="5" height="5" src="https://x.test/s.jpg">'));
+        add_filter('oxpulse_lcp_candidate', static function (): int {
+            throw new \RuntimeException('boom');
+        }, 10, 2);
+        $pass->rewrite($this->page($this->big()));
+
+        $this->assertSame(['buffer_too_large', 'no_candidate', 'throwable:RuntimeException'], $log->reasons);
     }
 
     // ─── sizes=auto (core wp_img_tag_add_auto_sizes semantics) ───────
