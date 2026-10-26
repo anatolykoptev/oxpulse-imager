@@ -21,6 +21,7 @@ namespace OXPulse\Imager\Tests\Unit;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Source\NormalizedUrl;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class PathNormalizationTest extends TestCase
@@ -43,9 +44,7 @@ class PathNormalizationTest extends TestCase
         );
     }
 
-    /**
-     * @dataProvider loopEvasionForms
-     */
+    #[DataProvider('loopEvasionForms')]
     public function test_proxy_loop_guard_catches_normalized_evasion(string $path): void
     {
         $decision = $this->policy->authorize('https://example.com' . $path, $this->rootConfig());
