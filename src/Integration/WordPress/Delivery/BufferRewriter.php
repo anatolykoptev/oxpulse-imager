@@ -579,7 +579,7 @@ final class BufferRewriter
     {
         $attr = $this->hasClassToken($fullTag, 'lazyload') ? 'data-srcset' : null;
         $attr = apply_filters('oxpulse_lazy_picture_source_attribute', $attr, $fullTag);
-        if (!is_string($attr) || !preg_match('/^data-[a-z][a-z0-9-]*$/', $attr)) {
+        if (!is_string($attr) || !preg_match('/^data-[a-z][a-z0-9-]*$/D', $attr)) {
             return null;
         }
         return $attr;

@@ -904,6 +904,12 @@ class BufferRewriterTest extends TestCase
         add_filter('oxpulse_lazy_picture_source_attribute', fn ($attr) => 'srcset');
         $result = $this->createBufferRewriterWithPicture()->rewrite($this->wrap($this->lazysizesTag('lazy')));
         $this->assertStringNotContainsString('<picture', $result);
+
+        // A trailing newline must not slip past the anchor.
+        $GLOBALS['__oxpulse_filters'] = [];
+        add_filter('oxpulse_lazy_picture_source_attribute', fn ($attr) => "data-srcset\n");
+        $result = $this->createBufferRewriterWithPicture()->rewrite($this->wrap($this->lazysizesTag('lazy')));
+        $this->assertStringNotContainsString('<picture', $result);
     }
 
     public function test_native_lazy_image_is_still_wrapped_with_real_srcset(): void
