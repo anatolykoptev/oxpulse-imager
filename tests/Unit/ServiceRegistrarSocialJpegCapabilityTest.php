@@ -261,4 +261,35 @@ class ServiceRegistrarSocialJpegCapabilityTest extends TestCase
         }
         return null;
     }
+
+    // ─── cache-buster (cb:) probe triggers (#132) ────────────────────
+    // An unprobed verdict silently means "no versioned URLs", so each
+    // trigger that refreshes the verdict is pinned.
+
+    public function test_cachebuster_probe_fires_on_cron_version_update_and_endpoint_change(): void
+    {
+        $this->configureImgproxyLocal();
+        $plugin = $this->buildPluginStub();
+
+        $this->invokePrivate('registerImgproxyHealthCron', [$plugin]);
+        do_action('oxpulse_imgproxy_health_recheck');
+        $this->assertSame(1, did_action('oxpulse_recheck_cachebuster'), 'hourly cron');
+
+        $GLOBALS['__oxpulse_is_admin'] = true;
+        update_option(OptionSettingsRepository::OPTION_PROBE_VERSION, '0.0.9');
+        $this->invokePrivate('maybeReprobeOnVersionUpdate');
+        $this->assertSame(2, did_action('oxpulse_recheck_cachebuster'), 'version-gated re-probe');
+
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+        $callback = $this->findUpdatedOptionCallback();
+        $callback(OptionSettingsRepository::OPTION_ENDPOINT);
+        $this->assertSame(3, did_action('oxpulse_recheck_cachebuster'), 'endpoint change');
+    }
+
+    public function test_cachebuster_probe_is_noop_when_endpoint_empty(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, '');
+        ServiceRegistrar::recheckCacheBusterCapability(new GetImageStub(status: 200, contentType: 'image/webp'), null, $this->sourceProvider());
+        $this->assertSame(0, did_action('oxpulse_recheck_cachebuster'));
+    }
 }

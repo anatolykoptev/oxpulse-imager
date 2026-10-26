@@ -29,6 +29,7 @@ use OXPulse\Imager\Application\Prewarm\PrewarmService;
 use OXPulse\Imager\Infrastructure\Http\WordPressHealthClient;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackendProvider;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
+use OXPulse\Imager\Infrastructure\Imgproxy\CacheBusterCapabilityProbe;
 use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityCache;
 use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityProbe;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
@@ -48,6 +49,7 @@ use OXPulse\Imager\Integration\WordPress\Admin\PrewarmRestController;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsPage;
 use OXPulse\Imager\Integration\WordPress\Admin\StatusRestController;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentContentVersion;
+use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentOriginResolver;
 use OXPulse\Imager\Integration\WordPress\Cli\CliServiceProvider;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcRewriter;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentImageSrcsetRestorer;
@@ -705,6 +707,7 @@ final class ServiceRegistrar
         add_action('oxpulse_imgproxy_health_recheck', static function (): void {
             self::recheckImgproxyHealth();
             self::recheckSocialJpegCapability();
+            self::recheckCacheBusterCapability();
         });
 
         add_action('init', static function (): void {
@@ -1083,27 +1086,68 @@ final class ServiceRegistrar
 
         // Default sourceProvider: newest image attachment, bypassing
         // the rewrite filter chain via AttachmentOriginResolver.
-        if ($sourceProvider === null) {
-            $sourceProvider = static function (): ?string {
-                $posts = get_posts([
-                    'post_type' => 'attachment',
-                    'post_mime_type' => 'image',
-                    'posts_per_page' => 1,
-                    'orderby' => 'date',
-                    'order' => 'DESC',
-                ]);
-                if (empty($posts)) {
-                    return null;
-                }
-                return \OXPulse\Imager\Integration\WordPress\Delivery\AttachmentOriginResolver::resolveOriginalUrl((int) $posts[0]->ID);
-            };
-        }
+        $sourceProvider = $sourceProvider ?? self::newestImageSource(...);
 
         $probe = new SocialJpegCapabilityProbe($delivery, $signing, $requester, $cache, $sourceProvider);
         $probe->run();
 
         // Marker action for test assertions + observability.
         do_action('oxpulse_recheck_social_jpeg');
+    }
+
+    /**
+     * Newest image attachment's original URL (bypasses the rewrite filter
+     * chain via AttachmentOriginResolver) — the probes' default source.
+     */
+    private static function newestImageSource(): ?string
+    {
+        $posts = get_posts([
+            'post_type' => 'attachment',
+            'post_mime_type' => 'image',
+            'posts_per_page' => 1,
+            'orderby' => 'date',
+            'order' => 'DESC',
+        ]);
+        if (empty($posts)) {
+            return null;
+        }
+        return AttachmentOriginResolver::resolveOriginalUrl((int) $posts[0]->ID);
+    }
+
+    /**
+     * Write-time probe: does the imgproxy endpoint accept the `cb:` option?
+     * Same triggers, guards and test seam as recheckSocialJpegCapability();
+     * never on the front-end render path. Verdict lives in
+     * SocialJpegCapabilityCache::forCacheBuster() and gates versioned URLs.
+     */
+    public static function recheckCacheBusterCapability(
+        ?HttpRequester $requester = null,
+        ?SocialJpegCapabilityCache $cache = null,
+        ?callable $sourceProvider = null,
+    ): void {
+        $repository = new OptionSettingsRepository();
+        $delivery = $repository->loadDeliveryConfig();
+        if ($delivery->isLocalBackendActive()) {
+            return;
+        }
+        $delivery = $delivery->withEndpoint(
+            OptionSettingsRepository::resolveEndpoint($delivery->endpoint)
+        );
+        $signing = $repository->loadSigningConfig();
+        if ($signing === null) {
+            return;
+        }
+
+        $probe = new CacheBusterCapabilityProbe(
+            $delivery,
+            $signing,
+            $requester ?? new WpRemoteHttpRequester(),
+            $cache ?? SocialJpegCapabilityCache::forCacheBuster(),
+            $sourceProvider ?? self::newestImageSource(...)
+        );
+        $probe->run();
+
+        do_action('oxpulse_recheck_cachebuster');
     }
 
     /**
@@ -1144,6 +1188,7 @@ final class ServiceRegistrar
         self::recheckRewriteCapability();
         self::recheckImgproxyHealth();
         self::recheckSocialJpegCapability();
+        self::recheckCacheBusterCapability();
         $repository->saveProbeVersion(OXPULSE_IMAGER_VERSION);
     }
 
@@ -1445,6 +1490,7 @@ final class ServiceRegistrar
         // imgproxy is active (endpoint set).
         $recheckSocialJpeg = static function (): void {
             self::recheckSocialJpegCapability();
+            self::recheckCacheBusterCapability();
         };
         // #43 Phase 4 (plan B.3 / D.4 #5): purge cache-plugin page
         // caches when delivery-relevant options change. Cached pages

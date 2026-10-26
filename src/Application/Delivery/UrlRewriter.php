@@ -54,7 +54,8 @@ final class UrlRewriter
         ?SigningConfig $signing,
         ?DiagnosticLoggerInterface $logger = null,
         private ?DeliveryBackend $backend = null,
-        private ?ContentVersionResolver $versions = null
+        private ?ContentVersionResolver $versions = null,
+        private ?SocialJpegCapabilityCache $versionCapability = null
     ) {
         $this->policy = $policy;
         $this->delivery = $delivery;
@@ -333,6 +334,14 @@ final class UrlRewriter
         if ($this->versions === null) {
             return '';
         }
+        // Capability gate: emit `cb:` only when a probe proved the endpoint
+        // accepts it (IMGPROXY_ALLOWED_PROCESSING_OPTIONS may omit it, which
+        // would turn every versioned URL into a 4xx). Unknown / failed /
+        // stale verdict -> no version -> today's URL. null gate = ungated
+        // (direct construction in tests).
+        if ($this->versionCapability !== null && !$this->versionCapability->readOk()) {
+            return '';
+        }
         try {
             return $this->versions->versionFor($sourceUrl);
         } catch (\Throwable $e) {
@@ -481,9 +490,8 @@ final class UrlRewriter
                 version: $this->contentVersion($sourceUrl),
             );
 
-            $filename = $this->buildContentDispositionFilename($sourceUrl, $this->delivery->outputFormat);
-
-            return RewriteResult::rewritten($this->backend()->generate($request, $filename));
+            // DPR candidates are srcset entries too: no fn: (same as #131).
+            return RewriteResult::rewritten($this->backend()->generate($request, null));
         } catch (\Throwable $e) {
             return RewriteResult::preserved($sourceUrl, 'dpr_generation_error');
         }

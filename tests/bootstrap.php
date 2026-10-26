@@ -310,6 +310,17 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return $single ? $value : [$value];
         }
     }
+    if (!function_exists('wp_cache_get')) {
+        function wp_cache_get($key, $group = '') {
+            return $GLOBALS['__oxpulse_obj_cache'][$group][$key] ?? false;
+        }
+    }
+    if (!function_exists('wp_cache_set')) {
+        function wp_cache_set($key, $value, $group = '', $expire = 0) {
+            $GLOBALS['__oxpulse_obj_cache'][$group][$key] = $value;
+            return true;
+        }
+    }
     if (!function_exists('update_post_meta')) {
         function update_post_meta($post_id, $key, $value) {
             $GLOBALS['__oxpulse_post_meta'][$post_id][$key] = $value;

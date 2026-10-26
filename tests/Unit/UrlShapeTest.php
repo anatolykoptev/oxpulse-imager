@@ -22,6 +22,9 @@ use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
 use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyBackend;
+use OXPulse\Imager\Infrastructure\Imgproxy\CacheBusterCapabilityProbe;
+use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityCache;
+use OXPulse\Imager\Infrastructure\Local\HttpRequester;
 use OXPulse\Imager\Infrastructure\Local\LocalBackend;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentContentVersion;
 use PHPUnit\Framework\TestCase;
@@ -32,7 +35,7 @@ final class UrlShapeTest extends TestCase
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['__oxpulse_post_meta'], $GLOBALS['__oxpulse_url_to_id'], $GLOBALS['__oxpulse_url_to_id_calls'], $GLOBALS['__oxpulse_attachment_meta']);
+        unset($GLOBALS['__oxpulse_post_meta'], $GLOBALS['__oxpulse_url_to_id'], $GLOBALS['__oxpulse_url_to_id_calls'], $GLOBALS['__oxpulse_attachment_meta'], $GLOBALS['__oxpulse_obj_cache'], $GLOBALS['__oxpulse_options']);
         parent::tearDown();
     }
 
@@ -166,12 +169,108 @@ final class UrlShapeTest extends TestCase
     {
         $GLOBALS['__oxpulse_url_to_id'] = [self::SRC => 7];
         $GLOBALS['__oxpulse_post_meta'] = [7 => [AttachmentContentVersion::META_KEY => 'lq1abc']];
+        SocialJpegCapabilityCache::forCacheBuster()->write('ok');
         $delivery = new DeliveryConfig(enabled: true, endpoint: 'https://imgproxy.example.com', allowedSources: ['https://example.com/wp-content/uploads/']);
         $signing = SigningConfig::fromHex('736563726574', '68656C6C6F');
 
         $url = \OXPulse\Imager\Application\Delivery\UrlRewriterFactory::fromConfig($delivery, $signing)->rewrite(self::SRC, 800, 0, 'content')->url;
 
         $this->assertStringContainsString('/cb:lq1abc/', $url);
+    }
+
+
+    /**
+     * Fail-safe: an endpoint that has not PROVEN it accepts `cb:` (unprobed,
+     * 'no', stale) must get today's URLs — an allowlist without `cb` would
+     * otherwise 4xx every image.
+     */
+    public function test_unproven_endpoint_gets_no_cb_even_with_a_version(): void
+    {
+        $GLOBALS['__oxpulse_url_to_id'] = [self::SRC => 7];
+        $GLOBALS['__oxpulse_post_meta'] = [7 => [AttachmentContentVersion::META_KEY => 'lq1abc']];
+        $delivery = new DeliveryConfig(enabled: true, endpoint: 'https://imgproxy.example.com', allowedSources: ['https://example.com/wp-content/uploads/']);
+        $signing = SigningConfig::fromHex('736563726574', '68656C6C6F');
+        $url = fn () => \OXPulse\Imager\Application\Delivery\UrlRewriterFactory::fromConfig($delivery, $signing)->rewrite(self::SRC, 800, 0, 'content')->url;
+
+        $this->assertStringNotContainsString('cb:', $url(), 'never probed');
+
+        SocialJpegCapabilityCache::forCacheBuster()->write('no');
+        $this->assertStringNotContainsString('cb:', $url(), 'probe said no');
+    }
+
+    private function requester(int $status, string $type, ?string $error = null): HttpRequester
+    {
+        return new class($status, $type, $error) implements HttpRequester {
+            public ?string $lastUrl = null;
+            public function __construct(private int $s, private string $t, private ?string $e) {}
+            public function get(string $url): array { return ['status' => 0, 'body' => '', 'error' => 'n/a']; }
+            public function head(string $url): array { return ['status' => 0, 'body' => '', 'error' => 'n/a']; }
+            public function getImage(string $url): array
+            {
+                $this->lastUrl = $url;
+                return ['status' => $this->s, 'content_type' => $this->t, 'error' => $this->e];
+            }
+        };
+    }
+
+    private function probeVerdictFor(HttpRequester $requester, ?string $source = self::SRC): bool
+    {
+        $delivery = new DeliveryConfig(enabled: true, endpoint: 'https://imgproxy.example.com', allowedSources: ['https://example.com/wp-content/uploads/']);
+        $signing = SigningConfig::fromHex('736563726574', '68656C6C6F');
+        $cache = SocialJpegCapabilityCache::forCacheBuster();
+        (new CacheBusterCapabilityProbe($delivery, $signing, $requester, $cache, static fn () => $source))->run();
+        return $cache->readOk();
+    }
+
+    public function test_probe_ok_only_for_a_200_image_on_a_signed_cb_url(): void
+    {
+        $req = $this->requester(200, 'image/webp');
+        $this->assertTrue($this->probeVerdictFor($req));
+        $this->assertStringContainsString('/cb:probe/', $req->lastUrl, 'the probe must request the exact cb: URL shape');
+    }
+
+    public function test_probe_says_no_when_the_endpoint_rejects_cb(): void
+    {
+        // imgproxy answers 403 for a processing option outside the allowlist.
+        $this->assertFalse($this->probeVerdictFor($this->requester(403, 'text/plain')));
+        $this->assertFalse($this->probeVerdictFor($this->requester(0, '', 'timeout')));
+        $this->assertFalse($this->probeVerdictFor($this->requester(200, 'text/html')));
+    }
+
+    public function test_probe_with_no_source_image_never_upgrades_to_ok(): void
+    {
+        $this->assertFalse($this->probeVerdictFor($this->requester(200, 'image/webp'), null));
+    }
+
+    public function test_probe_prior_ok_is_downgraded_when_endpoint_starts_rejecting(): void
+    {
+        $this->assertTrue($this->probeVerdictFor($this->requester(200, 'image/webp')));
+        $this->assertFalse($this->probeVerdictFor($this->requester(403, 'text/plain')));
+    }
+
+    public function test_cachebuster_verdict_does_not_touch_the_social_jpeg_verdict(): void
+    {
+        SocialJpegCapabilityCache::forCacheBuster()->write('ok');
+        $this->assertFalse((new SocialJpegCapabilityCache())->readOk());
+    }
+
+    // --- negative lookups ---
+
+    public function test_a_non_attachment_miss_is_looked_up_once_across_rewriter_instances(): void
+    {
+        $url = 'https://example.com/wp-content/uploads/raw.jpg';
+
+        $this->assertSame('', (new AttachmentContentVersion())->versionFor($url));
+        $this->assertSame('', (new AttachmentContentVersion())->versionFor($url . '?x=1'));
+
+        $this->assertSame(1, $GLOBALS['__oxpulse_url_to_id_calls'], 'second instance must hit the object-cache negative entry');
+    }
+
+    // --- srcset_dpr fn: ---
+
+    public function test_dpr_candidates_have_no_fn_segment(): void
+    {
+        $this->assertStringNotContainsString('/fn:', $this->rewriter(null)->rewriteDpr(self::SRC, 400, 2.0)->url);
     }
 
     public function test_transform_request_rejects_unsafe_version(): void

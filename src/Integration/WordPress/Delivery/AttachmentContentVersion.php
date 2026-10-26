@@ -36,6 +36,8 @@ final class AttachmentContentVersion implements ContentVersionResolver
 
     private const CACHE_GROUP = 'oxpulse_imager';
 
+    private const MISS_TTL = 3600;
+
     /** @var array<string,string> */
     private array $memo = [];
 
@@ -85,10 +87,13 @@ final class AttachmentContentVersion implements ContentVersionResolver
         $id = function_exists('wp_cache_get') ? wp_cache_get($cacheKey, self::CACHE_GROUP) : false;
         if (!is_int($id)) {
             $id = (int) attachment_url_to_postid($url);
-            // Only positive hits are shared across requests: a miss may
-            // become a hit once the file is uploaded.
-            if ($id > 0 && function_exists('wp_cache_set')) {
-                wp_cache_set($cacheKey, $id, self::CACHE_GROUP, 3600);
+            // Misses are cached too (id 0, short TTL): each one is a
+            // meta_value scan over every _wp_attached_file row, repeated per
+            // distinct non-attachment URL per uncached request otherwise.
+            // A new upload at a missed path stays unversioned (today's URL)
+            // for at most the TTL.
+            if (function_exists('wp_cache_set')) {
+                wp_cache_set($cacheKey, $id, self::CACHE_GROUP, $id > 0 ? 3600 : self::MISS_TTL);
             }
         }
         if ($id <= 0) {

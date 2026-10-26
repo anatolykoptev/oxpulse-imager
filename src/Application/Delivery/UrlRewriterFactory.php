@@ -27,6 +27,7 @@ use OXPulse\Imager\Application\Diagnostics\DiagnosticLoggerInterface;
 use OXPulse\Imager\Domain\Config\DeliveryConfig;
 use OXPulse\Imager\Domain\Config\SigningConfig;
 use OXPulse\Imager\Domain\Source\SourcePolicy;
+use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityCache;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentContentVersion;
 
 final class UrlRewriterFactory
@@ -55,6 +56,14 @@ final class UrlRewriterFactory
         // Every production caller (frontend filters, prewarm, CLI) must emit
         // the same versioned URLs, or prewarm would fill keys nobody requests.
         $versions ??= new AttachmentContentVersion();
-        return new UrlRewriter(new SourcePolicy(), $delivery, $signing, $logger, $backend, $versions);
+        return new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            $signing,
+            $logger,
+            $backend,
+            $versions,
+            SocialJpegCapabilityCache::forCacheBuster()
+        );
     }
 }
