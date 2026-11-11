@@ -235,7 +235,7 @@ class ImageDownsizeRewriterTest extends TestCase
     }
 
     /**
-     * Live piter hero: a [2048, 2048] box on a non-square original became
+     * Live site hero: a [2048, 2048] box on a non-square original became
      * rs:fill:2048:2048 with 1:1 attributes. A box must fit the original.
      */
     public function test_array_box_is_fitted_to_original_aspect_ratio(): void

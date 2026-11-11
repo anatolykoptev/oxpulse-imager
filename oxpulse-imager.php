@@ -348,7 +348,7 @@ oxpulse_imager_grant_capability();
  * Public helper: generate a signed imgproxy URL for an image.
  *
  * Drop-in replacement for the mu-plugin's Imgproxy_AVIF::thumb_url()
- * static method. Sibling mu-plugins (e.g. piter-api on piter.now) call
+ * static method. Sibling mu-plugins (e.g. a site API plugin) call
  * this for card thumbnails:
  *
  *     $url = oxpulse_thumb_url($imageUrl, 330, 220);

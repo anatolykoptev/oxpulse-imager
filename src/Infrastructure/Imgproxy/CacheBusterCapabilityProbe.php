@@ -90,7 +90,7 @@ final class CacheBusterCapabilityProbe
             return;
         }
 
-        // Unique per probe (piter's nginx caches imgproxy 200s).
+        // Unique per probe (the site's nginx caches imgproxy 200s).
         $res = $this->requester->getImage($make('p' . bin2hex(random_bytes(6))));
         $status = (int) ($res['status'] ?? 0);
         if ($this->isImage($res)) {

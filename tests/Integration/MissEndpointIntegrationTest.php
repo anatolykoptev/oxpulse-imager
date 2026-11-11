@@ -11,7 +11,7 @@
  *   → stream + headers
  *
  * Guarded by extension_loaded('imagick') || function_exists('imagewebp')
- * — skips when neither encoder is available (CI has both; krolik has both).
+ * — skips when neither encoder is available (CI has both; the build server has both).
  *
  * Covers:
  *  1. Happy path: real JPEG-q100 → valid WebP (RIFF/WEBP), cache file
