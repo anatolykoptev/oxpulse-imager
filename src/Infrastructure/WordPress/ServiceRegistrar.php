@@ -81,7 +81,7 @@ final class ServiceRegistrar
      * Shared frontend UrlRewriter instance. Set when
      * registerDeliveryAdapters() runs (on plugins_loaded when delivery
      * is enabled + not admin). Accessed by the public
-     * oxpulse_thumb_url() helper so sibling mu-plugins (e.g. piter-api)
+     * oxpulse_thumb_url() helper so sibling mu-plugins (e.g. a site API plugin)
      * can generate signed imgproxy URLs without duplicating the
      * signing + path-building logic.
      *
@@ -379,7 +379,7 @@ final class ServiceRegistrar
         $rewriter = UrlRewriterFactory::fromConfig($delivery, $signing, $logger);
 
         // Expose the rewriter for the public oxpulse_thumb_url() helper.
-        // Sibling mu-plugins (e.g. piter-api) call oxpulse_thumb_url()
+        // Sibling mu-plugins (e.g. a site API plugin) call oxpulse_thumb_url()
         // which delegates to ServiceRegistrar::getRewriter().
         self::$rewriter = $rewriter;
 

@@ -1,6 +1,6 @@
 <?php
 /**
- * Path-normalization evasion tests (#79).
+ * Path-normalization bypass tests (#79).
  *
  * The proxy-loop guard and the allowlist prefix compare must normalize
  * the source path first, or `//imgproxy`, `/./imgproxy`,
@@ -50,7 +50,7 @@ class PathNormalizationTest extends TestCase
         $decision = $this->policy->authorize('https://example.com' . $path, $this->rootConfig());
         $this->assertFalse(
             $decision->authorized,
-            "Evasion form '{$path}' should be denied as a proxy loop, got: {$decision->reason}"
+            "Bypass form '{$path}' should be denied as a proxy loop, got: {$decision->reason}"
         );
         $this->assertSame('proxy_loop_detected', $decision->reason);
     }
