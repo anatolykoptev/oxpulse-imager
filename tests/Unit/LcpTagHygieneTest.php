@@ -21,7 +21,7 @@ use PHPUnit\Framework\TestCase;
 
 class LcpTagHygieneTest extends TestCase
 {
-    private const FIXTURE = __DIR__ . '/../fixtures/piter-home-trimmed.html';
+    private const FIXTURE = __DIR__ . '/../fixtures/site-home-trimmed.html';
 
     protected function setUp(): void
     {
@@ -73,7 +73,7 @@ class LcpTagHygieneTest extends TestCase
 
     // ─── real-markup measurement ─────────────────────────────────────
 
-    public function test_fixture_before_counts_are_the_real_piter_numbers(): void
+    public function test_fixture_before_counts_are_the_real_site_numbers(): void
     {
         $html = $this->fixture();
         $this->assertCount(64, $this->images($html));
