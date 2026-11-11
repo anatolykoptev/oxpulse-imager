@@ -349,11 +349,12 @@ final class SettingsPage
             );
         }
 
-        // JS — self-contained bundle (React + react-dom + @wordpress/i18n bundled in).
+        // JS — React, react-dom and the JSX runtime come from WordPress core
+        // (externalized in build/vite.config.js); @wordpress/i18n is bundled in.
         wp_enqueue_script(
             'oxpulse-admin-app',
             $pluginUrl . 'assets/js/' . AssetManifest::resolve('admin-app.js'),
-            [],
+            ['react', 'react-dom', 'react-jsx-runtime'],
             $version,
             true
         );

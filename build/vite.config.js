@@ -1,9 +1,13 @@
 /**
  * Vite configuration for OXPulse Imager admin SPA.
  *
- * Self-contained IIFE bundle — React + react-dom bundled in, no
- * `wp.element`/`wp.apiFetch`/`wp.i18n` dependencies. Loaded directly
- * by WordPress as a finished browser script.
+ * IIFE bundle. React, react-dom and the JSX runtime are NOT bundled: they are
+ * externalized to the copies WordPress registers (script handles `react`,
+ * `react-dom`, `react-jsx-runtime`, which expose the globals `React`,
+ * `ReactDOM`, `ReactJSXRuntime`) and declared as dependencies of the
+ * `oxpulse-admin-app` script in SettingsPage. Bundling our own react-dom
+ * breaks when WordPress upgrades React and fails Plugin Check
+ * (`inlined_react_dom`). No `wp.element`/`wp.apiFetch` dependency.
  *
  * Ported from UTM Linker (build/vite.config.js) — same pattern:
  * - process.env.NODE_ENV forced to 'production' (lib output doesn't
@@ -64,7 +68,15 @@ export default defineConfig({
     },
 
     rollupOptions: {
+      // Provided by WordPress at runtime (see header comment).
+      external: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime'],
       output: {
+        globals: {
+          react: 'React',
+          'react-dom': 'ReactDOM',
+          'react-dom/client': 'ReactDOM',
+          'react/jsx-runtime': 'ReactJSXRuntime',
+        },
         entryFileNames: 'js/admin-app.[hash].js',
         assetFileNames: 'css/admin-app.[hash][extname]',
       },
