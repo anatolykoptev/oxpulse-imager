@@ -21,6 +21,7 @@ namespace OXPulse\Imager\Infrastructure\Local;
 
 use OXPulse\Imager\Domain\Source\NormalizedUrl;
 use OXPulse\Imager\Integration\WordPress\Delivery\AttachmentOriginResolver;
+use OXPulse\Imager\Infrastructure\WordPress\Uninstaller;
 
 final class CacheInvalidator
 {
@@ -162,9 +163,31 @@ final class CacheInvalidator
 
     /**
      * Recursively delete a directory and its contents.
+     *
+     * Symlink safety: a cache entry that is itself a symlink is unlinked
+     * only — iterating it would walk the TARGET and delete files outside
+     * the cache root. A real directory must resolve strictly under the
+     * cache root (Uninstaller::isWithinRoot, the same helper CacheJanitor
+     * uses); inside it, link entries are unlinked, never descended into
+     * or deleted through.
      */
     private function rmrf(string $dir): void
     {
+        // The dir itself is a link → delete the link, not its target.
+        // is_link must precede is_dir — a link to a dir still answers
+        // true to is_dir().
+        if (is_link($dir)) {
+            @unlink($dir);
+            return;
+        }
+
+        // Containment: realpath($dir) must sit strictly under the real
+        // cache root — a '..' traversal or link trick resolving outside
+        // is refused, nothing is deleted.
+        if (!Uninstaller::isWithinRoot($dir, $this->cacheDir, true)) {
+            return;
+        }
+
         if (!is_dir($dir)) {
             return;
         }
@@ -174,6 +197,13 @@ final class CacheInvalidator
             \RecursiveIteratorIterator::CHILD_FIRST
         );
         foreach ($it as $file) {
+            // A link is a leaf: unlink it, never descend or delete
+            // through it. (isDir() follows the link — check isLink()
+            // first.)
+            if ($file->isLink()) {
+                @unlink($file->getPathname());
+                continue;
+            }
             // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir,WordPress.WP.AlternativeFunctions.unlink_unlink -- recursive purge of plugin-owned scratch; initializing WP_Filesystem needs host credentials that can fail — direct rmdir is reliable.
             $file->isDir() ? rmdir($file->getPathname()) : @unlink($file->getPathname());
         }
