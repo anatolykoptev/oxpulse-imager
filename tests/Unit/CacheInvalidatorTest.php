@@ -299,7 +299,6 @@ class CacheInvalidatorTest extends TestCase
 
         try {
             $m = new \ReflectionMethod(CacheInvalidator::class, 'rmrf');
-            $m->setAccessible(true);
             $m->invoke($this->invalidator, $outside);
 
             $this->assertFileExists($outside . '/keep.txt', 'a directory outside the cache root must not be deleted');
