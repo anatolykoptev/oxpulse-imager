@@ -126,6 +126,34 @@ class FeedSitemapRewriteTest extends TestCase
         $this->assertNotSame('feed_or_sitemap', $result->reason);
     }
 
+    /**
+     * The feed gate must cover every entry point, not only rewrite().
+     *
+     * @return array<string, array{0: callable}>
+     */
+    public static function gatedEntryPoints(): array
+    {
+        $all = self::entryPoints();
+        return [
+            'rewriteSocialImage' => $all['rewriteSocialImage'],
+            'rewriteLqip' => $all['rewriteLqip'],
+            'rewriteDpr' => $all['rewriteDpr'],
+        ];
+    }
+
+    /** @dataProvider gatedEntryPoints */
+    public function test_feed_gate_covers_every_entry_point(callable $call): void
+    {
+        $GLOBALS['__oxpulse_is_feed'] = true;
+        $url = 'https://example.com/wp-content/uploads/photo.jpg';
+
+        $result = $call($this->lqipRewriter(), $url);
+
+        $this->assertFalse($result->rewritten);
+        $this->assertSame('feed_or_sitemap', $result->reason);
+        $this->assertSame($url, $result->url);
+    }
+
     private function attachmentRewrite(string $url): string
     {
         return (new AttachmentUrlRewriter($this->rewriter))->rewrite($url, 1);
