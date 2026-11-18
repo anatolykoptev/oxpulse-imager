@@ -455,6 +455,11 @@ class LcpTagHygieneTest extends TestCase
         $out = $this->pass()->rewrite($html);
         $seconds = (hrtime(true) - $start) / 1e9;
 
+        // Assumes the default pcre.backtrack_limit (1M): the lazy scan trips
+        // it within milliseconds (with or without pcre.jit) and the pass
+        // fails closed. A host/CI image that raises the limit would let the
+        // scan run, and this bound (and the untouched-output check below)
+        // would then flag it.
         $this->assertLessThan(0.5, $seconds, 'blanking scan of an unclosed element is not bounded by the cap');
         $this->assertSame($html, $out, 'an unanalysable page must come back untouched');
     }
