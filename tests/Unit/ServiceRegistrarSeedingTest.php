@@ -521,6 +521,25 @@ class ServiceRegistrarSeedingTest extends TestCase
         );
     }
 
+    public function test_stealer_whose_add_option_loses_the_race_does_not_proceed(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_SEED_LOCK, time() - 120);
+
+        // Our conditional delete matches the stale row, but a third
+        // request's plain add_option() lands in the gap before ours:
+        // only the caller whose add_option succeeds may proceed.
+        $GLOBALS['__oxpulse_wpdb_delete_after_hook'] = static function (): void {
+            add_option(OptionSettingsRepository::OPTION_SEED_LOCK, time(), '', false);
+        };
+        try {
+            $won = $this->acquireSeedLock($this->repo());
+        } finally {
+            unset($GLOBALS['__oxpulse_wpdb_delete_after_hook']);
+        }
+
+        $this->assertFalse($won, 'a stealer whose add_option failed must not proceed');
+    }
+
     public function test_second_stale_stealer_loses_when_the_first_stealer_relocks_first(): void
     {
         update_option(OptionSettingsRepository::OPTION_SEED_LOCK, time() - 120);

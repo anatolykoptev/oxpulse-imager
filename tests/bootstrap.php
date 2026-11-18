@@ -1050,6 +1050,11 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
                     return 0;
                 }
                 unset($GLOBALS['__oxpulse_options'][$name]);
+                // __oxpulse_wpdb_delete_after_hook: "another request
+                // slipped in between our delete and our add_option".
+                if (is_callable($GLOBALS['__oxpulse_wpdb_delete_after_hook'] ?? null)) {
+                    ($GLOBALS['__oxpulse_wpdb_delete_after_hook'])($name);
+                }
                 return 1;
             }
 
