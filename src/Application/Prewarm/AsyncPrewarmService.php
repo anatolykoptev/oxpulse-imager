@@ -31,6 +31,18 @@ final class AsyncPrewarmService
     public const CRON_HOOK = 'oxpulse_prewarm_process_batch';
     public const BATCH_SIZE = 50;
 
+    /**
+     * Option prefix for the per-job processing mutex. Taken atomically
+     * via add_option() — the row's existence is the lock.
+     */
+    public const LOCK_OPTION_PREFIX = 'oxpulse_prewarm_lock_';
+
+    /**
+     * Lock TTL in seconds. A lock that survives past this belongs to a
+     * worker that died mid-batch (fatal/timeout) and is reclaimed.
+     */
+    public const LOCK_STALE_SECONDS = 300;
+
     private PrewarmService $syncService;
     private PrewarmJobStore $store;
 
@@ -114,44 +126,89 @@ final class AsyncPrewarmService
             return;
         }
 
-        $job['status'] = 'running';
-        $this->store->save($jobId, $job);
-
-        $urls = $job['urls'];
-        $widths = $job['widths'];
-        $offset = $job['offset'];
-
-        $batch = array_slice($urls, $offset, self::BATCH_SIZE);
-
-        if (count($batch) === 0) {
-            // All done.
-            $job['status'] = 'complete';
-            $this->store->save($jobId, $job);
+        // WP-cron can fire the same hook in overlapping requests; the
+        // 'running' status is a state label, not a lock — without a
+        // mutex two workers process (and double-warm) the same batch.
+        // add_option() is the atomic acquisition.
+        if (!$this->acquireLock($jobId)) {
             return;
         }
 
-        // Process this batch synchronously (50 URLs, ~10s).
-        $result = $this->syncService->warm(new PrewarmRequest($batch, $widths));
-
-        // Merge results into the job.
-        $job['items'] = array_merge($job['items'], $result->toArray()['items']);
-        $job['warmed'] += $result->warmedCount();
-        $job['skipped'] += $result->skippedCount();
-        $job['failed'] += $result->failedCount();
-        $job['total'] += $result->total();
-        $job['offset'] = $offset + count($batch);
-
-        // Check if more batches remain.
-        if ($job['offset'] >= count($urls)) {
-            $job['status'] = 'complete';
-        } else {
-            // Schedule the next batch.
-            if (function_exists('wp_schedule_single_event')) {
-                wp_schedule_single_event(time() + 60, self::CRON_HOOK, [$jobId]);
+        try {
+            // Re-read under the lock: the previous holder may have
+            // completed or advanced the job while we raced for it.
+            $job = $this->store->get($jobId);
+            if ($job === null || $job['status'] === 'complete' || $job['status'] === 'failed') {
+                return;
             }
+
+            $job['status'] = 'running';
+            $this->store->save($jobId, $job);
+
+            $urls = $job['urls'];
+            $widths = $job['widths'];
+            $offset = $job['offset'];
+
+            $batch = array_slice($urls, $offset, self::BATCH_SIZE);
+
+            if (count($batch) === 0) {
+                // All done.
+                $job['status'] = 'complete';
+                $this->store->save($jobId, $job);
+                return;
+            }
+
+            // Process this batch synchronously (50 URLs, ~10s).
+            $result = $this->syncService->warm(new PrewarmRequest($batch, $widths));
+
+            // Merge results into the job.
+            $job['items'] = array_merge($job['items'], $result->toArray()['items']);
+            $job['warmed'] += $result->warmedCount();
+            $job['skipped'] += $result->skippedCount();
+            $job['failed'] += $result->failedCount();
+            $job['total'] += $result->total();
+            $job['offset'] = $offset + count($batch);
+
+            // Check if more batches remain.
+            if ($job['offset'] >= count($urls)) {
+                $job['status'] = 'complete';
+            } else {
+                // Schedule the next batch.
+                if (function_exists('wp_schedule_single_event')) {
+                    wp_schedule_single_event(time() + 60, self::CRON_HOOK, [$jobId]);
+                }
+            }
+
+            $this->store->save($jobId, $job);
+        } finally {
+            delete_option(self::LOCK_OPTION_PREFIX . $jobId);
+        }
+    }
+
+    /**
+     * Take the per-job processing mutex. Returns false when a live
+     * worker holds an unexpired lock; a stale or corrupt lock is
+     * reclaimed for this worker.
+     */
+    private function acquireLock(string $jobId): bool
+    {
+        $option = self::LOCK_OPTION_PREFIX . $jobId;
+        $expires = time() + self::LOCK_STALE_SECONDS;
+        if (add_option($option, $expires, '', false)) {
+            return true;
         }
 
-        $this->store->save($jobId, $job);
+        // The row exists. An unexpired lock in the horizon we write
+        // means a live worker owns it — bail with no work. Anything
+        // else (expired, or a corrupt far-future/negative value no
+        // writer of ours produces) is stale and reclaimed.
+        $ttl = (int) get_option($option, 0) - time();
+        if ($ttl > 0 && $ttl <= self::LOCK_STALE_SECONDS) {
+            return false;
+        }
+
+        delete_option($option);
+        return add_option($option, $expires, '', false);
     }
 
     /**

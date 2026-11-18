@@ -342,6 +342,39 @@ class UninstallTest extends TestCase
         $this->assertArrayNotHasKey('_transient_timeout_oxpulse_prewarm_job_abc123', $GLOBALS['__oxpulse_options']);
     }
 
+    public function test_run_removes_prewarm_lock_options(): void
+    {
+        // Leftover per-job processing locks (killed worker). They are
+        // ephemeral — removed even WITHOUT the remove-on-uninstall
+        // toggle. The $wpdb stub mirrors options for DELETE LIKE.
+        $GLOBALS['__oxpulse_options']['oxpulse_prewarm_lock_abc123'] = time() + 300;
+        $GLOBALS['__oxpulse_options']['oxpulse_prewarm_lock_def456'] = time() + 300;
+        $GLOBALS['__oxpulse_options']['unrelated_plugin_option'] = 'keep-me';
+
+        Uninstaller::run();
+
+        $this->assertArrayNotHasKey(
+            'oxpulse_prewarm_lock_abc123',
+            $GLOBALS['__oxpulse_options'],
+            'Leftover prewarm locks must be cleaned on uninstall',
+        );
+        $this->assertArrayNotHasKey('oxpulse_prewarm_lock_def456', $GLOBALS['__oxpulse_options']);
+        $this->assertArrayHasKey('unrelated_plugin_option', $GLOBALS['__oxpulse_options']);
+    }
+
+    public function test_deactivation_removes_prewarm_lock_options(): void
+    {
+        $GLOBALS['__oxpulse_options']['oxpulse_prewarm_lock_abc123'] = time() + 300;
+
+        oxpulse_imager_deactivate();
+
+        $this->assertArrayNotHasKey(
+            'oxpulse_prewarm_lock_abc123',
+            $GLOBALS['__oxpulse_options'],
+            'A lock a killed worker left must not survive deactivation',
+        );
+    }
+
     // ------------------------------------------------------------------
     // Prefix-scan safety net — catches future keys not in the enum.
     // ------------------------------------------------------------------

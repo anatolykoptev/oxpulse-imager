@@ -134,6 +134,21 @@ final class Uninstaller
     ];
 
     /**
+     * Option-name prefixes for ephemeral dynamic rows that are NOT
+     * transients — scanned + deleted via $wpdb because the full key is
+     * a runtime UUID. Always cleaned (like transients): they hold no
+     * user value and an orphan row is pure litter after the plugin is
+     * gone. Deactivation calls the same prefix-scan so a lock left by
+     * a killed worker never wedges a later re-activation's jobs.
+     *
+     * @var array<int,string>
+     */
+    public const EPHEMERAL_OPTION_PREFIXES = [
+        // AsyncPrewarmService::LOCK_OPTION_PREFIX.
+        'oxpulse_prewarm_lock_',
+    ];
+
+    /**
      * All cron hook names the plugin schedules.
      *
      * Enumerated from wp_schedule_event / wp_schedule_single_event
@@ -184,6 +199,7 @@ final class Uninstaller
         } else {
             // Ephemeral — always.
             self::deleteTransients();
+            self::deleteEphemeralOptionPrefixes();
             self::clearCronEvents();
             // Persistent config — only on opt-in.
             if ($remove) {
@@ -268,6 +284,31 @@ final class Uninstaller
 
         // Dynamic UUID-suffixed transients — scan + delete via $wpdb.
         self::deleteTransientPrefixes();
+    }
+
+    /**
+     * Scan the options table for ephemeral dynamic option rows matching
+     * EPHEMERAL_OPTION_PREFIXES and delete them. Public because the
+     * deactivation hook calls the same scan — a prewarm lock left by a
+     * killed worker is state, not config, and never survives into a
+     * later activation.
+     */
+    public static function deleteEphemeralOptionPrefixes(): void
+    {
+        global $wpdb;
+        if (!isset($wpdb) || !is_object($wpdb) || !property_exists($wpdb, 'options')) {
+            return;
+        }
+        foreach (self::EPHEMERAL_OPTION_PREFIXES as $prefix) {
+            $like = $wpdb->esc_like($prefix) . '%';
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- uninstall/deactivation cleanup; must bypass object cache; caching a DELETE is meaningless.
+            $wpdb->query(
+                $wpdb->prepare(
+                    "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
+                    $like
+                )
+            );
+        }
     }
 
     /**
@@ -492,6 +533,7 @@ final class Uninstaller
             try {
                 // Ephemeral — always.
                 self::deleteTransients();
+                self::deleteEphemeralOptionPrefixes();
                 self::clearCronEvents();
                 // Persistent config — read THIS site's toggle AFTER
                 // switch_to_blog, gate THIS site's deletion on it.
