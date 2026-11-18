@@ -576,13 +576,30 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return !empty($GLOBALS['__oxpulse_doing_cron']);
         }
     }
+    // Minimal WP_Query: a normal request has the main query in
+    // $GLOBALS['wp_query']. Tests unset it to simulate pre-query hooks.
+    if (!class_exists('WP_Query')) {
+        class WP_Query {
+        }
+    }
+    if (!isset($GLOBALS['wp_query'])) {
+        $GLOBALS['wp_query'] = new WP_Query();
+    }
+    // Core's is_feed()/get_query_var() dereference $wp_query unchecked
+    // (fatal on null / _doing_it_wrong before the query ran) — mimic that.
     if (!function_exists('is_feed')) {
         function is_feed() {
+            if (!($GLOBALS['wp_query'] ?? null) instanceof WP_Query) {
+                throw new \Error('is_feed() called before the main query exists');
+            }
             return !empty($GLOBALS['__oxpulse_is_feed']);
         }
     }
     if (!function_exists('get_query_var')) {
         function get_query_var($var, $default = '') {
+            if (!($GLOBALS['wp_query'] ?? null) instanceof WP_Query) {
+                throw new \Error('get_query_var() called on null $wp_query');
+            }
             return $GLOBALS['__oxpulse_query_vars'][$var] ?? $default;
         }
     }

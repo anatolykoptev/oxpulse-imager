@@ -593,6 +593,13 @@ final class UrlRewriter
      */
     private static function isFeedOrSitemap(): bool
     {
+        // is_feed()/get_query_var() dereference $wp_query unchecked: a
+        // rewrite triggered before the main query exists (plugins_loaded,
+        // early REST, another plugin calling wp_get_attachment_url) would
+        // fatal or flood _doing_it_wrong. No query yet = not a feed.
+        if (!isset($GLOBALS['wp_query']) || !$GLOBALS['wp_query'] instanceof \WP_Query) {
+            return false;
+        }
         if (function_exists('is_feed') && is_feed()) {
             return true;
         }

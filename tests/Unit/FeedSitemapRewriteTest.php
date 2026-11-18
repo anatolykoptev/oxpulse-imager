@@ -52,7 +52,62 @@ class FeedSitemapRewriteTest extends TestCase
     protected function tearDown(): void
     {
         parent::tearDown();
-        unset($GLOBALS['__oxpulse_is_feed'], $GLOBALS['__oxpulse_query_vars']);
+        unset($GLOBALS['__oxpulse_is_feed'], $GLOBALS['__oxpulse_query_vars'], $GLOBALS['__oxpulse_doing_cron']);
+        $GLOBALS['wp_query'] = new \WP_Query();
+    }
+
+    private function lqipRewriter(): UrlRewriter
+    {
+        return new UrlRewriter(
+            new SourcePolicy(),
+            new DeliveryConfig(
+                enabled: true,
+                endpoint: 'https://imgproxy.example.com',
+                allowedSources: ['https://example.com/wp-content/uploads/'],
+                lqipEnabled: true,
+            ),
+            SigningConfig::fromHex('736563726574', '68656C6C6F'),
+        );
+    }
+
+    /**
+     * Every public rewrite entry point, as [name, callable(UrlRewriter, url)].
+     *
+     * @return array<string, array{0: callable}>
+     */
+    public static function entryPoints(): array
+    {
+        return [
+            'rewrite' => [static fn (UrlRewriter $r, string $u) => $r->rewrite($u, 800, 600)],
+            'rewriteFormat' => [static fn (UrlRewriter $r, string $u) => $r->rewriteFormat($u, 800, 600, 'webp')],
+            'rewriteSocialImage' => [static fn (UrlRewriter $r, string $u) => $r->rewriteSocialImage($u, 1200, 630)],
+            'rewriteLqip' => [static fn (UrlRewriter $r, string $u) => $r->rewriteLqip($u)],
+            'rewriteDpr' => [static fn (UrlRewriter $r, string $u) => $r->rewriteDpr($u, 400, 2.0)],
+        ];
+    }
+
+    /**
+     * Pre-query hooks (plugins_loaded, early REST, another plugin calling
+     * wp_get_attachment_url) reach the rewriter with no main query. Core's
+     * is_feed()/get_query_var() would fatal there; the gate must not call
+     * them, and the URL must be rewritten normally.
+     *
+     * @dataProvider entryPoints
+     */
+    public function test_rewrite_without_main_query_does_not_error_and_rewrites(callable $call): void
+    {
+        $url = 'https://example.com/wp-content/uploads/photo.jpg';
+        $rewriter = $this->lqipRewriter();
+        $baseline = $call($rewriter, $url);
+        $this->assertNotSame('feed_or_sitemap', $baseline->reason, 'control: not a feed');
+
+        unset($GLOBALS['wp_query']);
+
+        $result = $call($rewriter, $url);
+        $this->assertNotSame('feed_or_sitemap', $result->reason, 'no main query yet is not a feed');
+        $this->assertSame($baseline->rewritten, $result->rewritten, 'same outcome as with a main query');
+        $this->assertSame($baseline->url, $result->url);
+        $this->assertSame($baseline->reason, $result->reason);
     }
 
     private function attachmentRewrite(string $url): string
