@@ -253,6 +253,49 @@ class AsyncPrewarmServiceTest extends TestCase
     }
 
     /**
+     * A held lock consumed the firing event; the back-off must re-arm
+     * exactly one follow-up so a crashed holder is recovered.
+     */
+    public function test_processNextBatch_rearms_follow_up_when_lock_held(): void
+    {
+        $jobId = $this->asyncService->createJob(
+            ['https://example.com/uploads/photo.jpg'],
+            [0]
+        );
+        $GLOBALS['__oxpulse_scheduled_events'] = [];
+
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId;
+        add_option($lockOption, (time() + AsyncPrewarmService::LOCK_STALE_SECONDS) . '|othertoken', '', false);
+
+        $this->asyncService->processNextBatch($jobId);
+        // A second back-off must not stack a duplicate (dedup guard).
+        $this->asyncService->processNextBatch($jobId);
+
+        $this->assertCount(1, $GLOBALS['__oxpulse_scheduled_events'], 'held-lock back-off must re-arm exactly one follow-up');
+        $this->assertSame([$jobId], $GLOBALS['__oxpulse_scheduled_events'][0]['args']);
+        $this->assertSame(0, $this->httpClient->calls, 'warm() must not run under a held lock');
+    }
+
+    /**
+     * A finished job with a held lock must not be re-armed.
+     */
+    public function test_processNextBatch_complete_job_with_lock_held_schedules_nothing(): void
+    {
+        $jobId = $this->asyncService->createJob(
+            ['https://example.com/uploads/photo.jpg'],
+            [0]
+        );
+        $this->asyncService->processNextBatch($jobId);
+        $this->assertSame('complete', $this->store->get($jobId)['status']);
+        $GLOBALS['__oxpulse_scheduled_events'] = [];
+
+        add_option(AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId, (time() + AsyncPrewarmService::LOCK_STALE_SECONDS) . '|othertoken', '', false);
+        $this->asyncService->processNextBatch($jobId);
+
+        $this->assertCount(0, $GLOBALS['__oxpulse_scheduled_events']);
+    }
+
+    /**
      * D2: a stale lock (expired) belongs to a dead worker — it is
      * reclaimed and the batch runs.
      */
