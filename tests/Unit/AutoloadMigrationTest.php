@@ -245,35 +245,31 @@ class AutoloadMigrationTest extends TestCase
         );
     }
 
-    public function test_give_up_is_logged_once_through_the_diagnostic_logger(): void
+    public function test_give_up_emits_one_error_log_line_per_backoff_window(): void
     {
         update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 1);
         update_option(OptionSettingsRepository::OPTION_ENABLED, true, false);
         update_option(OptionSettingsRepository::OPTION_ALLOWED_SOURCES, ['https://s.test/'], false);
-        update_option(OptionSettingsRepository::OPTION_DIAGNOSTIC_LEVEL, 'basic');
 
         $GLOBALS['__oxpulse_is_admin'] = true;
         $GLOBALS['__oxpulse_autoload_fail'] = true;
 
-        // Fresh shared logger so its lazy level-read picks up 'basic'.
-        $logger = new \ReflectionProperty(ServiceRegistrar::class, 'diagnosticLogger');
-        $logger->setValue(null, null);
-
-        // 5 counted failures + 1 backed-off call: exactly ONE entry.
-        for ($i = 0; $i < 6; $i++) {
-            $this->runMigration();
+        // Default diagnostic level ('off') and admin context: the line must
+        // not depend on the diagnostic logger being enabled or flushed.
+        $file = tempnam(sys_get_temp_dir(), 'oxp-errlog');
+        $previous = ini_set('error_log', $file);
+        try {
+            // 5 counted failures + 1 backed-off call: exactly ONE line.
+            for ($i = 0; $i < 6; $i++) {
+                $this->runMigration();
+            }
+        } finally {
+            ini_set('error_log', (string) $previous);
         }
+        $lines = array_values(array_filter(explode("\n", (string) file_get_contents($file))));
+        unlink($file);
 
-        $count = 0;
-        foreach (ServiceRegistrar::diagnosticLogger()->getEntries() as $e) {
-            $count += ($e->context . ':' . $e->reason) === 'config:autoload_migration_failed' ? 1 : 0;
-        }
-        $logger->setValue(null, null);
-
-        $this->assertSame(
-            1,
-            $count,
-            'the give-up must be logged once per backoff window, not on every admin load',
-        );
+        $this->assertCount(1, $lines, 'the give-up must be logged once per backoff window, not on every admin load');
+        $this->assertStringContainsString('autoload migration failed 5 times; retries paused for 24h', $lines[0]);
     }
 }

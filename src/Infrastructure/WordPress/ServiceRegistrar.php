@@ -1258,9 +1258,13 @@ final class ServiceRegistrar
         // admin request forever. Failures are counted in a transient:
         // past AUTOLOAD_MIGRATE_MAX_FAILURES the migration backs off
         // until the transient expires (~1 day — the site may have
-        // recovered by then). The give-up moment is logged once through
-        // the diagnostic logger; individual attempts 1..N-1 stay silent
-        // because a transient DB blip self-heals without operator action.
+        // recovered by then). The window recurs: once the transient
+        // expires the next admin load makes another 5 attempts and logs
+        // again, so a permanent fault costs 5 UPDATEs and one log line a
+        // day. The give-up is written with error_log(), not the
+        // diagnostic logger: this runs in admin only, where the logger is
+        // never flushed, and its default level is 'off'. Attempts 1..N-1
+        // stay silent because a transient DB blip self-heals.
         $failures = (int) get_transient(self::AUTOLOAD_MIGRATE_FAILURES_TRANSIENT);
         if ($failures >= self::AUTOLOAD_MIGRATE_MAX_FAILURES) {
             return;
@@ -1283,9 +1287,12 @@ final class ServiceRegistrar
                 self::AUTOLOAD_MIGRATE_FAILURES_TTL,
             );
             if ($failures >= self::AUTOLOAD_MIGRATE_MAX_FAILURES) {
-                self::diagnosticLogger()->log(
-                    LogEntry::preserved('config', '', 0, 'autoload_migration_failed')
-                );
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- plugin diagnostic sink; no values, admin-only path where the diagnostic logger is not flushed.
+                error_log(sprintf(
+                    'oxpulse-imager: autoload migration failed %d times; retries paused for %dh',
+                    self::AUTOLOAD_MIGRATE_MAX_FAILURES,
+                    intdiv(self::AUTOLOAD_MIGRATE_FAILURES_TTL, 3600)
+                ));
             }
             return;
         }
