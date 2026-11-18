@@ -59,6 +59,14 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.15](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.14...v0.1.15) (2026-11-18)
+
+
+### Fixed
+
+* audit findings — per-URL option reads, lazy prewarm cron, symlink-safe purge, batch lock, feed/sitemap URLs ([#175](https://github.com/anatolykoptev/oxpulse-imager/issues/175)) ([85ec420](https://github.com/anatolykoptev/oxpulse-imager/commit/85ec4206cba6f9c1e91c2cf52fb847033afb2ea0))
+* **prewarm:** re-arm the follow-up when a batch backs off on a held lock ([#179](https://github.com/anatolykoptev/oxpulse-imager/issues/179)) ([4a316ee](https://github.com/anatolykoptev/oxpulse-imager/commit/4a316ee3d57b643e8d617201617bec68603bd8bc))
+
 ## [0.1.14](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.13...v0.1.14) (2026-11-18)
 
 
