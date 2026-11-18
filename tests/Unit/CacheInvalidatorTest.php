@@ -285,4 +285,32 @@ class CacheInvalidatorTest extends TestCase
         $this->assertGreaterThanOrEqual(1, $deleted);
         $this->assertFileDoesNotExist($generationDir);
     }
+
+    /**
+     * Defence in depth: rmrf() refuses a real (non-link) directory that
+     * resolves OUTSIDE the cache root. Reached through reflection because
+     * the public paths only ever pass hash dirs built under the root.
+     */
+    public function test_rmrf_refuses_a_real_directory_outside_the_cache_root(): void
+    {
+        $outside = sys_get_temp_dir() . '/oxpulse-inv-outside-' . uniqid();
+        mkdir($outside, 0755, true);
+        file_put_contents($outside . '/keep.txt', 'precious');
+
+        try {
+            $m = new \ReflectionMethod(CacheInvalidator::class, 'rmrf');
+            $m->setAccessible(true);
+            $m->invoke($this->invalidator, $outside);
+
+            $this->assertFileExists($outside . '/keep.txt', 'a directory outside the cache root must not be deleted');
+            $this->assertDirectoryExists($outside);
+        } finally {
+            if (is_file($outside . '/keep.txt')) {
+                unlink($outside . '/keep.txt');
+            }
+            if (is_dir($outside)) {
+                rmdir($outside);
+            }
+        }
+    }
 }
