@@ -177,6 +177,7 @@ final class CacheInvalidator
         // is_link must precede is_dir — a link to a dir still answers
         // true to is_dir().
         if (is_link($dir)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- plugin-owned cache scratch; a symlink is removed as a file, wp_delete_file would needlessly filter.
             @unlink($dir);
             return;
         }
@@ -201,6 +202,7 @@ final class CacheInvalidator
             // through it. (isDir() follows the link — check isLink()
             // first.)
             if ($file->isLink()) {
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- plugin-owned cache scratch; a symlink is removed as a file, wp_delete_file would needlessly filter.
                 @unlink($file->getPathname());
                 continue;
             }
