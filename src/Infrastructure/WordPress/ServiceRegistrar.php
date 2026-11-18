@@ -34,6 +34,7 @@ use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityCache;
 use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityProbe;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\Local\CacheJanitor;
+use OXPulse\Imager\Infrastructure\Local\HeadersCapabilityCache;
 use OXPulse\Imager\Infrastructure\Local\HttpRequester;
 use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
 use OXPulse\Imager\Infrastructure\License\FreemiusLicenseGate;
@@ -1573,6 +1574,10 @@ final class ServiceRegistrar
                 // new one: forget it (unknown reads as "no cb", fail-safe)
                 // before the re-probe decides.
                 $forgetCacheBuster();
+                // #164: the mod_headers verdict belongs to LocalBackend's
+                // cache dir; forget it on a switch (the LocalBackend
+                // recheck below repopulates it, imgproxy leaves it empty).
+                (new HeadersCapabilityCache())->clear();
                 $recheckCapability();
                 $recheckImgproxy();
                 $recheckSocialJpeg();

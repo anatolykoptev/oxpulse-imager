@@ -188,10 +188,20 @@ class CapabilityTester
      * any stale verdict is cleared. Persists ONLY a definitive 'yes'/'no';
      * 'unknown' leaves the previous verdict alone.
      *
-     * @return string 'yes' | 'no' | 'unknown' | 'skipped' (not Apache)
+     * @return string 'yes' | 'no' | 'unknown' | 'skipped' (not Apache, or
+     *   LocalBackend not active)
      */
     public function recheckHeaders(): string
     {
+        // #164: the Vary block lives in LocalBackend's cache .htaccess. With
+        // an imgproxy endpoint set there is nothing to probe (a loopback
+        // request of up to 3 s for nothing), and a verdict from an earlier
+        // LocalBackend period would linger in /status.modHeaders.
+        if (!$this->repository->loadDeliveryConfig()->isLocalBackendActive()) {
+            $this->headersCache->clear();
+            return 'skipped';
+        }
+
         if (!$this->isApache()) {
             // Clear a stale verdict only when the server is positively
             // identified as non-Apache. WP-CLI / CLI cron has an empty

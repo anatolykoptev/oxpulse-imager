@@ -326,6 +326,25 @@ class ServiceRegistrarSocialJpegCapabilityTest extends TestCase
     // ─── #166: backend switch without an endpoint change ─────────────
 
     /**
+     * #164.5: the mod_headers verdict belongs to LocalBackend's cache
+     * dir. After a switch to imgproxy /status.modHeaders must not keep
+     * serving it.
+     */
+    public function test_switching_to_imgproxy_clears_the_mod_headers_verdict(): void
+    {
+        $headers = new \OXPulse\Imager\Infrastructure\Local\HeadersCapabilityCache();
+        $headers->write('no');
+        $this->configureImgproxyLocal();
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+
+        $callback = $this->findUpdatedOptionCallback();
+        $callback(OptionSettingsRepository::OPTION_ENDPOINT);
+
+        $this->assertNull($headers->read(), 'a backend switch must forget the stale mod_headers verdict');
+    }
+
+    /**
      * A cached-health flip to 'down' falls the delivery backend through
      * to LocalBackend (or passthrough) with OPTION_ENDPOINT untouched —
      * the verdict probed while imgproxy served must not survive it.
