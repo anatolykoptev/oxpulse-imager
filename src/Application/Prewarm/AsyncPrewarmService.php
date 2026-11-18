@@ -155,14 +155,6 @@ final class AsyncPrewarmService
     }
 
     /**
-     * Register the cron hook handler.
-     */
-    public function registerCronHandler(): void
-    {
-        add_action(self::CRON_HOOK, [$this, 'processNextBatch']);
-    }
-
-    /**
      * Generate a v4 UUID (RFC 4122).
      */
     private function generateJobId(): string
