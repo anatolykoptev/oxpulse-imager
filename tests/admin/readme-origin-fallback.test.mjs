@@ -51,6 +51,8 @@ const REFUSED = [
   '/wp-content/uploads/shell.php.jpg',
   '/wp-content/uploads/2025/SHELL.PHP.jpg',
   '/wp-content/uploads/x.php5.png',
+  '/wp-content/uploads/x.phtml.jpg',
+  '/wp-content/uploads/X.PHAR.png',
   '/wp-content/uploads/../wp-config.jpg',
 ];
 
@@ -58,7 +60,7 @@ test('README ships the plain-source and the two njs-source $oxp_origin maps', ()
   assert.equal(originMaps().length, 3);
 });
 
-test('every $oxp_origin map passes a plain upload and refuses .php names and ..', () => {
+test('every $oxp_origin map passes a plain upload and refuses .php/.phtml/.phar names and ..', () => {
   for (const { source, entries } of originMaps()) {
     assert.equal(mapLookup(entries, OK), OK, `map ${source} must pass a plain upload`);
     for (const bad of REFUSED) {
@@ -67,7 +69,7 @@ test('every $oxp_origin map passes a plain upload and refuses .php names and ..'
   }
 });
 
-test('the njs origin() refuses .php names and .. and passes a plain upload', () => {
+test('the njs origin() refuses .php/.phtml/.phar names and .. and passes a plain upload', () => {
   const js = readme.match(/```js\n(function origin[\s\S]*?)```/);
   assert.ok(js, 'njs block present');
   const origin = new Function(`${js[1].replace('export default { origin };', '')}\nreturn origin;`)();
