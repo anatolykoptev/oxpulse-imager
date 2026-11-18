@@ -38,17 +38,84 @@ class SocialJpegCapabilityCacheTest extends TestCase
     {
         $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_transients'] = [];
+        SocialJpegCapabilityCache::resetMemo();
     }
 
     protected function tearDown(): void
     {
         unset($GLOBALS['__oxpulse_options']);
         unset($GLOBALS['__oxpulse_transients']);
+        SocialJpegCapabilityCache::resetMemo();
     }
 
     private function cache(): SocialJpegCapabilityCache
     {
         return new SocialJpegCapabilityCache(fn() => $this->now);
+    }
+
+    /**
+     * Several instances read one option per process; a probe write()
+     * through B must reset the verdict A already memoised as false.
+     */
+    public function test_write_through_another_instance_invalidates_memo(): void
+    {
+        $a = $this->cache();
+        $b = $this->cache();
+        $this->assertFalse($a->readOk(), 'A memoises false');
+
+        $b->write('ok');
+
+        $this->assertTrue($a->readOk(), "B's write must reset A's memo via the option hooks");
+    }
+
+    /**
+     * An option change that bypasses write() (another code path, WP-CLI,
+     * a settings reset) must still drop the memo: the update/add/delete
+     * option hooks are the only thing that can.
+     */
+    public function test_option_change_outside_write_invalidates_memo_via_hooks(): void
+    {
+        $a = $this->cache();
+        $this->assertFalse($a->readOk(), 'A memoises false');
+
+        update_option(SocialJpegCapabilityCache::OPTION, 'ok', false);
+        update_option(SocialJpegCapabilityCache::OPTION_CHECKED_AT, (string) $this->now, false);
+
+        $this->assertTrue($a->readOk(), 'the option hooks must reset the memo');
+
+        delete_option(SocialJpegCapabilityCache::OPTION);
+        $this->assertFalse($a->readOk(), 'delete_option hook must reset the memo');
+    }
+
+    public function test_clear_through_another_instance_invalidates_memo(): void
+    {
+        $a = $this->cache();
+        $b = $this->cache();
+        $b->write('ok');
+        $this->assertTrue($a->readOk(), 'A memoises true');
+
+        $b->clear();
+
+        $this->assertFalse($a->readOk(), "B's clear must reset A's memo");
+    }
+
+    /**
+     * write()/clear() reset their own memo directly too — not only via
+     * the option hooks (they may not be registered, e.g. a cleared hook
+     * table), so drop the hook table to prove the direct reset binds.
+     */
+    public function test_write_and_clear_reset_own_memo_without_hooks(): void
+    {
+        $cache = $this->cache();
+        $this->assertFalse($cache->readOk());
+        $GLOBALS['__oxpulse_actions'] = [];
+
+        $cache->write('ok');
+        $this->assertTrue($cache->readOk(), 'write() must reset the memo itself');
+
+        $GLOBALS['__oxpulse_actions'] = [];
+        $cache->clear();
+        $this->assertFalse($cache->readOk(), 'clear() must reset the memo itself');
     }
 
     public function test_read_ok_defaults_to_false_when_option_unset(): void

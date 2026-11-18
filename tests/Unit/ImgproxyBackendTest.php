@@ -33,6 +33,7 @@ class ImgproxyBackendTest extends TestCase
     protected function setUp(): void
     {
         $GLOBALS['__oxpulse_options'] = [];
+        SocialJpegCapabilityCache::resetMemo();
     }
 
     protected function tearDown(): void
