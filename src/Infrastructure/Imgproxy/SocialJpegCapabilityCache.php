@@ -49,6 +49,14 @@ final class SocialJpegCapabilityCache
     /** @var callable|null Clock injector for tests: returns int (unix timestamp). */
     private $now;
 
+    /**
+     * Per-instance memo of the readOk() verdict. The verdict lives in
+     * NON-autoloaded options, so a fresh read costs 1-2 SELECTs — on the
+     * render path readOk() runs once per rewritten URL (5-10+ per page).
+     * write()/clear() invalidate it so a verdict flip mid-request is seen.
+     */
+    private ?bool $readOkMemo = null;
+
     public function __construct(
         ?callable $now = null,
         private string $option = self::OPTION,
@@ -88,17 +96,21 @@ final class SocialJpegCapabilityCache
      */
     public function readOk(): bool
     {
+        if ($this->readOkMemo !== null) {
+            return $this->readOkMemo;
+        }
+
         $value = get_option($this->option, null);
         if ($value !== 'ok') {
-            return false;
+            return $this->readOkMemo = false;
         }
         if (!$this->expires) {
-            return true;
+            return $this->readOkMemo = true;
         }
 
         $checkedAt = get_option($this->checkedAtOption, null);
         if (!is_string($checkedAt) || !ctype_digit($checkedAt)) {
-            return false;
+            return $this->readOkMemo = false;
         }
 
         $now = $this->now !== null ? (int) ($this->now)() : time();
@@ -107,7 +119,7 @@ final class SocialJpegCapabilityCache
         // or an over-PHP_INT_MAX digit string → negative elapsed) must NOT
         // be trusted as fresh. Require now >= checked_at AS WELL as the
         // upper-bound TTL check. Future stamp → false → degrade to webp.
-        return $now >= $checkedAtInt && ($now - $checkedAtInt) <= self::TTL;
+        return $this->readOkMemo = $now >= $checkedAtInt && ($now - $checkedAtInt) <= self::TTL;
     }
 
     /**
@@ -126,6 +138,7 @@ final class SocialJpegCapabilityCache
         $now = $this->now !== null ? (int) ($this->now)() : time();
         update_option($this->option, $verdict, false);
         update_option($this->checkedAtOption, (string) $now, false);
+        $this->readOkMemo = null;
     }
 
     /**
@@ -136,5 +149,6 @@ final class SocialJpegCapabilityCache
     {
         delete_option($this->option);
         delete_option($this->checkedAtOption);
+        $this->readOkMemo = null;
     }
 }

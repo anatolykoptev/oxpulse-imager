@@ -19,6 +19,13 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Tests\Unit;
 
+use OXPulse\Imager\Application\Delivery\ContentVersionResolver;
+use OXPulse\Imager\Application\Delivery\DeliveryBackend;
+use OXPulse\Imager\Application\Delivery\UrlRewriter;
+use OXPulse\Imager\Domain\Config\DeliveryConfig;
+use OXPulse\Imager\Domain\Config\SigningConfig;
+use OXPulse\Imager\Domain\Source\SourcePolicy;
+use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityCache;
 use PHPUnit\Framework\TestCase;
 
@@ -202,6 +209,69 @@ class SocialJpegCapabilityCacheTest extends TestCase
         $this->assertFalse(
             $cache->readOk(),
             'A future checked_at stamp must NOT be trusted (conservative — degrade to webp)',
+        );
+    }
+
+    /**
+     * A1: the readOk() verdict is memoised per instance. One rewriter
+     * instance rewriting 20 URLs must not re-read the non-autoloaded
+     * cachebuster options — at most 2 reads of that option pair total.
+     */
+    public function test_read_ok_memoized_across_rewriter_calls(): void
+    {
+        update_option(SocialJpegCapabilityCache::CACHEBUSTER_OPTION, 'ok');
+
+        $capability = SocialJpegCapabilityCache::forCacheBuster();
+        $versions = new class implements ContentVersionResolver {
+            public function versionFor(string $sourceUrl): string
+            {
+                return 'deadbeef';
+            }
+        };
+        $backend = new class implements DeliveryBackend {
+            public function available(): bool
+            {
+                return true;
+            }
+
+            public function generate(TransformRequest $request, ?string $filename = null): string
+            {
+                return 'https://imgproxy.example.com/sig/' . rawurlencode($request->sourceUrl);
+            }
+
+            public function socialSafeUrl(TransformRequest $request, ?string $filename = null): ?string
+            {
+                return null;
+            }
+        };
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.example.com',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+        );
+        $rewriter = new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            SigningConfig::fromHex('736563726574', '68656C6C6F'),
+            null,
+            $backend,
+            $versions,
+            $capability,
+        );
+
+        $GLOBALS['__oxpulse_get_option_calls_per_key'] = [];
+        $src = 'https://example.com/wp-content/uploads/photo.jpg';
+        for ($i = 0; $i < 20; $i++) {
+            $rewriter->rewrite($src, 300, 0, 'content');
+        }
+
+        $cachebusterReads =
+            ($GLOBALS['__oxpulse_get_option_calls_per_key'][SocialJpegCapabilityCache::CACHEBUSTER_OPTION] ?? 0)
+            + ($GLOBALS['__oxpulse_get_option_calls_per_key'][SocialJpegCapabilityCache::CACHEBUSTER_OPTION_CHECKED_AT] ?? 0);
+        $this->assertLessThanOrEqual(
+            2,
+            $cachebusterReads,
+            'readOk() must be memoised per instance — 20 rewrites must not re-read the cachebuster options',
         );
     }
 }

@@ -30,6 +30,7 @@ class FreemiusLicenseGateTest extends TestCase
         $GLOBALS['__oxpulse_filters'] = [];
         $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_fs_stub'] = null;
+        FreemiusLicenseGate::resetMemo();
     }
 
     protected function tearDown(): void
@@ -38,6 +39,7 @@ class FreemiusLicenseGateTest extends TestCase
         $GLOBALS['__oxpulse_filters'] = [];
         $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_fs_stub'] = null;
+        FreemiusLicenseGate::resetMemo();
     }
 
     /**
@@ -181,6 +183,39 @@ class FreemiusLicenseGateTest extends TestCase
         add_filter('oxpulse_is_pro', '__return_true');
         $gate = new FreemiusLicenseGate();
         $this->assertTrue($gate->isPro());
+    }
+
+    // ─── Per-request memoization of the grandfathered option ──────────
+
+    public function test_is_pro_memoizes_grandfathered_option_read(): void
+    {
+        $GLOBALS['__oxpulse_fs_stub'] = $this->fsStub(false);
+        $gate = new FreemiusLicenseGate();
+
+        $GLOBALS['__oxpulse_get_option_calls_per_key'] = [];
+        for ($i = 0; $i < 20; $i++) {
+            $this->assertFalse($gate->isPro());
+        }
+
+        $reads = $GLOBALS['__oxpulse_get_option_calls_per_key']['oxpulse_grandfathered'] ?? 0;
+        $this->assertLessThanOrEqual(
+            1,
+            $reads,
+            'isPro() must memoize the non-autoloaded grandfathered option read per request',
+        );
+    }
+
+    public function test_is_pro_sees_mid_request_grandfathered_change(): void
+    {
+        $GLOBALS['__oxpulse_fs_stub'] = $this->fsStub(false);
+        $gate = new FreemiusLicenseGate();
+        $this->assertFalse($gate->isPro()); // Warm the memo (option unset).
+
+        update_option('oxpulse_grandfathered', 1);
+        $this->assertTrue($gate->isPro(), 'A mid-request write must be seen on the next isPro() call');
+
+        delete_option('oxpulse_grandfathered');
+        $this->assertFalse($gate->isPro(), 'A mid-request delete must be seen on the next isPro() call');
     }
 
     // ─── Interface ────────────────────────────────────────────────────

@@ -143,6 +143,10 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             // #91: record the autoload arg so the activation-hook
             // test can verify hot defaults are stored autoload=yes.
             $GLOBALS['__oxpulse_autoload'][$option] = (bool) $autoload;
+            // Mirror WP core: add_option fires add_option_{$option}
+            // after the insert (only the per-option hook, not the
+            // generic 'added_option').
+            do_action("add_option_{$option}", $option, $value);
             return true;
         }
     }
@@ -151,8 +155,12 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             // #91: count get_option invocations so the memoization
             // tests can assert the in-request cache bounds repeated
             // reads. Tests reset this counter via
-            // $GLOBALS['__oxpulse_get_option_calls'] = 0.
+            // $GLOBALS['__oxpulse_get_option_calls'] = 0. Per-key
+            // counts live in __oxpulse_get_option_calls_per_key so a
+            // test can isolate one option family's read volume.
             $GLOBALS['__oxpulse_get_option_calls'] = ($GLOBALS['__oxpulse_get_option_calls'] ?? 0) + 1;
+            $GLOBALS['__oxpulse_get_option_calls_per_key'][$option] =
+                ($GLOBALS['__oxpulse_get_option_calls_per_key'][$option] ?? 0) + 1;
             return array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? [])
                 ? $GLOBALS['__oxpulse_options'][$option]
                 : $default;
@@ -160,11 +168,23 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     }
     if (!function_exists('update_option')) {
         function update_option($option, $value, $autoload = null) {
+            // Mirror WP core: update_option on a MISSING option delegates
+            // to add_option (fires add_option_{$option}); on an existing
+            // row it fires update_option_{$option} after the write. Only
+            // the per-option hooks are fired — never the generic
+            // 'updated_option' (production listeners there do real work).
+            $existed = array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? []);
+            $oldValue = $GLOBALS['__oxpulse_options'][$option] ?? false;
             $GLOBALS['__oxpulse_options'][$option] = $value;
             // When autoload is explicitly set (not null), mirror real
             // WP: update the autoload flag alongside the value.
             if ($autoload !== null) {
                 $GLOBALS['__oxpulse_autoload'][$option] = (bool) $autoload;
+            }
+            if ($existed) {
+                do_action("update_option_{$option}", $option, $oldValue, $value);
+            } else {
+                do_action("add_option_{$option}", $option, $value);
             }
             return true;
         }
@@ -172,6 +192,9 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('delete_option')) {
         function delete_option($option) {
             unset($GLOBALS['__oxpulse_options'][$option]);
+            // Mirror WP core: delete_option fires delete_option_{$option}
+            // (only the per-option hook, not the generic 'deleted_option').
+            do_action("delete_option_{$option}", $option);
             return true;
         }
     }
