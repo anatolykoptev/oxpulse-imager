@@ -288,7 +288,9 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
         function wp_next_scheduled($hook, $args = []) {
             $events = $GLOBALS['__oxpulse_scheduled_events'] ?? [];
             foreach ($events as $event) {
-                if ($event['hook'] === $hook) {
+                // Args are compared only when the caller passes some
+                // (legacy callers match by hook alone).
+                if ($event['hook'] === $hook && ($args === [] || $event['args'] === $args)) {
                     return $event['timestamp'];
                 }
             }
@@ -301,7 +303,7 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             $remaining = [];
             $count = 0;
             foreach ($events as $event) {
-                if ($event['hook'] === $hook) {
+                if ($event['hook'] === $hook && ($args === [] || $event['args'] === $args)) {
                     $count++;
                     continue;
                 }

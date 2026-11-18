@@ -167,6 +167,12 @@ final class AsyncPrewarmService
                 return;
             }
 
+            // Schedule the follow-up BEFORE warming. A fatal or timeout in
+            // warm() kills this request after its lock expires; nothing
+            // would ever re-fire the job, leaving it 'running' forever.
+            // A duplicate fire is harmless — it serialises on the lock.
+            $this->scheduleFollowUp($jobId);
+
             // Process this batch synchronously (50 URLs, ~10s).
             $result = $this->syncService->warm(new PrewarmRequest($batch, $widths));
 
@@ -178,13 +184,13 @@ final class AsyncPrewarmService
             $job['total'] += $result->total();
             $job['offset'] = $offset + count($batch);
 
-            // Check if more batches remain.
+            // Check if more batches remain. The follow-up scheduled above
+            // is the next batch; when done, drop it so it does not fire
+            // for nothing.
             if ($job['offset'] >= count($urls)) {
                 $job['status'] = 'complete';
-            } else {
-                // Schedule the next batch.
-                if (function_exists('wp_schedule_single_event')) {
-                    wp_schedule_single_event(time() + 60, self::CRON_HOOK, [$jobId]);
+                if (function_exists('wp_clear_scheduled_hook')) {
+                    wp_clear_scheduled_hook(self::CRON_HOOK, [$jobId]);
                 }
             }
 
@@ -192,6 +198,20 @@ final class AsyncPrewarmService
         } finally {
             $this->releaseLock($jobId);
         }
+    }
+
+    /**
+     * Ensure exactly one follow-up cron event exists for the job.
+     */
+    private function scheduleFollowUp(string $jobId): void
+    {
+        if (!function_exists('wp_schedule_single_event')) {
+            return;
+        }
+        if (function_exists('wp_next_scheduled') && wp_next_scheduled(self::CRON_HOOK, [$jobId]) !== false) {
+            return;
+        }
+        wp_schedule_single_event(time() + 60, self::CRON_HOOK, [$jobId]);
     }
 
     /**

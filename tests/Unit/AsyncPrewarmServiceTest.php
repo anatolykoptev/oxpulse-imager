@@ -428,6 +428,51 @@ class AsyncPrewarmServiceTest extends TestCase
         $this->assertFalse(get_option($lockOption), 'an unchanged value is deleted');
     }
 
+    /**
+     * A fatal/timeout inside warm() must not strand the job: the
+     * follow-up is already scheduled, the lock is released, and the job
+     * is still resumable by the next fire.
+     */
+    public function test_warm_failure_leaves_a_follow_up_scheduled_and_job_resumable(): void
+    {
+        $jobId = $this->asyncService->createJob(['https://example.com/uploads/photo.jpg'], [0]);
+        $GLOBALS['__oxpulse_scheduled_events'] = [];
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId;
+
+        $failing = $this->serviceWithWarmHook(static function (): void {
+            throw new \RuntimeException('boom');
+        });
+        try {
+            $failing->processNextBatch($jobId);
+            $this->fail('warm() exception must propagate');
+        } catch (\RuntimeException) {
+            // expected
+        }
+
+        $this->assertNotFalse(
+            wp_next_scheduled(AsyncPrewarmService::CRON_HOOK, [$jobId]),
+            'a follow-up must be scheduled BEFORE warm() so a crash cannot strand the job',
+        );
+        $this->assertCount(1, $GLOBALS['__oxpulse_scheduled_events']);
+        $this->assertFalse(get_option($lockOption), 'the lock is released');
+        $this->assertSame('running', $this->store->get($jobId)['status']);
+
+        // The follow-up fire (healthy this time) completes the job.
+        $this->asyncService->processNextBatch($jobId);
+        $this->assertSame('complete', $this->store->get($jobId)['status']);
+    }
+
+    public function test_success_does_not_leave_duplicate_follow_up_events(): void
+    {
+        $urls = array_map(fn ($i) => "https://example.com/uploads/p{$i}.jpg", range(1, 60));
+        $jobId = $this->asyncService->createJob($urls, [0]);
+        $GLOBALS['__oxpulse_scheduled_events'] = [];
+
+        $this->asyncService->processNextBatch($jobId);
+
+        $this->assertCount(1, $GLOBALS['__oxpulse_scheduled_events'], 'exactly one follow-up for the next batch');
+    }
+
     public function test_job_id_is_uuid_format(): void
     {
         $jobId = $this->asyncService->createJob(
