@@ -581,6 +581,11 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return !empty($GLOBALS['__oxpulse_is_feed']);
         }
     }
+    if (!function_exists('get_query_var')) {
+        function get_query_var($var, $default = '') {
+            return $GLOBALS['__oxpulse_query_vars'][$var] ?? $default;
+        }
+    }
     if (!function_exists('is_embed')) {
         function is_embed() {
             return !empty($GLOBALS['__oxpulse_is_embed']);
