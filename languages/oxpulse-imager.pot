@@ -891,6 +891,9 @@ msgstr ""
 msgid "Not configured for imgproxy. Enter the key and salt of your imgproxy server; until then original image URLs are served."
 msgstr ""
 
+msgid "One of the key and salt is still plugin-generated, so it cannot match your imgproxy server. Enter both values from your imgproxy server."
+msgstr ""
+
 msgid "Delivery"
 msgstr ""
 
