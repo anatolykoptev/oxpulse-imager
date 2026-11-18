@@ -136,7 +136,21 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('add_option')) {
         function add_option($option, $value = '', $deprecated = '', $autoload = true) {
             // Real WP: add_option() fails (false) when the row exists.
-            if (array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? [])) {
+            if (!empty($GLOBALS['__oxpulse_options_cache_model'])) {
+                // Core consults get_option() (object cache first), so a
+                // stale CACHED value blocks the add even after the row
+                // was removed by a raw $wpdb delete.
+                $sentinel = new \stdClass();
+                if (get_option($option, $sentinel) !== $sentinel) {
+                    return false;
+                }
+                wp_cache_set($option, $value, 'options');
+                $notoptions = wp_cache_get('notoptions', 'options');
+                if (is_array($notoptions)) {
+                    unset($notoptions[$option]);
+                    wp_cache_set('notoptions', $notoptions, 'options');
+                }
+            } elseif (array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? [])) {
                 return false;
             }
             $GLOBALS['__oxpulse_options'][$option] = $value;
@@ -161,6 +175,26 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             $GLOBALS['__oxpulse_get_option_calls'] = ($GLOBALS['__oxpulse_get_option_calls'] ?? 0) + 1;
             $GLOBALS['__oxpulse_get_option_calls_per_key'][$option] =
                 ($GLOBALS['__oxpulse_get_option_calls_per_key'][$option] ?? 0) + 1;
+            if (!empty($GLOBALS['__oxpulse_options_cache_model'])) {
+                // Core order: notoptions marker, options cache, then the DB
+                // (which is $GLOBALS['__oxpulse_options']) with cache fill.
+                $notoptions = wp_cache_get('notoptions', 'options');
+                if (is_array($notoptions) && isset($notoptions[$option])) {
+                    return $default;
+                }
+                $cached = wp_cache_get($option, 'options');
+                if ($cached !== false) {
+                    return $cached;
+                }
+                if (array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? [])) {
+                    wp_cache_set($option, $GLOBALS['__oxpulse_options'][$option], 'options');
+                    return $GLOBALS['__oxpulse_options'][$option];
+                }
+                $notoptions = is_array($notoptions) ? $notoptions : [];
+                $notoptions[$option] = true;
+                wp_cache_set('notoptions', $notoptions, 'options');
+                return $default;
+            }
             return array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? [])
                 ? $GLOBALS['__oxpulse_options'][$option]
                 : $default;
@@ -176,6 +210,14 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             $existed = array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? []);
             $oldValue = $GLOBALS['__oxpulse_options'][$option] ?? false;
             $GLOBALS['__oxpulse_options'][$option] = $value;
+            if (!empty($GLOBALS['__oxpulse_options_cache_model'])) {
+                wp_cache_set($option, $value, 'options');
+                $notoptions = wp_cache_get('notoptions', 'options');
+                if (is_array($notoptions)) {
+                    unset($notoptions[$option]);
+                    wp_cache_set('notoptions', $notoptions, 'options');
+                }
+            }
             // When autoload is explicitly set (not null), mirror real
             // WP: update the autoload flag alongside the value.
             if ($autoload !== null) {
@@ -192,6 +234,9 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('delete_option')) {
         function delete_option($option) {
             unset($GLOBALS['__oxpulse_options'][$option]);
+            if (!empty($GLOBALS['__oxpulse_options_cache_model'])) {
+                wp_cache_delete($option, 'options');
+            }
             // Mirror WP core: delete_option fires delete_option_{$option}
             // (only the per-option hook, not the generic 'deleted_option').
             do_action("delete_option_{$option}", $option);
@@ -1031,39 +1076,24 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
                 return $query;
             }
 
-            // #165: conditional delete used by the seed-lock stale
-            // steal — removes the row only while it still holds the
-            // expected value, so two concurrent stealers cannot both
-            // pass. $GLOBALS['__oxpulse_wpdb_delete_hook'] lets a test
-            // interpose "another request committed" between the
-            // caller's stale-read and this delete.
-            public function delete($table, $where, $where_format = null) {
-                $name = $where['option_name'] ?? null;
-                if (is_callable($GLOBALS['__oxpulse_wpdb_delete_hook'] ?? null)) {
-                    ($GLOBALS['__oxpulse_wpdb_delete_hook'])($name, $where);
-                }
-                if ($name === null || !array_key_exists($name, $GLOBALS['__oxpulse_options'] ?? [])) {
-                    return 0;
-                }
-                if (array_key_exists('option_value', $where)
-                    && (string) $GLOBALS['__oxpulse_options'][$name] !== (string) $where['option_value']) {
-                    return 0;
-                }
-                unset($GLOBALS['__oxpulse_options'][$name]);
-                // __oxpulse_wpdb_delete_after_hook: "another request
-                // slipped in between our delete and our add_option".
-                if (is_callable($GLOBALS['__oxpulse_wpdb_delete_after_hook'] ?? null)) {
-                    ($GLOBALS['__oxpulse_wpdb_delete_after_hook'])($name);
-                }
-                return 1;
-            }
-
             public function query($sql) {
                 // Compare-and-delete: returns rows affected like real $wpdb.
                 if (preg_match("/DELETE FROM \S+ WHERE option_name = '([^']*)' AND option_value = '(.*)'\s*$/s", (string) $sql, $m)) {
+                    // $GLOBALS['__oxpulse_wpdb_delete_hook'] lets a test
+                    // interpose "another request committed" between the
+                    // caller's stale read and this delete; the _after_ hook
+                    // between this delete and the caller's add_option.
+                    // Like the real $wpdb, this does NOT touch the options
+                    // object cache.
+                    if (is_callable($GLOBALS['__oxpulse_wpdb_delete_hook'] ?? null)) {
+                        ($GLOBALS['__oxpulse_wpdb_delete_hook'])($m[1]);
+                    }
                     $opts = $GLOBALS['__oxpulse_options'] ?? [];
                     if (array_key_exists($m[1], $opts) && (string) $opts[$m[1]] === $m[2]) {
                         unset($GLOBALS['__oxpulse_options'][$m[1]]);
+                        if (is_callable($GLOBALS['__oxpulse_wpdb_delete_after_hook'] ?? null)) {
+                            ($GLOBALS['__oxpulse_wpdb_delete_after_hook'])($m[1]);
+                        }
                         return 1;
                     }
                     return 0;

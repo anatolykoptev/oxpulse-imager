@@ -25,6 +25,7 @@ namespace OXPulse\Imager\Application\Prewarm;
 
 use OXPulse\Imager\Application\Delivery\UrlRewriter;
 use OXPulse\Imager\Domain\Prewarm\PrewarmRequest;
+use OXPulse\Imager\Infrastructure\WordPress\OptionLock;
 
 final class AsyncPrewarmService
 {
@@ -253,7 +254,7 @@ final class AsyncPrewarmService
         // Reclaim only the exact stale value we observed. Two reclaimers
         // both saw it, but only one DELETE matches a row; the loser (or
         // anyone facing a value that changed meanwhile) backs off.
-        if (!$this->deleteLockIfValue($option, (string) $observed)) {
+        if (!OptionLock::deleteIfValue($option, (string) $observed)) {
             return false;
         }
         if (add_option($option, $value, '', false)) {
@@ -272,33 +273,8 @@ final class AsyncPrewarmService
         if (!isset($this->lockValues[$jobId])) {
             return;
         }
-        $this->deleteLockIfValue(self::LOCK_OPTION_PREFIX . $jobId, $this->lockValues[$jobId]);
+        OptionLock::deleteIfValue(self::LOCK_OPTION_PREFIX . $jobId, $this->lockValues[$jobId]);
         unset($this->lockValues[$jobId]);
-    }
-
-    /**
-     * Atomic compare-then-delete of an option row: removes it only when
-     * option_value still equals $expected. Mirrors core delete_option()'s
-     * cache cleanup (the row is autoload=no) so a following add_option()
-     * does not see the stale cached value. True when this call deleted it.
-     */
-    private function deleteLockIfValue(string $option, string $expected): bool
-    {
-        global $wpdb;
-
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- atomic compare-and-delete mutex; delete_option() cannot condition on the value, and a DELETE is not cacheable.
-        $deleted = $wpdb->query(
-            $wpdb->prepare(
-                "DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s",
-                $option,
-                $expected
-            )
-        );
-
-        wp_cache_delete($option, 'options');
-        wp_cache_delete('notoptions', 'options');
-
-        return (int) $deleted > 0;
     }
 
     /**

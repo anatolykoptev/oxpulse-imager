@@ -37,6 +37,10 @@ class AsyncPrewarmServiceTest extends TestCase
         $GLOBALS['__oxpulse_transients'] = [];
         $GLOBALS['__oxpulse_scheduled_events'] = [];
         $GLOBALS['__oxpulse_options'] = [];
+        // Model core's options object cache (a raw $wpdb delete leaves a
+        // stale cached lock unless OptionLock drops it).
+        $GLOBALS['__oxpulse_options_cache_model'] = true;
+        $GLOBALS['__oxpulse_obj_cache'] = [];
 
         $delivery = new DeliveryConfig(
             enabled: true,
@@ -85,6 +89,7 @@ class AsyncPrewarmServiceTest extends TestCase
     {
         unset($GLOBALS['__oxpulse_transients']);
         unset($GLOBALS['__oxpulse_options']);
+        unset($GLOBALS['__oxpulse_options_cache_model'], $GLOBALS['__oxpulse_obj_cache']);
         unset($GLOBALS['__oxpulse_scheduled_events']);
         parent::tearDown();
     }
@@ -458,16 +463,14 @@ class AsyncPrewarmServiceTest extends TestCase
     public function test_compare_delete_removes_only_an_unchanged_value(): void
     {
         $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . 'job-x';
-        $m = new \ReflectionMethod(AsyncPrewarmService::class, 'deleteLockIfValue');
-
         add_option($lockOption, '100|new-holder', '', false);
         $this->assertFalse(
-            $m->invoke($this->asyncService, $lockOption, '1|stale-observed'),
+            \OXPulse\Imager\Infrastructure\WordPress\OptionLock::deleteIfValue($lockOption, '1|stale-observed'),
             'a changed value must not be deleted',
         );
         $this->assertSame('100|new-holder', get_option($lockOption));
 
-        $this->assertTrue($m->invoke($this->asyncService, $lockOption, '100|new-holder'));
+        $this->assertTrue(\OXPulse\Imager\Infrastructure\WordPress\OptionLock::deleteIfValue($lockOption, '100|new-holder'));
         $this->assertFalse(get_option($lockOption), 'an unchanged value is deleted');
     }
 

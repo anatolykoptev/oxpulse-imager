@@ -619,7 +619,7 @@ final class OptionSettingsRepository
                 }
             }
         } finally {
-            delete_option(self::OPTION_SEED_LOCK);
+            $this->releaseSeedLock();
             $this->refresh();
         }
 
@@ -645,46 +645,60 @@ final class OptionSettingsRepository
     }
 
     /**
+     * Value this instance wrote into the seed lock (`<time>|<hex>`), or
+     * '' when it does not hold it.
+     */
+    private string $seedLockValue = '';
+
+    /**
      * add_option() fails when the row exists, so exactly one of N
      * concurrent requests wins. A lock older than 60s (crashed holder)
      * is stolen.
      *
-     * The steal MUST be a conditional delete: an unconditional
-     * delete_option() also removes a FRESH lock a faster stealer just
-     * installed, letting two stealers both pass (#165). Deleting only
-     * while the row still holds the stale value means exactly one
-     * stealer observes "1 row deleted" and proceeds to the add_option()
-     * that arbitrates the actual acquisition; the loser affects 0 rows
-     * and bails.
+     * The lock value is `<time>|<random hex>`: the token makes every
+     * holder's value unique, so the steal and the release can
+     * compare-and-delete (OptionLock) instead of deleting whatever is
+     * there. An unconditional delete would also remove a FRESH lock a
+     * faster stealer just installed, letting two stealers both pass
+     * (#165). (int) of the value reads the timestamp, so a legacy
+     * bare-timestamp lock parses the same way.
      */
     private function acquireSeedLock(): bool
     {
-        if (add_option(self::OPTION_SEED_LOCK, time(), '', false)) {
+        $value = time() . '|' . bin2hex(\random_bytes(8));
+        if (add_option(self::OPTION_SEED_LOCK, $value, '', false)) {
+            $this->seedLockValue = $value;
             return true;
         }
-        $held = (int) get_option(self::OPTION_SEED_LOCK, 0);
+        $observed = get_option(self::OPTION_SEED_LOCK, 0);
+        $held = (int) $observed;
         if ($held <= 0 || time() - $held <= 60) {
             return false;
         }
-        global $wpdb;
-        if (!isset($wpdb) || !is_object($wpdb) || !method_exists($wpdb, 'delete')) {
-            // Without a conditional delete there is no atomic steal —
-            // a plain delete_option() races, so leave the lock for the
-            // next request where the stale row may already be gone.
+        // Reclaim only the exact stale value observed: of two stealers
+        // exactly one DELETE matches a row.
+        if (!OptionLock::deleteIfValue(self::OPTION_SEED_LOCK, (string) $observed)) {
             return false;
         }
-        $deleted = $wpdb->delete(
-            $wpdb->options,
-            [
-                'option_name'  => self::OPTION_SEED_LOCK,
-                'option_value' => (string) $held,
-            ],
-            ['%s', '%s'],
-        );
-        if ($deleted !== 1) {
-            return false;
+        if (add_option(self::OPTION_SEED_LOCK, $value, '', false)) {
+            $this->seedLockValue = $value;
+            return true;
         }
-        return (bool) add_option(self::OPTION_SEED_LOCK, time(), '', false);
+        return false;
+    }
+
+    /**
+     * Release the seed lock only while the row still holds the value this
+     * instance wrote: a holder that outlived the stale window must not
+     * delete a stealer's fresh lock.
+     */
+    private function releaseSeedLock(): void
+    {
+        if ($this->seedLockValue === '') {
+            return;
+        }
+        OptionLock::deleteIfValue(self::OPTION_SEED_LOCK, $this->seedLockValue);
+        $this->seedLockValue = '';
     }
 
     /**
