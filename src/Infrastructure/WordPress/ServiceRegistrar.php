@@ -101,6 +101,16 @@ final class ServiceRegistrar
      */
     private static ?LicenseGate $licenseGate = null;
 
+    /**
+     * #160: transient key counting consecutive failed autoload
+     * migrations in maybeMigrateAutoload(). Past
+     * AUTOLOAD_MIGRATE_MAX_FAILURES the flip backs off until the
+     * transient expires (AUTOLOAD_MIGRATE_FAILURES_TTL).
+     */
+    private const AUTOLOAD_MIGRATE_FAILURES_TRANSIENT = 'oxpulse_autoload_migrate_failures';
+    private const AUTOLOAD_MIGRATE_MAX_FAILURES = 5;
+    private const AUTOLOAD_MIGRATE_FAILURES_TTL = 86400; // 1 day
+
     public static function register(Plugin $plugin): void
     {
         self::registerHealthGate($plugin);
@@ -1242,6 +1252,19 @@ final class ServiceRegistrar
             return;
         }
 
+        // #160: a persistent failure (e.g. a DB problem that keeps the
+        // UPDATE from landing) must not re-attempt the flip on EVERY
+        // admin request forever. Failures are counted in a transient:
+        // past AUTOLOAD_MIGRATE_MAX_FAILURES the migration backs off
+        // until the transient expires (~1 day — the site may have
+        // recovered by then). The give-up moment is logged once through
+        // the diagnostic logger; individual attempts 1..N-1 stay silent
+        // because a transient DB blip self-heals without operator action.
+        $failures = (int) get_transient(self::AUTOLOAD_MIGRATE_FAILURES_TRANSIENT);
+        if ($failures >= self::AUTOLOAD_MIGRATE_MAX_FAILURES) {
+            return;
+        }
+
         $results = wp_set_options_autoload(OptionSettingsRepository::AUTOLOAD_OPTION_KEYS, true);
 
         // Stamp only when every hot option is now autoloaded, so a
@@ -1252,8 +1275,20 @@ final class ServiceRegistrar
         // exist) reports false, so false alone is not a failure. Judge
         // by the resulting state instead.
         if (!self::hotOptionsAutoloaded(is_array($results) ? $results : [])) {
+            $failures++;
+            set_transient(
+                self::AUTOLOAD_MIGRATE_FAILURES_TRANSIENT,
+                $failures,
+                self::AUTOLOAD_MIGRATE_FAILURES_TTL,
+            );
+            if ($failures >= self::AUTOLOAD_MIGRATE_MAX_FAILURES) {
+                self::diagnosticLogger()->log(
+                    LogEntry::preserved('config', '', 0, 'autoload_migration_failed')
+                );
+            }
             return;
         }
+        delete_transient(self::AUTOLOAD_MIGRATE_FAILURES_TRANSIENT);
         update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 2);
     }
 

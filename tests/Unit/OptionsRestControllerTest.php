@@ -231,6 +231,50 @@ class OptionsRestControllerTest extends TestCase
         $this->assertTrue(get_option(OptionSettingsRepository::OPTION_REMOVE_ON_UNINSTALL));
     }
 
+    // ─── #160/#165.3: loose-option GETs go through the memo ──────────
+
+    /**
+     * The memo is the falsifying oracle here: a direct get_option read
+     * returns the store's CURRENT value, while the repository's memo
+     * returns the value seen at first read until a repository write
+     * calls refresh(). After a raw write (WP-CLI style, bypassing the
+     * repository) a second GET on the same instance must return the
+     * memoized (old) value — proving handleGet() reads through the
+     * repository, not get_option.
+     */
+    public function test_handleGet_reads_onboarded_and_diagnostic_level_through_the_repository_memo(): void
+    {
+        $c = $this->controller();
+        $this->assertFalse($c->handleGet()->get_data()['onboarded']);
+        $this->assertSame('off', $c->handleGet()->get_data()['diagnosticLevel']);
+
+        // Raw write behind the repository's back: the memo does not
+        // see it, so the GET still reports the first-read values.
+        update_option(OptionSettingsRepository::OPTION_ONBOARDED, true);
+        update_option(OptionSettingsRepository::OPTION_DIAGNOSTIC_LEVEL, 'verbose');
+
+        $data = $c->handleGet()->get_data();
+        $this->assertFalse($data['onboarded'], 'onboarded must come from the repository memo');
+        $this->assertSame('off', $data['diagnosticLevel'], 'diagnosticLevel must come from the repository memo');
+    }
+
+    /**
+     * The motivating correctness case (#104-shaped): a repository
+     * write refreshes the memo, so the GET handleUpdate() produces
+     * internally returns the values it just persisted — never stale.
+     */
+    public function test_handleUpdate_response_reflects_the_just_saved_loose_options(): void
+    {
+        $response = $this->controller()->handleUpdate(new \WP_REST_Request([
+            'onboarded' => true,
+            'diagnosticLevel' => 'verbose',
+        ]));
+
+        $data = $response->get_data();
+        $this->assertTrue($data['onboarded']);
+        $this->assertSame('verbose', $data['diagnosticLevel']);
+    }
+
     // ─── cache_max_mb: same free-tier clobber as picture_enabled ─────
 
     public function test_free_unrelated_save_does_not_clobber_a_stored_cache_cap(): void

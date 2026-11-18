@@ -477,6 +477,24 @@ final class OptionSettingsRepository
     }
 
     /**
+     * Onboarding-complete flag, read through the in-request memo
+     * (#160/#165.3: handleGet must not bypass the repository).
+     */
+    public function loadOnboarded(): bool
+    {
+        return (bool) $this->memo(self::OPTION_ONBOARDED, false);
+    }
+
+    /**
+     * Diagnostic level ('off' | 'basic' | 'verbose'), read through the
+     * in-request memo (#160/#165.3).
+     */
+    public function loadDiagnosticLevel(): string
+    {
+        return (string) $this->memo(self::OPTION_DIAGNOSTIC_LEVEL, 'off');
+    }
+
+    /**
      * Generate one signing secret: 32 CSPRNG bytes as 64 hex chars.
      * The single generator for key AND salt (SigningConfig::fromHex
      * requires >= 16 bytes of valid hex).
