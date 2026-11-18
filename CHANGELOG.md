@@ -59,6 +59,18 @@ via Conventional Commits.
 - 6 JS tests — all green
 - Build deterministic (Vite + content-hash manifest)
 
+## [0.1.14](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.13...v0.1.14) (2026-11-18)
+
+
+### Fixed
+
+* **admin:** externalize React so Plugin Check passes ([#171](https://github.com/anatolykoptev/oxpulse-imager/issues/171)) ([2a474a3](https://github.com/anatolykoptev/oxpulse-imager/commit/2a474a3a842104ca6f183478795561bbdefdbb30))
+
+
+### Performance
+
+* **version:** version local uploads from the file, not the attachment lookup ([#174](https://github.com/anatolykoptev/oxpulse-imager/issues/174)) ([c92f3bf](https://github.com/anatolykoptev/oxpulse-imager/commit/c92f3bfba921aa96b3438d9e6b3bcf9887520927))
+
 ## [0.1.13](https://github.com/anatolykoptev/oxpulse-imager/compare/v0.1.12...v0.1.13) (2026-10-26)
 
 
