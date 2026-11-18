@@ -276,6 +276,26 @@ class ImageDownsizeRewriterTest extends TestCase
         $this->assertSame(500, $result[2]);
     }
 
+    /**
+     * #163: a registered subsize with NO 'crop' key (custom
+     * registrations only — core always sets it) keeps the old
+     * behaviour: the configured box is passed through unfitted, not
+     * aspect-ratio-fitted like an explicit crop=false.
+     */
+    public function test_registered_size_without_crop_key_keeps_configured_box(): void
+    {
+        $GLOBALS['__oxpulse_registered_subsizes'] = [
+            'legacy_box' => ['width' => 2048, 'height' => 2048],
+        ];
+        $GLOBALS['__oxpulse_attachment_meta'][42]['width'] = 848;
+        $GLOBALS['__oxpulse_attachment_meta'][42]['height'] = 560;
+        $result = $this->downsizeRewriter->rewrite(false, 42, 'legacy_box');
+        unset($GLOBALS['__oxpulse_registered_subsizes']);
+
+        $this->assertSame(2048, $result[1]);
+        $this->assertSame(2048, $result[2]);
+    }
+
     public function test_box_is_unchanged_when_original_dimensions_unknown(): void
     {
         unset($GLOBALS['__oxpulse_attachment_meta'][42]['width'], $GLOBALS['__oxpulse_attachment_meta'][42]['height']);

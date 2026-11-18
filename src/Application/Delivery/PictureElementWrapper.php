@@ -280,7 +280,9 @@ final class PictureElementWrapper
     /**
      * Extract an attribute value from an <img> tag. Returns '' when
      * the attribute is absent. Handles double-quoted values only
-     * (WordPress core emits double-quoted attributes).
+     * (WordPress core emits double-quoted attributes). The (?<![\w-])
+     * lookbehind stops a longer attribute ending in the queried name
+     * (e.g. data-sizes) from matching — only a real `sizes=` counts.
      */
     private function extractAttribute(string $imgTag, string $attr): string
     {
