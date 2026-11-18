@@ -34,6 +34,12 @@ class HeaderSetProbe
 {
     public const PROBE_HEADER = 'x-oxpulse-probe';
     private const PROBE_SUBDIR_PREFIX = '.probe-headers-';
+    /**
+     * #164: a fatal (max-execution kill) skips the `finally` below and
+     * orphans its probe dir. Dirs older than this are purged at the next
+     * probe start; younger ones may belong to a concurrent live probe.
+     */
+    private const STALE_PROBE_AGE_SECONDS = 600;
     private const PROBE_BODY = 'ok';
     private const HTACCESS_CONTENT = "<IfModule mod_headers.c>\nHeader set X-Oxpulse-Probe \"1\"\n</IfModule>";
 
@@ -50,6 +56,7 @@ class HeaderSetProbe
     {
         // Unique per probe: concurrent probes cannot delete each other's
         // files (which would read as a false 'no').
+        $this->purgeStaleProbeDirs();
         $subdir = self::PROBE_SUBDIR_PREFIX . bin2hex(random_bytes(6));
         $probeDir = rtrim($this->cacheDir, '/') . '/' . $subdir;
 
@@ -77,6 +84,22 @@ class HeaderSetProbe
         // Header absent: only a 200 that really is our probe file proves
         // .htaccess was read and the header was not applied.
         return ($resp['body'] ?? '') === self::PROBE_BODY ? 'no' : 'unknown';
+    }
+
+    /**
+     * Remove `.probe-headers-*` dirs a killed probe left behind, through
+     * the same containment-guarded purge as the normal cleanup.
+     */
+    private function purgeStaleProbeDirs(): void
+    {
+        $dirs = glob(rtrim($this->cacheDir, '/') . '/' . self::PROBE_SUBDIR_PREFIX . '*', GLOB_ONLYDIR | GLOB_NOSORT);
+        foreach ($dirs === false ? [] : $dirs as $dir) {
+            $mtime = @filemtime($dir);
+            if (is_link($dir) || $mtime === false || time() - $mtime <= self::STALE_PROBE_AGE_SECONDS) {
+                continue;
+            }
+            LocalRewriteProbe::purgeProbeDir($this->cacheDir, $dir);
+        }
     }
 
     private function writeProbeFiles(string $probeDir): bool

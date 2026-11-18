@@ -387,6 +387,83 @@ class LcpTagHygieneTest extends TestCase
         $this->assertStringNotContainsString('href="https://x.test/hid.jpg"', $out);
     }
 
+    /** @return array<string,array{0:string}> */
+    public static function responsiveVisibleContainers(): array
+    {
+        return [
+            'tailwind hidden md:block'     => ['<div class="hidden md:block">'],
+            'tailwind hidden lg:flex'      => ['<div class="wrap hidden lg:flex">'],
+            'tailwind 2xl:inline-block'    => ['<div class="hidden 2xl:inline-block">'],
+            'bootstrap d-none d-md-block'  => ['<div class="d-none d-md-block">'],
+            'bootstrap d-none d-xxl-flex'  => ['<div class="d-none d-xxl-flex">'],
+            'show variant listed first'    => ['<div class="sm:grid hidden">'],
+        ];
+    }
+
+    #[DataProvider('responsiveVisibleContainers')]
+    public function test_generic_hide_class_with_a_responsive_show_variant_is_visible(string $open): void
+    {
+        $out = $this->pass()->rewrite($this->page($open . $this->big('', 'resp') . '</div>'));
+        $this->assertStringContainsString('href="https://x.test/resp.jpg"', $out, 'a hero visible on desktop was excluded');
+    }
+
+    /** @return array<string,array{0:string}> */
+    public static function responsiveStillHiddenContainers(): array
+    {
+        return [
+            'hide-only variant'            => ['<div class="hidden sm:hidden">'],
+            'non-display utility'          => ['<div class="hidden md:p-4">'],
+            'bootstrap print variant'      => ['<div class="d-none d-print-block">'],
+            'show variant, other hide cls' => ['<div class="mobile-collapse md:block">'],
+        ];
+    }
+
+    #[DataProvider('responsiveStillHiddenContainers')]
+    public function test_responsive_exception_is_limited_to_generic_hide_tokens(string $open): void
+    {
+        $out = $this->pass()->rewrite($this->page($open . $this->big('', 'hid') . '</div>' . $this->big('', 'real')));
+        $this->assertStringContainsString('href="https://x.test/real.jpg"', $out);
+        $this->assertStringNotContainsString('href="https://x.test/hid.jpg"', $out);
+    }
+
+    /**
+     * #161: an unclosed raw-text element makes the blanking regex's lazy
+     * `.*?` scan to the end of the buffer. The 2 MB cap bounds it; this
+     * times the worst shapes at the cap so a regex change that makes the
+     * scan quadratic (or removes the fail-closed fallback) shows up.
+     *
+     * @return array<string,array{0:string}>
+     */
+    public static function unclosedAtTheCap(): array
+    {
+        $cap = 2 * 1024 * 1024;
+        $open = '<html><body><img src="https://x.test/a.jpg" width="800" height="600">';
+        return [
+            'one unclosed textarea'   => [$open . '<textarea>' . str_repeat('<p>x</p>', intdiv($cap - 200, 8))],
+            'one unclosed title'      => [$open . '<title>' . str_repeat('<p>x</p>', intdiv($cap - 200, 8))],
+            'many unclosed textareas' => [$open . str_repeat('<textarea>', intdiv($cap - 200, 10))],
+            'many unclosed comments'  => [$open . str_repeat('<!--', intdiv($cap - 200, 4))],
+        ];
+    }
+
+    #[DataProvider('unclosedAtTheCap')]
+    public function test_unclosed_raw_text_element_at_the_buffer_cap_is_fast_and_fails_closed(string $html): void
+    {
+        $this->assertLessThanOrEqual(2 * 1024 * 1024, strlen($html));
+
+        $start = hrtime(true);
+        $out = $this->pass()->rewrite($html);
+        $seconds = (hrtime(true) - $start) / 1e9;
+
+        // Assumes the default pcre.backtrack_limit (1M): the lazy scan trips
+        // it within milliseconds (with or without pcre.jit) and the pass
+        // fails closed. A host/CI image that raises the limit would let the
+        // scan run, and this bound (and the untouched-output check below)
+        // would then flag it.
+        $this->assertLessThan(0.5, $seconds, 'blanking scan of an unclosed element is not bounded by the cap');
+        $this->assertSame($html, $out, 'an unanalysable page must come back untouched');
+    }
+
     public function test_opacity_half_is_not_hidden(): void
     {
         $out = $this->pass()->rewrite($this->page('<div style="opacity:0.5">' . $this->big('', 'half') . '</div>'));

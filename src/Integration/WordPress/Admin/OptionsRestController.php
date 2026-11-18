@@ -121,18 +121,15 @@ final class OptionsRestController
             // returns the default (512) under free regardless of the
             // stored value, so the SPA shows 512 + locked under free.
             'cache_max_mb'      => $this->repository->loadCacheMaxMb(),
-            'diagnostic_level'  => (string) get_option(
-                OptionSettingsRepository::OPTION_DIAGNOSTIC_LEVEL,
-                'off'
-            ),
+            // #160/#165.3: read through the repository's memo so a
+            // save-then-GET in the same request cannot return a stale
+            // value.
+            'diagnostic_level'  => $this->repository->loadDiagnosticLevel(),
             'remove_on_uninstall' => (bool) get_option(
                 OptionSettingsRepository::OPTION_REMOVE_ON_UNINSTALL,
                 false
             ),
-            'onboarded' => (bool) get_option(
-                OptionSettingsRepository::OPTION_ONBOARDED,
-                false
-            ),
+            'onboarded' => $this->repository->loadOnboarded(),
         ];
 
         $camel = OptionsMapper::toCamel($snake);

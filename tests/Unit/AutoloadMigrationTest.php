@@ -28,11 +28,13 @@ class AutoloadMigrationTest extends TestCase
         $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_autoload'] = [];
         $GLOBALS['__oxpulse_is_admin'] = false;
+        // #160: the failure-count transient must not leak between tests.
+        $GLOBALS['__oxpulse_transients'] = [];
     }
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['__oxpulse_options'], $GLOBALS['__oxpulse_autoload'], $GLOBALS['__oxpulse_is_admin'], $GLOBALS['__oxpulse_autoload_fail']);
+        unset($GLOBALS['__oxpulse_options'], $GLOBALS['__oxpulse_autoload'], $GLOBALS['__oxpulse_is_admin'], $GLOBALS['__oxpulse_autoload_fail'], $GLOBALS['__oxpulse_transients']);
     }
 
     /**
@@ -196,5 +198,78 @@ class AutoloadMigrationTest extends TestCase
         $this->runMigration();
 
         $this->assertSame(2, (int) get_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION));
+    }
+
+    // ── #160: bounded retries + one-shot diagnostic log ─────────────
+
+    public function test_repeated_failures_stop_after_five_until_the_transient_expires(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 1);
+        update_option(OptionSettingsRepository::OPTION_ENABLED, true, false);
+        update_option(OptionSettingsRepository::OPTION_ALLOWED_SOURCES, ['https://s.test/'], false);
+
+        $GLOBALS['__oxpulse_is_admin'] = true;
+        $GLOBALS['__oxpulse_autoload_fail'] = true;
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->runMigration();
+        }
+        $this->assertSame(
+            5,
+            (int) get_transient('oxpulse_autoload_migrate_failures'),
+            'each failed flip must bump the failure counter',
+        );
+
+        // The DB "recovers" — but the cap was reached: this admin load
+        // must not attempt the flip (without the backoff this call
+        // would flip + stamp, so the assertions below go red). Reset
+        // the observation map first: the setUp update_option() calls
+        // already recorded autoload=no rows in it.
+        unset($GLOBALS['__oxpulse_autoload_fail']);
+        $GLOBALS['__oxpulse_autoload'] = [];
+        $this->runMigration();
+        $this->assertSame(
+            [],
+            $GLOBALS['__oxpulse_autoload'],
+            'a sixth attempt must back off while the failure transient lives',
+        );
+        $this->assertSame(1, (int) get_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION));
+
+        // After the transient expires the migration retries and wins.
+        delete_transient('oxpulse_autoload_migrate_failures');
+        $this->runMigration();
+        $this->assertSame(2, (int) get_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION));
+        $this->assertFalse(
+            get_transient('oxpulse_autoload_migrate_failures'),
+            'a successful flip must clear the failure counter',
+        );
+    }
+
+    public function test_give_up_emits_one_error_log_line_per_backoff_window(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 1);
+        update_option(OptionSettingsRepository::OPTION_ENABLED, true, false);
+        update_option(OptionSettingsRepository::OPTION_ALLOWED_SOURCES, ['https://s.test/'], false);
+
+        $GLOBALS['__oxpulse_is_admin'] = true;
+        $GLOBALS['__oxpulse_autoload_fail'] = true;
+
+        // Default diagnostic level ('off') and admin context: the line must
+        // not depend on the diagnostic logger being enabled or flushed.
+        $file = tempnam(sys_get_temp_dir(), 'oxp-errlog');
+        $previous = ini_set('error_log', $file);
+        try {
+            // 5 counted failures + 1 backed-off call: exactly ONE line.
+            for ($i = 0; $i < 6; $i++) {
+                $this->runMigration();
+            }
+        } finally {
+            ini_set('error_log', (string) $previous);
+        }
+        $lines = array_values(array_filter(explode("\n", (string) file_get_contents($file))));
+        unlink($file);
+
+        $this->assertCount(1, $lines, 'the give-up must be logged once per backoff window, not on every admin load');
+        $this->assertStringContainsString('autoload migration failed 5 times; retries paused for 24h', $lines[0]);
     }
 }

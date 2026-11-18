@@ -34,6 +34,7 @@ use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityCache;
 use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityProbe;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\Local\CacheJanitor;
+use OXPulse\Imager\Infrastructure\Local\HeadersCapabilityCache;
 use OXPulse\Imager\Infrastructure\Local\HttpRequester;
 use OXPulse\Imager\Infrastructure\Local\LocalDeliveryInstaller;
 use OXPulse\Imager\Infrastructure\License\FreemiusLicenseGate;
@@ -100,6 +101,16 @@ final class ServiceRegistrar
      * happens here only, so no feature code is aware of the provider.
      */
     private static ?LicenseGate $licenseGate = null;
+
+    /**
+     * #160: transient key counting consecutive failed autoload
+     * migrations in maybeMigrateAutoload(). Past
+     * AUTOLOAD_MIGRATE_MAX_FAILURES the flip backs off until the
+     * transient expires (AUTOLOAD_MIGRATE_FAILURES_TTL).
+     */
+    private const AUTOLOAD_MIGRATE_FAILURES_TRANSIENT = 'oxpulse_autoload_migrate_failures';
+    private const AUTOLOAD_MIGRATE_MAX_FAILURES = 5;
+    private const AUTOLOAD_MIGRATE_FAILURES_TTL = 86400; // 1 day
 
     public static function register(Plugin $plugin): void
     {
@@ -1242,6 +1253,23 @@ final class ServiceRegistrar
             return;
         }
 
+        // #160: a persistent failure (e.g. a DB problem that keeps the
+        // UPDATE from landing) must not re-attempt the flip on EVERY
+        // admin request forever. Failures are counted in a transient:
+        // past AUTOLOAD_MIGRATE_MAX_FAILURES the migration backs off
+        // until the transient expires (~1 day — the site may have
+        // recovered by then). The window recurs: once the transient
+        // expires the next admin load makes another 5 attempts and logs
+        // again, so a permanent fault costs 5 UPDATEs and one log line a
+        // day. The give-up is written with error_log(), not the
+        // diagnostic logger: this runs in admin only, where the logger is
+        // never flushed, and its default level is 'off'. Attempts 1..N-1
+        // stay silent because a transient DB blip self-heals.
+        $failures = (int) get_transient(self::AUTOLOAD_MIGRATE_FAILURES_TRANSIENT);
+        if ($failures >= self::AUTOLOAD_MIGRATE_MAX_FAILURES) {
+            return;
+        }
+
         $results = wp_set_options_autoload(OptionSettingsRepository::AUTOLOAD_OPTION_KEYS, true);
 
         // Stamp only when every hot option is now autoloaded, so a
@@ -1252,8 +1280,23 @@ final class ServiceRegistrar
         // exist) reports false, so false alone is not a failure. Judge
         // by the resulting state instead.
         if (!self::hotOptionsAutoloaded(is_array($results) ? $results : [])) {
+            $failures++;
+            set_transient(
+                self::AUTOLOAD_MIGRATE_FAILURES_TRANSIENT,
+                $failures,
+                self::AUTOLOAD_MIGRATE_FAILURES_TTL,
+            );
+            if ($failures >= self::AUTOLOAD_MIGRATE_MAX_FAILURES) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- plugin diagnostic sink; no values, admin-only path where the diagnostic logger is not flushed.
+                error_log(sprintf(
+                    'oxpulse-imager: autoload migration failed %d times; retries paused for %dh',
+                    self::AUTOLOAD_MIGRATE_MAX_FAILURES,
+                    intdiv(self::AUTOLOAD_MIGRATE_FAILURES_TTL, 3600)
+                ));
+            }
             return;
         }
+        delete_transient(self::AUTOLOAD_MIGRATE_FAILURES_TRANSIENT);
         update_option(OptionSettingsRepository::OPTION_SCHEMA_VERSION, 2);
     }
 
@@ -1517,7 +1560,16 @@ final class ServiceRegistrar
             (new CachePurger())->purge();
         };
 
-        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability, $recheckImgproxy, $recheckSocialJpeg, $purgeCaches): void {
+        // #166: a verdict must not outlive the backend it was probed
+        // on. Shared by the two backend-switch detectors below: an
+        // endpoint change AND a cached-imgproxy-health flip ('down'
+        // falls through to LocalBackend, recovery selects imgproxy
+        // again — neither touches OPTION_ENDPOINT).
+        $forgetCacheBuster = static function (): void {
+            SocialJpegCapabilityCache::forCacheBuster()->clear();
+        };
+
+        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability, $recheckImgproxy, $recheckSocialJpeg, $purgeCaches, $forgetCacheBuster): void {
             if (in_array($option, OptionSettingsRepository::DELIVERY_OPTION_KEYS, true)) {
                 $reinstall();
             }
@@ -1528,10 +1580,22 @@ final class ServiceRegistrar
                 // An `ok` earned on the OLD endpoint says nothing about the
                 // new one: forget it (unknown reads as "no cb", fail-safe)
                 // before the re-probe decides.
-                SocialJpegCapabilityCache::forCacheBuster()->clear();
+                $forgetCacheBuster();
+                // #164: the mod_headers verdict belongs to LocalBackend's
+                // cache dir; forget it on a switch (the LocalBackend
+                // recheck below repopulates it, imgproxy leaves it empty).
+                (new HeadersCapabilityCache())->clear();
                 $recheckCapability();
                 $recheckImgproxy();
                 $recheckSocialJpeg();
+            }
+            // #166: a cached-health flip changes the effective backend
+            // without an endpoint change. Only relevant while an
+            // imgproxy endpoint is configured — otherwise imgproxy is
+            // not in the running and no switch happened.
+            if ($option === ImgproxyHealthCache::OPTION
+                && (string) get_option(OptionSettingsRepository::OPTION_ENDPOINT, '') !== '') {
+                $forgetCacheBuster();
             }
             // Purge page caches on delivery-relevant option changes
             // (the delivery keys + OPTION_REWRITE_CAPABILITY, whose flip

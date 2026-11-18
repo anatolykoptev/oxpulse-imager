@@ -190,6 +190,37 @@ class HeaderSetProbeTest extends TestCase
         $this->assertSame('no', (new HeadersCapabilityCache())->read());
     }
 
+    public function test_stale_probe_dirs_from_a_killed_probe_are_purged_at_probe_start(): void
+    {
+        $stale = $this->cacheDir . '/.probe-headers-deadbeef0001';
+        $fresh = $this->cacheDir . '/.probe-headers-deadbeef0002';
+        $other = $this->cacheDir . '/.probe-unrelated';
+        foreach ([$stale, $fresh, $other] as $dir) {
+            mkdir($dir);
+            file_put_contents($dir . '/probe.txt', 'ok');
+        }
+        touch($stale, time() - 11 * 60);
+        touch($other, time() - 11 * 60);
+
+        $this->probe(new ApacheSimRequester($this->cacheDir, true))->probe();
+
+        $this->assertDirectoryDoesNotExist($stale, 'orphan older than 10 min is purged');
+        $this->assertDirectoryExists($fresh, 'a young dir may belong to a concurrent probe');
+        $this->assertDirectoryExists($other, 'only .probe-headers-* is ours');
+    }
+
+    public function test_recheck_headers_skips_the_probe_when_imgproxy_is_the_backend(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, 'https://imgproxy.example.com');
+        (new HeadersCapabilityCache())->write('no'); // verdict from an earlier LocalBackend period
+        $req = new ApacheSimRequester($this->cacheDir, false);
+
+        $this->assertSame('skipped', $this->tester($this->probe($req), true)->recheckHeaders());
+
+        $this->assertSame('', $req->requestedUrl, 'no loopback request when LocalBackend is not active');
+        $this->assertNull((new HeadersCapabilityCache())->read(), 'stale verdict cleared');
+    }
+
     public function test_cli_without_server_software_keeps_the_cached_verdict(): void
     {
         unset($_SERVER['SERVER_SOFTWARE']);

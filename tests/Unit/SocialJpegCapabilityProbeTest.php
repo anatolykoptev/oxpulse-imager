@@ -215,6 +215,8 @@ class GetImageStub implements HttpRequester
 {
     public int $getImageCalls = 0;
     public string $lastGetImageUrl = '';
+    /** @var list<string> */
+    public array $getImageUrls = [];
 
     public function __construct(
         private int $status = 200,
@@ -236,6 +238,7 @@ class GetImageStub implements HttpRequester
     {
         $this->getImageCalls++;
         $this->lastGetImageUrl = $url;
+        $this->getImageUrls[] = $url;
         return ['status' => $this->status, 'content_type' => $this->contentType, 'error' => $this->error];
     }
 }

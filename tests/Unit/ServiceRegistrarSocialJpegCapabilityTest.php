@@ -322,4 +322,94 @@ class ServiceRegistrarSocialJpegCapabilityTest extends TestCase
         $this->assertNull($cache->readVerdict());
         $this->assertFalse($cache->readOk());
     }
+
+    // ─── #166: backend switch without an endpoint change ─────────────
+
+    /**
+     * #164.5: the mod_headers verdict belongs to LocalBackend's cache
+     * dir. After a switch to imgproxy /status.modHeaders must not keep
+     * serving it.
+     */
+    public function test_switching_to_imgproxy_clears_the_mod_headers_verdict(): void
+    {
+        $headers = new \OXPulse\Imager\Infrastructure\Local\HeadersCapabilityCache();
+        $headers->write('no');
+        $this->configureImgproxyLocal();
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+
+        $callback = $this->findUpdatedOptionCallback();
+        $callback(OptionSettingsRepository::OPTION_ENDPOINT);
+
+        $this->assertNull($headers->read(), 'a backend switch must forget the stale mod_headers verdict');
+    }
+
+    /**
+     * A cached-health flip to 'down' falls the delivery backend through
+     * to LocalBackend (or passthrough) with OPTION_ENDPOINT untouched —
+     * the verdict probed while imgproxy served must not survive it.
+     * Recovery ('down'→'up') flips the backend back and clears the same
+     * way.
+     */
+    public function test_imgproxy_health_flip_clears_the_cachebuster_verdict(): void
+    {
+        $this->configureImgproxyLocal();
+        $cache = SocialJpegCapabilityCache::forCacheBuster();
+        $cache->write('ok');
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+
+        $callback = $this->findUpdatedOptionCallback();
+        $callback(\OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache::OPTION);
+
+        $this->assertNull(
+            $cache->readVerdict(),
+            'an imgproxy health flip (backend switch) must clear the cachebuster verdict',
+        );
+        $this->assertFalse($cache->readOk());
+    }
+
+    /**
+     * With no imgproxy endpoint configured, a health write is not a
+     * backend switch — imgproxy was never in the running. The stored
+     * verdict stays.
+     */
+    public function test_imgproxy_health_flip_with_no_endpoint_keeps_the_verdict(): void
+    {
+        update_option(OptionSettingsRepository::OPTION_ENDPOINT, '');
+        $cache = SocialJpegCapabilityCache::forCacheBuster();
+        $cache->write('ok');
+        $plugin = $this->buildPluginStub();
+        $this->invokePrivate('registerLocalDeliverySettingsSync', [$plugin]);
+
+        $this->findUpdatedOptionCallback()(\OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache::OPTION);
+
+        $this->assertSame('ok', $cache->readVerdict());
+    }
+
+    /**
+     * #166: the probe's random width is bounded to 64–1024. The draw
+     * only has to defeat the cache, not ask imgproxy to render a 4-MP
+     * variant on every capability recheck. Every generated URL's rs:
+     * width is asserted across repeated runs.
+     */
+    public function test_cachebuster_probe_width_stays_within_64_to_1024(): void
+    {
+        $this->configureImgproxyLocal();
+        $cache = SocialJpegCapabilityCache::forCacheBuster();
+
+        for ($i = 0; $i < 30; $i++) {
+            $http = new GetImageStub(status: 200, contentType: 'image/webp');
+            ServiceRegistrar::recheckCacheBusterCapability($http, $cache, $this->sourceProvider());
+
+            $this->assertSame(2, $http->getImageCalls, 'control + cb: requests per probe run');
+            foreach ($http->getImageUrls as $url) {
+                $this->assertMatchesRegularExpression('#/rs:fit:(\d+):0/#', $url);
+                preg_match('#/rs:fit:(\d+):0/#', $url, $m);
+                $width = (int) $m[1];
+                $this->assertGreaterThanOrEqual(64, $width);
+                $this->assertLessThanOrEqual(1024, $width, "probe width {$width} exceeds the 64–1024 draw range");
+            }
+        }
+    }
 }
