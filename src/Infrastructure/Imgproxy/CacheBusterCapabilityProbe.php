@@ -70,7 +70,10 @@ final class CacheBusterCapabilityProbe
         // newForbiddenOptionError — the same status as a missing source, so a
         // 404 alone proves nothing. Only "control fine, cb: refused" does.
         // The width is random so neither URL can be answered from a cache.
-        $width = 64 + random_int(0, 4000);
+        // 64–1024 (#166): a probe should not ask imgproxy to render a
+        // 4-MP variant on every capability recheck — the draw only has
+        // to defeat the cache, not stress the resizer.
+        $width = 64 + random_int(0, 960);
         $make = fn (string $version): string => (new ImgproxyBackend($this->delivery, $this->signing))->generate(
             new TransformRequest(
                 sourceUrl: $decision->fsPath ?? (string) $decision->url,

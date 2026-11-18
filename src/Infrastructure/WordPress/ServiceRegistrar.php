@@ -1552,7 +1552,16 @@ final class ServiceRegistrar
             (new CachePurger())->purge();
         };
 
-        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability, $recheckImgproxy, $recheckSocialJpeg, $purgeCaches): void {
+        // #166: a verdict must not outlive the backend it was probed
+        // on. Shared by the two backend-switch detectors below: an
+        // endpoint change AND a cached-imgproxy-health flip ('down'
+        // falls through to LocalBackend, recovery selects imgproxy
+        // again — neither touches OPTION_ENDPOINT).
+        $forgetCacheBuster = static function (): void {
+            SocialJpegCapabilityCache::forCacheBuster()->clear();
+        };
+
+        add_action('updated_option', static function (string $option) use ($reinstall, $recheckCapability, $recheckImgproxy, $recheckSocialJpeg, $purgeCaches, $forgetCacheBuster): void {
             if (in_array($option, OptionSettingsRepository::DELIVERY_OPTION_KEYS, true)) {
                 $reinstall();
             }
@@ -1563,10 +1572,18 @@ final class ServiceRegistrar
                 // An `ok` earned on the OLD endpoint says nothing about the
                 // new one: forget it (unknown reads as "no cb", fail-safe)
                 // before the re-probe decides.
-                SocialJpegCapabilityCache::forCacheBuster()->clear();
+                $forgetCacheBuster();
                 $recheckCapability();
                 $recheckImgproxy();
                 $recheckSocialJpeg();
+            }
+            // #166: a cached-health flip changes the effective backend
+            // without an endpoint change. Only relevant while an
+            // imgproxy endpoint is configured — otherwise imgproxy is
+            // not in the running and no switch happened.
+            if ($option === ImgproxyHealthCache::OPTION
+                && (string) get_option(OptionSettingsRepository::OPTION_ENDPOINT, '') !== '') {
+                $forgetCacheBuster();
             }
             // Purge page caches on delivery-relevant option changes
             // (the delivery keys + OPTION_REWRITE_CAPABILITY, whose flip
