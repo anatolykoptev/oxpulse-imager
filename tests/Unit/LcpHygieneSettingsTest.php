@@ -100,4 +100,21 @@ class LcpHygieneSettingsTest extends TestCase
         $this->assertCount(1, $on);
         $this->assertSame(LcpTagHygiene::BUFFER_PRIORITY, $on[0]['priority']);
     }
+
+    /**
+     * #161: LcpTagHygiene's note() calls (no_candidate, buffer_too_large,
+     * throwable) are no-ops without a logger — the registrar must hand
+     * it the plugin's diagnostic logger.
+     */
+    public function test_registrar_injects_the_diagnostic_logger(): void
+    {
+        $on = $this->registeredTemplateRedirect(true);
+        $this->assertCount(1, $on);
+
+        $hygiene = (new \ReflectionFunction($on[0]['callback']))->getClosureThis();
+        $this->assertInstanceOf(LcpTagHygiene::class, $hygiene);
+        $logger = (new \ReflectionProperty(LcpTagHygiene::class, 'logger'))->getValue($hygiene);
+
+        $this->assertSame(ServiceRegistrar::diagnosticLogger(), $logger, 'LCP hygiene must log through the shared diagnostic logger');
+    }
 }

@@ -93,6 +93,17 @@ final class LcpTagHygiene
         'd-none', 'hidden', 'is-hidden', 'hide', 'mfp-hide',
     ];
 
+    /**
+     * Tailwind (`md:block`) and Bootstrap (`d-md-block`) responsive SHOW
+     * variants. A generic hide token (`hidden`, `d-none`) on the same
+     * element then only hides below the breakpoint — a `hidden md:block`
+     * hero is visible on desktop, so it must stay a candidate (#161).
+     */
+    private const RESPONSIVE_SHOW_PATTERN = '#^(?:(?:sm|md|lg|xl|2xl):|d-(?:sm|md|lg|xl|xxl)-)(?:block|flex|grid|inline|inline-block|inline-flex|table)$#';
+
+    /** Generic hide tokens a responsive show variant on the same element overrides. */
+    private const GENERIC_HIDE_TOKENS = ['hidden', 'd-none'];
+
     /** Class prefixes that hide a container (Elementor: elementor-hidden-desktop, …). */
     private const HIDDEN_CLASS_PREFIXES = ['elementor-hidden-'];
 
@@ -309,7 +320,18 @@ final class LcpTagHygiene
         }
         $class = (string) ($this->attr($attrs, 'class')['value'] ?? '');
         if ($class !== '') {
-            foreach (preg_split('/\s+/', strtolower($class)) ?: [] as $token) {
+            $tokens = preg_split('/\s+/', strtolower($class)) ?: [];
+            $responsiveShow = false;
+            foreach ($tokens as $token) {
+                if (preg_match(self::RESPONSIVE_SHOW_PATTERN, $token) === 1) {
+                    $responsiveShow = true;
+                    break;
+                }
+            }
+            foreach ($tokens as $token) {
+                if ($responsiveShow && in_array($token, self::GENERIC_HIDE_TOKENS, true)) {
+                    continue;
+                }
                 if (in_array($token, $hiddenClasses, true)) {
                     return true;
                 }
@@ -595,6 +617,16 @@ final class LcpTagHygiene
         return substr_replace($html, $link, $headEnd + $shift, 0);
     }
 
+    /**
+     * Duplicate-preload check against the <link> tags in the document
+     * head. `src` is compared as a raw substring, so a preload that is
+     * spelled differently (entity-encoded, resized) is not recognised —
+     * and preloads that never appear in the HTML at all (a `Link:`
+     * response header, a 103 Early Hints response) are invisible to a
+     * pass that only sees the output buffer. In those cases the candidate
+     * gets a second preload; the browser deduplicates identical ones, so
+     * the cost is one redundant tag, not a double download (#161).
+     */
     private function hasImagePreload(string $head, string $src): bool
     {
         if (preg_match_all('#<link\b[^>]*>#i', $head, $m) === false) {
