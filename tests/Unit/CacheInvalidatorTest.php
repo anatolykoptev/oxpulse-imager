@@ -79,6 +79,72 @@ class CacheInvalidatorTest extends TestCase
         file_put_contents($dir . '/another-key.webp', 'webp-bytes-2');
     }
 
+    /**
+     * C1: a <hash> entry that is a SYMLINK to a directory outside the
+     * cache root must be unlinked as a link — the target's contents
+     * must survive. Without the is_link branch the iterator walks the
+     * target and deletes the outside files.
+     */
+    public function test_purge_all_unlinks_symlink_to_outside_dir_without_touching_target(): void
+    {
+        if (!function_exists('symlink')) {
+            $this->markTestSkipped('symlink() unavailable');
+        }
+
+        $outside = sys_get_temp_dir() . '/oxpulse-inv-out-' . uniqid();
+        mkdir($outside, 0755, true);
+        file_put_contents($outside . '/keep.txt', 'keep');
+
+        $hash = LocalBackend::sourceHash('https://example.com/wp-content/uploads/2024/01/photo.jpg');
+        $link = $this->cacheDir . '/' . $hash;
+        symlink($outside, $link);
+        $this->assertTrue(is_link($link));
+
+        $this->invalidator->purgeAll();
+
+        $this->assertFileExists(
+            $outside . '/keep.txt',
+            'a symlinked cache dir must never have its target contents deleted',
+        );
+        $this->assertFileDoesNotExist($link, 'the symlink itself must be removed');
+
+        unlink($outside . '/keep.txt');
+        rmdir($outside);
+    }
+
+    /**
+     * A symlink INSIDE a legitimate hash dir is a leaf: it is unlinked
+     * and its target's contents are untouched.
+     */
+    public function test_purge_all_unlinks_nested_symlink_without_touching_target(): void
+    {
+        if (!function_exists('symlink')) {
+            $this->markTestSkipped('symlink() unavailable');
+        }
+
+        $outside = sys_get_temp_dir() . '/oxpulse-inv-out-' . uniqid();
+        mkdir($outside, 0755, true);
+        file_put_contents($outside . '/keep.txt', 'keep');
+
+        $hash = LocalBackend::sourceHash('https://example.com/wp-content/uploads/2024/01/photo.jpg');
+        $dir = $this->cacheDir . '/' . $hash;
+        mkdir($dir, 0755, true);
+        file_put_contents($dir . '/real.webp', 'webp-bytes');
+        symlink($outside, $dir . '/evil-link');
+
+        $this->invalidator->purgeAll();
+
+        $this->assertFileExists(
+            $outside . '/keep.txt',
+            'a nested symlink must never have its target contents deleted',
+        );
+        $this->assertFileDoesNotExist($dir . '/evil-link');
+        $this->assertFileDoesNotExist($dir);
+
+        unlink($outside . '/keep.txt');
+        rmdir($outside);
+    }
+
     public function test_invalidates_attachment_by_metadata_update(): void
     {
         $originalUrl = 'https://example.com/wp-content/uploads/2024/01/photo.jpg';
@@ -218,5 +284,32 @@ class CacheInvalidatorTest extends TestCase
 
         $this->assertGreaterThanOrEqual(1, $deleted);
         $this->assertFileDoesNotExist($generationDir);
+    }
+
+    /**
+     * Defence in depth: rmrf() refuses a real (non-link) directory that
+     * resolves OUTSIDE the cache root. Reached through reflection because
+     * the public paths only ever pass hash dirs built under the root.
+     */
+    public function test_rmrf_refuses_a_real_directory_outside_the_cache_root(): void
+    {
+        $outside = sys_get_temp_dir() . '/oxpulse-inv-outside-' . uniqid();
+        mkdir($outside, 0755, true);
+        file_put_contents($outside . '/keep.txt', 'precious');
+
+        try {
+            $m = new \ReflectionMethod(CacheInvalidator::class, 'rmrf');
+            $m->invoke($this->invalidator, $outside);
+
+            $this->assertFileExists($outside . '/keep.txt', 'a directory outside the cache root must not be deleted');
+            $this->assertDirectoryExists($outside);
+        } finally {
+            if (is_file($outside . '/keep.txt')) {
+                unlink($outside . '/keep.txt');
+            }
+            if (is_dir($outside)) {
+                rmdir($outside);
+            }
+        }
     }
 }

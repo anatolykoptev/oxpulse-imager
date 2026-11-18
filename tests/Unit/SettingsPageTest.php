@@ -17,6 +17,7 @@ namespace OXPulse\Imager\Tests\Unit;
 
 use OXPulse\Imager\Infrastructure\Image\ImageTransformer;
 use OXPulse\Imager\Infrastructure\Imgproxy\ImgproxyHealthCache;
+use OXPulse\Imager\Infrastructure\License\FreemiusLicenseGate;
 use OXPulse\Imager\Infrastructure\Local\CapabilityTester;
 use OXPulse\Imager\Infrastructure\WordPress\OptionSettingsRepository;
 use OXPulse\Imager\Integration\WordPress\Admin\SettingsPage;
@@ -29,6 +30,11 @@ class SettingsPageTest extends TestCase
         $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_filters'] = [];
         $GLOBALS['__oxpulse_is_multisite'] = false;
+        // The license block exercises the raw isPro() path: drop the
+        // static grandfathered memo so a previous test's value cannot
+        // leak in (the hook-table reset simulates a new request, where
+        // the singleton would also be fresh).
+        FreemiusLicenseGate::resetMemo();
 
         // These tests exercise the detailed delivery-status readout
         // (a Pro feature since the Gate 5 admin-status gate replaces it

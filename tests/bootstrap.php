@@ -143,6 +143,10 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             // #91: record the autoload arg so the activation-hook
             // test can verify hot defaults are stored autoload=yes.
             $GLOBALS['__oxpulse_autoload'][$option] = (bool) $autoload;
+            // Mirror WP core: add_option fires add_option_{$option}
+            // after the insert (only the per-option hook, not the
+            // generic 'added_option').
+            do_action("add_option_{$option}", $option, $value);
             return true;
         }
     }
@@ -151,8 +155,12 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             // #91: count get_option invocations so the memoization
             // tests can assert the in-request cache bounds repeated
             // reads. Tests reset this counter via
-            // $GLOBALS['__oxpulse_get_option_calls'] = 0.
+            // $GLOBALS['__oxpulse_get_option_calls'] = 0. Per-key
+            // counts live in __oxpulse_get_option_calls_per_key so a
+            // test can isolate one option family's read volume.
             $GLOBALS['__oxpulse_get_option_calls'] = ($GLOBALS['__oxpulse_get_option_calls'] ?? 0) + 1;
+            $GLOBALS['__oxpulse_get_option_calls_per_key'][$option] =
+                ($GLOBALS['__oxpulse_get_option_calls_per_key'][$option] ?? 0) + 1;
             return array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? [])
                 ? $GLOBALS['__oxpulse_options'][$option]
                 : $default;
@@ -160,11 +168,23 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     }
     if (!function_exists('update_option')) {
         function update_option($option, $value, $autoload = null) {
+            // Mirror WP core: update_option on a MISSING option delegates
+            // to add_option (fires add_option_{$option}); on an existing
+            // row it fires update_option_{$option} after the write. Only
+            // the per-option hooks are fired — never the generic
+            // 'updated_option' (production listeners there do real work).
+            $existed = array_key_exists($option, $GLOBALS['__oxpulse_options'] ?? []);
+            $oldValue = $GLOBALS['__oxpulse_options'][$option] ?? false;
             $GLOBALS['__oxpulse_options'][$option] = $value;
             // When autoload is explicitly set (not null), mirror real
             // WP: update the autoload flag alongside the value.
             if ($autoload !== null) {
                 $GLOBALS['__oxpulse_autoload'][$option] = (bool) $autoload;
+            }
+            if ($existed) {
+                do_action("update_option_{$option}", $option, $oldValue, $value);
+            } else {
+                do_action("add_option_{$option}", $option, $value);
             }
             return true;
         }
@@ -172,6 +192,9 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('delete_option')) {
         function delete_option($option) {
             unset($GLOBALS['__oxpulse_options'][$option]);
+            // Mirror WP core: delete_option fires delete_option_{$option}
+            // (only the per-option hook, not the generic 'deleted_option').
+            do_action("delete_option_{$option}", $option);
             return true;
         }
     }
@@ -265,7 +288,9 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
         function wp_next_scheduled($hook, $args = []) {
             $events = $GLOBALS['__oxpulse_scheduled_events'] ?? [];
             foreach ($events as $event) {
-                if ($event['hook'] === $hook) {
+                // Args are compared only when the caller passes some
+                // (legacy callers match by hook alone).
+                if ($event['hook'] === $hook && ($args === [] || $event['args'] === $args)) {
                     return $event['timestamp'];
                 }
             }
@@ -278,7 +303,7 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             $remaining = [];
             $count = 0;
             foreach ($events as $event) {
-                if ($event['hook'] === $hook) {
+                if ($event['hook'] === $hook && ($args === [] || $event['args'] === $args)) {
                     $count++;
                     continue;
                 }
@@ -318,6 +343,12 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
     if (!function_exists('wp_cache_set')) {
         function wp_cache_set($key, $value, $group = '', $expire = 0) {
             $GLOBALS['__oxpulse_obj_cache'][$group][$key] = $value;
+            return true;
+        }
+    }
+    if (!function_exists('wp_cache_delete')) {
+        function wp_cache_delete($key, $group = '') {
+            unset($GLOBALS['__oxpulse_obj_cache'][$group][$key]);
             return true;
         }
     }
@@ -553,9 +584,31 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return !empty($GLOBALS['__oxpulse_doing_cron']);
         }
     }
+    // Minimal WP_Query: a normal request has the main query in
+    // $GLOBALS['wp_query']. Tests unset it to simulate pre-query hooks.
+    if (!class_exists('WP_Query')) {
+        class WP_Query {
+        }
+    }
+    if (!isset($GLOBALS['wp_query'])) {
+        $GLOBALS['wp_query'] = new WP_Query();
+    }
+    // Core's is_feed()/get_query_var() dereference $wp_query unchecked
+    // (fatal on null / _doing_it_wrong before the query ran) — mimic that.
     if (!function_exists('is_feed')) {
         function is_feed() {
+            if (!($GLOBALS['wp_query'] ?? null) instanceof WP_Query) {
+                throw new \Error('is_feed() called before the main query exists');
+            }
             return !empty($GLOBALS['__oxpulse_is_feed']);
+        }
+    }
+    if (!function_exists('get_query_var')) {
+        function get_query_var($var, $default = '') {
+            if (!($GLOBALS['wp_query'] ?? null) instanceof WP_Query) {
+                throw new \Error('get_query_var() called on null $wp_query');
+            }
+            return $GLOBALS['__oxpulse_query_vars'][$var] ?? $default;
         }
     }
     if (!function_exists('is_embed')) {
@@ -979,6 +1032,15 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             }
 
             public function query($sql) {
+                // Compare-and-delete: returns rows affected like real $wpdb.
+                if (preg_match("/DELETE FROM \S+ WHERE option_name = '([^']*)' AND option_value = '(.*)'\s*$/s", (string) $sql, $m)) {
+                    $opts = $GLOBALS['__oxpulse_options'] ?? [];
+                    if (array_key_exists($m[1], $opts) && (string) $opts[$m[1]] === $m[2]) {
+                        unset($GLOBALS['__oxpulse_options'][$m[1]]);
+                        return 1;
+                    }
+                    return 0;
+                }
                 if (preg_match("/option_name LIKE '([^']+)'/i", (string) $sql, $m)) {
                     $like = $m[1];
                     $regex = '';

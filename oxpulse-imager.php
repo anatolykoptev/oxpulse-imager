@@ -248,6 +248,13 @@ function oxpulse_imager_deactivate(): void {
         // #93: clear the recurring LocalBackend cache LRU eviction cron.
         wp_clear_scheduled_hook('oxpulse_cache_cleanup');
     }
+
+    // Drop leftover oxpulse_prewarm_lock_* mutex rows — a lock a killed
+    // worker never released must not wedge the next activation's jobs.
+    // Ephemeral state, not config — always cleaned, never gated.
+    if (class_exists(\OXPulse\Imager\Infrastructure\WordPress\Uninstaller::class)) {
+        \OXPulse\Imager\Infrastructure\WordPress\Uninstaller::deleteEphemeralOptionPrefixes();
+    }
 }
 
 register_activation_hook(__FILE__, 'oxpulse_imager_activate');

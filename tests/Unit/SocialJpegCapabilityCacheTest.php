@@ -19,6 +19,13 @@ declare(strict_types=1);
 
 namespace OXPulse\Imager\Tests\Unit;
 
+use OXPulse\Imager\Application\Delivery\ContentVersionResolver;
+use OXPulse\Imager\Application\Delivery\DeliveryBackend;
+use OXPulse\Imager\Application\Delivery\UrlRewriter;
+use OXPulse\Imager\Domain\Config\DeliveryConfig;
+use OXPulse\Imager\Domain\Config\SigningConfig;
+use OXPulse\Imager\Domain\Source\SourcePolicy;
+use OXPulse\Imager\Domain\Transform\TransformRequest;
 use OXPulse\Imager\Infrastructure\Imgproxy\SocialJpegCapabilityCache;
 use PHPUnit\Framework\TestCase;
 
@@ -31,17 +38,84 @@ class SocialJpegCapabilityCacheTest extends TestCase
     {
         $GLOBALS['__oxpulse_options'] = [];
         $GLOBALS['__oxpulse_transients'] = [];
+        SocialJpegCapabilityCache::resetMemo();
     }
 
     protected function tearDown(): void
     {
         unset($GLOBALS['__oxpulse_options']);
         unset($GLOBALS['__oxpulse_transients']);
+        SocialJpegCapabilityCache::resetMemo();
     }
 
     private function cache(): SocialJpegCapabilityCache
     {
         return new SocialJpegCapabilityCache(fn() => $this->now);
+    }
+
+    /**
+     * Several instances read one option per process; a probe write()
+     * through B must reset the verdict A already memoised as false.
+     */
+    public function test_write_through_another_instance_invalidates_memo(): void
+    {
+        $a = $this->cache();
+        $b = $this->cache();
+        $this->assertFalse($a->readOk(), 'A memoises false');
+
+        $b->write('ok');
+
+        $this->assertTrue($a->readOk(), "B's write must reset A's memo via the option hooks");
+    }
+
+    /**
+     * An option change that bypasses write() (another code path, WP-CLI,
+     * a settings reset) must still drop the memo: the update/add/delete
+     * option hooks are the only thing that can.
+     */
+    public function test_option_change_outside_write_invalidates_memo_via_hooks(): void
+    {
+        $a = $this->cache();
+        $this->assertFalse($a->readOk(), 'A memoises false');
+
+        update_option(SocialJpegCapabilityCache::OPTION, 'ok', false);
+        update_option(SocialJpegCapabilityCache::OPTION_CHECKED_AT, (string) $this->now, false);
+
+        $this->assertTrue($a->readOk(), 'the option hooks must reset the memo');
+
+        delete_option(SocialJpegCapabilityCache::OPTION);
+        $this->assertFalse($a->readOk(), 'delete_option hook must reset the memo');
+    }
+
+    public function test_clear_through_another_instance_invalidates_memo(): void
+    {
+        $a = $this->cache();
+        $b = $this->cache();
+        $b->write('ok');
+        $this->assertTrue($a->readOk(), 'A memoises true');
+
+        $b->clear();
+
+        $this->assertFalse($a->readOk(), "B's clear must reset A's memo");
+    }
+
+    /**
+     * write()/clear() reset their own memo directly too — not only via
+     * the option hooks (they may not be registered, e.g. a cleared hook
+     * table), so drop the hook table to prove the direct reset binds.
+     */
+    public function test_write_and_clear_reset_own_memo_without_hooks(): void
+    {
+        $cache = $this->cache();
+        $this->assertFalse($cache->readOk());
+        $GLOBALS['__oxpulse_actions'] = [];
+
+        $cache->write('ok');
+        $this->assertTrue($cache->readOk(), 'write() must reset the memo itself');
+
+        $GLOBALS['__oxpulse_actions'] = [];
+        $cache->clear();
+        $this->assertFalse($cache->readOk(), 'clear() must reset the memo itself');
     }
 
     public function test_read_ok_defaults_to_false_when_option_unset(): void
@@ -202,6 +276,69 @@ class SocialJpegCapabilityCacheTest extends TestCase
         $this->assertFalse(
             $cache->readOk(),
             'A future checked_at stamp must NOT be trusted (conservative — degrade to webp)',
+        );
+    }
+
+    /**
+     * A1: the readOk() verdict is memoised per instance. One rewriter
+     * instance rewriting 20 URLs must not re-read the non-autoloaded
+     * cachebuster options — at most 2 reads of that option pair total.
+     */
+    public function test_read_ok_memoized_across_rewriter_calls(): void
+    {
+        update_option(SocialJpegCapabilityCache::CACHEBUSTER_OPTION, 'ok');
+
+        $capability = SocialJpegCapabilityCache::forCacheBuster();
+        $versions = new class implements ContentVersionResolver {
+            public function versionFor(string $sourceUrl): string
+            {
+                return 'deadbeef';
+            }
+        };
+        $backend = new class implements DeliveryBackend {
+            public function available(): bool
+            {
+                return true;
+            }
+
+            public function generate(TransformRequest $request, ?string $filename = null): string
+            {
+                return 'https://imgproxy.example.com/sig/' . rawurlencode($request->sourceUrl);
+            }
+
+            public function socialSafeUrl(TransformRequest $request, ?string $filename = null): ?string
+            {
+                return null;
+            }
+        };
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.example.com',
+            allowedSources: ['https://example.com/wp-content/uploads/'],
+        );
+        $rewriter = new UrlRewriter(
+            new SourcePolicy(),
+            $delivery,
+            SigningConfig::fromHex('736563726574', '68656C6C6F'),
+            null,
+            $backend,
+            $versions,
+            $capability,
+        );
+
+        $GLOBALS['__oxpulse_get_option_calls_per_key'] = [];
+        $src = 'https://example.com/wp-content/uploads/photo.jpg';
+        for ($i = 0; $i < 20; $i++) {
+            $rewriter->rewrite($src, 300, 0, 'content');
+        }
+
+        $cachebusterReads =
+            ($GLOBALS['__oxpulse_get_option_calls_per_key'][SocialJpegCapabilityCache::CACHEBUSTER_OPTION] ?? 0)
+            + ($GLOBALS['__oxpulse_get_option_calls_per_key'][SocialJpegCapabilityCache::CACHEBUSTER_OPTION_CHECKED_AT] ?? 0);
+        $this->assertLessThanOrEqual(
+            2,
+            $cachebusterReads,
+            'readOk() must be memoised per instance — 20 rewrites must not re-read the cachebuster options',
         );
     }
 }

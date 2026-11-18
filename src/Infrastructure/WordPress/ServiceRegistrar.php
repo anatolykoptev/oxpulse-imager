@@ -649,16 +649,26 @@ final class ServiceRegistrar
      */
     private static function registerAsyncPrewarmCron(Plugin $plugin): void
     {
+        // Register a LIGHTWEIGHT callback at bootstrap. The service stack
+        // (config reads, endpoint resolution, rewriter + backend
+        // construction) is built lazily inside the callback — only when
+        // the cron hook actually fires — instead of on every request.
+        add_action(AsyncPrewarmService::CRON_HOOK, static function (string $jobId): void {
+            self::processAsyncPrewarmBatch($jobId);
+        });
+    }
+
+    /**
+     * Build the prewarm service stack and process one batch. Called by
+     * the cron callback only when the hook fires — the per-request
+     * bootstrap path never reaches here.
+     */
+    private static function processAsyncPrewarmBatch(string $jobId): void
+    {
         // Build the same service stack the REST controller uses.
         $repository = new OptionSettingsRepository();
         $delivery = $repository->loadDeliveryConfig();
         $signing = $repository->loadSigningConfig();
-
-        if (!$delivery->enabled || $delivery->endpoint === '' || $signing === null) {
-            // Still register the handler — jobs will be created when
-            // config is set, and the handler checks job state at
-            // processing time.
-        }
 
         // Resolve relative endpoint to absolute (same as frontend delivery).
         $delivery = $delivery->withEndpoint(
@@ -672,7 +682,7 @@ final class ServiceRegistrar
         $rewriter = UrlRewriterFactory::fromConfig($delivery, $signing);
         $syncService = new PrewarmService($rewriter, new \OXPulse\Imager\Infrastructure\Http\WordPressPrewarmClient());
         $asyncService = new AsyncPrewarmService($syncService, new PrewarmJobStore());
-        $asyncService->registerCronHandler();
+        $asyncService->processNextBatch($jobId);
     }
 
     /**

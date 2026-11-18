@@ -36,6 +36,7 @@ final class UrlShapeTest extends TestCase
     protected function tearDown(): void
     {
         unset($GLOBALS['__oxpulse_post_meta'], $GLOBALS['__oxpulse_url_to_id'], $GLOBALS['__oxpulse_url_to_id_calls'], $GLOBALS['__oxpulse_attachment_meta'], $GLOBALS['__oxpulse_obj_cache'], $GLOBALS['__oxpulse_options']);
+        SocialJpegCapabilityCache::resetMemo();
         parent::tearDown();
     }
 

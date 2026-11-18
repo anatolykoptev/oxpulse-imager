@@ -141,6 +141,11 @@ final class UrlRewriter
             return RewriteResult::preserved($sourceUrl, 'delivery_suspended');
         }
 
+        if (self::isFeedOrSitemap()) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'feed_or_sitemap'));
+            return RewriteResult::preserved($sourceUrl, 'feed_or_sitemap');
+        }
+
         if ($this->isAlreadyRewritten($sourceUrl)) {
             $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'already_rewritten'));
             return RewriteResult::preserved($sourceUrl, 'already_rewritten');
@@ -228,6 +233,11 @@ final class UrlRewriter
         if (DeliverySuspension::isSuspended()) {
             $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'delivery_suspended'));
             return RewriteResult::preserved($sourceUrl, 'delivery_suspended');
+        }
+
+        if (self::isFeedOrSitemap()) {
+            $this->log(LogEntry::preserved($context, $sourceUrl, $width, 'feed_or_sitemap'));
+            return RewriteResult::preserved($sourceUrl, 'feed_or_sitemap');
         }
 
         // #43 Phase 3 — idempotency guard (no double-rewrite / recursion).
@@ -372,6 +382,10 @@ final class UrlRewriter
             return RewriteResult::preserved($sourceUrl, 'delivery_suspended');
         }
 
+        if (self::isFeedOrSitemap()) {
+            return RewriteResult::preserved($sourceUrl, 'feed_or_sitemap');
+        }
+
         if (!$this->delivery->lqipEnabled) {
             return RewriteResult::preserved($sourceUrl, 'lqip_disabled');
         }
@@ -447,6 +461,10 @@ final class UrlRewriter
     {
         if (DeliverySuspension::isSuspended()) {
             return RewriteResult::preserved($sourceUrl, 'delivery_suspended');
+        }
+
+        if (self::isFeedOrSitemap()) {
+            return RewriteResult::preserved($sourceUrl, 'feed_or_sitemap');
         }
 
         if ($this->isAlreadyRewritten($sourceUrl)) {
@@ -563,6 +581,42 @@ final class UrlRewriter
     {
         return str_contains($sourceUrl, '/wp-content/cache/oxpulse/')
             || str_contains($sourceUrl, '/wp-content/oxpulse-img.php');
+    }
+
+    /**
+     * Feeds and core XML sitemaps are consumed OFF-SITE — feed readers
+     * and search engines persist the URLs they see, so a signed proxy
+     * URL baked into a feed or sitemap breaks after deactivation or
+     * key rotation. Those contexts must get the original URL. Checked
+     * per call (conditionals are reliable by the time content filters
+     * run, not at plugins_loaded).
+     */
+    private static function isFeedOrSitemap(): bool
+    {
+        // Prewarm runs from cron callbacks that can fire inside a feed or
+        // sitemap request (ALTERNATE_WP_CRON); it must still rewrite.
+        if (function_exists('wp_doing_cron') && wp_doing_cron()) {
+            return false;
+        }
+        // is_feed()/get_query_var() dereference $wp_query unchecked: a
+        // rewrite triggered before the main query exists (plugins_loaded,
+        // early REST, another plugin calling wp_get_attachment_url) would
+        // fatal or flood _doing_it_wrong. No query yet = not a feed.
+        if (!isset($GLOBALS['wp_query']) || !$GLOBALS['wp_query'] instanceof \WP_Query) {
+            return false;
+        }
+        if (function_exists('is_feed') && is_feed()) {
+            return true;
+        }
+        // Core sitemap requests (wp-sitemap.xml) expose the sitemap
+        // name via the 'sitemap' query var while WP_Sitemaps renders.
+        if (function_exists('get_query_var')) {
+            $sitemap = get_query_var('sitemap');
+            if (is_string($sitemap) && $sitemap !== '') {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

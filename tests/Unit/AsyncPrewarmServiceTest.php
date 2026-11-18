@@ -29,12 +29,14 @@ class AsyncPrewarmServiceTest extends TestCase
 {
     private PrewarmJobStore $store;
     private AsyncPrewarmService $asyncService;
+    private \OXPulse\Imager\Application\Prewarm\PrewarmHttpClient $httpClient;
 
     protected function setUp(): void
     {
         parent::setUp();
         $GLOBALS['__oxpulse_transients'] = [];
         $GLOBALS['__oxpulse_scheduled_events'] = [];
+        $GLOBALS['__oxpulse_options'] = [];
 
         $delivery = new DeliveryConfig(
             enabled: true,
@@ -58,10 +60,15 @@ class AsyncPrewarmServiceTest extends TestCase
 
         $rewriter = new UrlRewriter(new SourcePolicy(), $delivery, $signing);
 
-        // Use a mock HTTP client that returns 200 for everything.
-        $httpClient = new class implements \OXPulse\Imager\Application\Prewarm\PrewarmHttpClient {
+        // Use a mock HTTP client that returns 200 for everything and
+        // counts headBatch calls so lock tests can prove the warm path
+        // did or did not run.
+        $this->httpClient = new class implements \OXPulse\Imager\Application\Prewarm\PrewarmHttpClient {
+            public int $calls = 0;
+
             public function headBatch(array $imgproxyUrls, int $timeoutSeconds): array
             {
+                $this->calls++;
                 return array_map(
                     fn () => ['status' => 200, 'error' => null, 'elapsed_ms' => 50],
                     $imgproxyUrls
@@ -69,7 +76,7 @@ class AsyncPrewarmServiceTest extends TestCase
             }
         };
 
-        $syncService = new PrewarmService($rewriter, $httpClient);
+        $syncService = new PrewarmService($rewriter, $this->httpClient);
         $this->store = new PrewarmJobStore();
         $this->asyncService = new AsyncPrewarmService($syncService, $this->store);
     }
@@ -77,6 +84,7 @@ class AsyncPrewarmServiceTest extends TestCase
     protected function tearDown(): void
     {
         unset($GLOBALS['__oxpulse_transients']);
+        unset($GLOBALS['__oxpulse_options']);
         unset($GLOBALS['__oxpulse_scheduled_events']);
         parent::tearDown();
     }
@@ -214,6 +222,255 @@ class AsyncPrewarmServiceTest extends TestCase
     public function test_getJob_returns_null_for_nonexistent(): void
     {
         $this->assertNull($this->asyncService->getJob('nonexistent'));
+    }
+
+    // ─── Per-job processing lock (concurrent cron runs) ──────────────
+
+    /**
+     * D1: a held, unexpired lock means a concurrent worker returns
+     * without touching the job — the warm path never runs.
+     */
+    public function test_processNextBatch_returns_when_lock_held(): void
+    {
+        $jobId = $this->asyncService->createJob(
+            ['https://example.com/uploads/photo.jpg'],
+            [0]
+        );
+
+        // Simulate a live worker holding the lock.
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId;
+        add_option($lockOption, time() + AsyncPrewarmService::LOCK_STALE_SECONDS, '', false);
+
+        $this->asyncService->processNextBatch($jobId);
+
+        $job = $this->store->get($jobId);
+        $this->assertSame('pending', $job['status'], 'a held lock must leave the job untouched');
+        $this->assertSame(0, $this->httpClient->calls, 'the warm service must never run under a held lock');
+        $this->assertNotFalse(
+            get_option($lockOption),
+            'the held lock belongs to another worker — it must not be released by us',
+        );
+    }
+
+    /**
+     * D2: a stale lock (expired) belongs to a dead worker — it is
+     * reclaimed and the batch runs.
+     */
+    public function test_processNextBatch_reclaims_stale_lock(): void
+    {
+        $jobId = $this->asyncService->createJob(
+            ['https://example.com/uploads/photo.jpg'],
+            [0]
+        );
+
+        // A lock that expired 10s ago — its owner died mid-batch.
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId;
+        add_option($lockOption, time() - 10, '', false);
+
+        $this->asyncService->processNextBatch($jobId);
+
+        $job = $this->store->get($jobId);
+        $this->assertSame('complete', $job['status'], 'a stale lock must be reclaimed so the batch runs');
+        $this->assertSame(1, $this->httpClient->calls);
+        $this->assertFalse(
+            get_option($lockOption),
+            'the lock must be released once the batch finishes',
+        );
+    }
+
+    /**
+     * D3: the lock is released even when the warm service throws —
+     * a failed batch must not leave the job permanently locked.
+     */
+    public function test_processNextBatch_releases_lock_on_exception(): void
+    {
+        $jobId = $this->asyncService->createJob(
+            ['https://example.com/uploads/photo.jpg'],
+            [0]
+        );
+
+        $throwingClient = new class implements \OXPulse\Imager\Application\Prewarm\PrewarmHttpClient {
+            public function headBatch(array $imgproxyUrls, int $timeoutSeconds): array
+            {
+                throw new \RuntimeException('imgproxy unreachable');
+            }
+        };
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.example.com',
+            allowedSources: ['https://example.com/uploads/'],
+            outputFormat: 'auto',
+            defaultQuality: 80,
+            devHttpOverride: false,
+            lqipEnabled: false,
+            lqipBlur: 1,
+            dprEnabled: false,
+            dprVariants: [1, 2, 3],
+            watermark: null,
+            formatQuality: [],
+        );
+        $signing = new SigningConfig(
+            hex2bin('a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'),
+            hex2bin('f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3')
+        );
+        $service = new AsyncPrewarmService(
+            new PrewarmService(new UrlRewriter(new SourcePolicy(), $delivery, $signing), $throwingClient),
+            $this->store,
+        );
+
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId;
+        try {
+            $service->processNextBatch($jobId);
+            $this->fail('the warm-service exception must propagate');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('imgproxy unreachable', $e->getMessage());
+        }
+
+        $this->assertFalse(
+            get_option($lockOption),
+            'the lock must be released in finally even when warm() throws',
+        );
+    }
+
+    /**
+     * Build a service whose HTTP client runs $onWarm mid-batch, to
+     * simulate another worker acting while this one holds the lock.
+     */
+    private function serviceWithWarmHook(callable $onWarm): AsyncPrewarmService
+    {
+        $client = new class ($onWarm) implements \OXPulse\Imager\Application\Prewarm\PrewarmHttpClient {
+            public function __construct(private $onWarm)
+            {
+            }
+
+            public function headBatch(array $imgproxyUrls, int $timeoutSeconds): array
+            {
+                ($this->onWarm)();
+                return array_map(
+                    fn () => ['status' => 200, 'error' => null, 'elapsed_ms' => 5],
+                    $imgproxyUrls
+                );
+            }
+        };
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.example.com',
+            allowedSources: ['https://example.com/uploads/'],
+        );
+        $signing = new SigningConfig(
+            hex2bin('a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'),
+            hex2bin('f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3')
+        );
+        return new AsyncPrewarmService(
+            new PrewarmService(new UrlRewriter(new SourcePolicy(), $delivery, $signing), $client),
+            $this->store,
+        );
+    }
+
+    /**
+     * An overlong holder (its lock was reclaimed by another worker
+     * mid-batch) must not delete the new holder's lock when it finishes.
+     */
+    public function test_release_does_not_delete_a_lock_taken_over_by_another_token(): void
+    {
+        $jobId = $this->asyncService->createJob(['https://example.com/uploads/photo.jpg'], [0]);
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId;
+        $theirs = (time() + AsyncPrewarmService::LOCK_STALE_SECONDS) . '|their-token';
+
+        $service = $this->serviceWithWarmHook(static function () use ($lockOption, $theirs): void {
+            // A reclaimer replaced our (apparently stale) lock mid-batch.
+            update_option($lockOption, $theirs, false);
+        });
+        $service->processNextBatch($jobId);
+
+        $this->assertSame(
+            $theirs,
+            get_option($lockOption),
+            "release must delete only its own token, never another holder's lock",
+        );
+    }
+
+    public function test_stale_reclaim_writes_a_fresh_unique_token(): void
+    {
+        $jobId = $this->asyncService->createJob(['https://example.com/uploads/photo.jpg'], [0]);
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId;
+        add_option($lockOption, (time() - 10) . '|dead-worker', '', false);
+
+        $seen = null;
+        $service = $this->serviceWithWarmHook(static function () use ($lockOption, &$seen): void {
+            $seen = get_option($lockOption);
+        });
+        $service->processNextBatch($jobId);
+
+        $this->assertIsString($seen);
+        $this->assertMatchesRegularExpression('/^\d+\|[0-9a-f]{16}$/', $seen, 'lock value is <expiry>|<token>');
+        $this->assertStringNotContainsString('dead-worker', $seen, 'the stale holder value must be replaced');
+    }
+
+    /**
+     * The stale-reclaim delete is conditional on the observed value: a
+     * value that changed meanwhile (someone else already reclaimed) is
+     * left alone, and the caller must back off.
+     */
+    public function test_compare_delete_removes_only_an_unchanged_value(): void
+    {
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . 'job-x';
+        $m = new \ReflectionMethod(AsyncPrewarmService::class, 'deleteLockIfValue');
+
+        add_option($lockOption, '100|new-holder', '', false);
+        $this->assertFalse(
+            $m->invoke($this->asyncService, $lockOption, '1|stale-observed'),
+            'a changed value must not be deleted',
+        );
+        $this->assertSame('100|new-holder', get_option($lockOption));
+
+        $this->assertTrue($m->invoke($this->asyncService, $lockOption, '100|new-holder'));
+        $this->assertFalse(get_option($lockOption), 'an unchanged value is deleted');
+    }
+
+    /**
+     * A fatal/timeout inside warm() must not strand the job: the
+     * follow-up is already scheduled, the lock is released, and the job
+     * is still resumable by the next fire.
+     */
+    public function test_warm_failure_leaves_a_follow_up_scheduled_and_job_resumable(): void
+    {
+        $jobId = $this->asyncService->createJob(['https://example.com/uploads/photo.jpg'], [0]);
+        $GLOBALS['__oxpulse_scheduled_events'] = [];
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId;
+
+        $failing = $this->serviceWithWarmHook(static function (): void {
+            throw new \RuntimeException('boom');
+        });
+        try {
+            $failing->processNextBatch($jobId);
+            $this->fail('warm() exception must propagate');
+        } catch (\RuntimeException) {
+            // expected
+        }
+
+        $this->assertNotFalse(
+            wp_next_scheduled(AsyncPrewarmService::CRON_HOOK, [$jobId]),
+            'a follow-up must be scheduled BEFORE warm() so a crash cannot strand the job',
+        );
+        $this->assertCount(1, $GLOBALS['__oxpulse_scheduled_events']);
+        $this->assertFalse(get_option($lockOption), 'the lock is released');
+        $this->assertSame('running', $this->store->get($jobId)['status']);
+
+        // The follow-up fire (healthy this time) completes the job.
+        $this->asyncService->processNextBatch($jobId);
+        $this->assertSame('complete', $this->store->get($jobId)['status']);
+    }
+
+    public function test_success_does_not_leave_duplicate_follow_up_events(): void
+    {
+        $urls = array_map(fn ($i) => "https://example.com/uploads/p{$i}.jpg", range(1, 60));
+        $jobId = $this->asyncService->createJob($urls, [0]);
+        $GLOBALS['__oxpulse_scheduled_events'] = [];
+
+        $this->asyncService->processNextBatch($jobId);
+
+        $this->assertCount(1, $GLOBALS['__oxpulse_scheduled_events'], 'exactly one follow-up for the next batch');
     }
 
     public function test_job_id_is_uuid_format(): void

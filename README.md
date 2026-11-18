@@ -25,6 +25,10 @@ The default output format is `auto`, which uses **Accept header content negotiat
 
 The plugin adds a `fn:` (filename) option to every imgproxy URL so that "Save As" in browsers produces a meaningful filename. In `auto` mode, the original filename is preserved; in explicit format mode (`avif`/`webp`), the extension is replaced to match.
 
+### Feeds, sitemaps, and social images
+
+Feeds (`is_feed()`) and core XML sitemaps keep the original image URLs — off-site consumers persist them, and a signed proxy URL would break after deactivation or key rotation. The same applies to social-card images: only RankMath's `og:image`/`twitter:image` tags are restored to direct URLs; other SEO plugins' social images keep the proxied URLs.
+
 ## Requirements
 
 - PHP 8.3+
@@ -211,6 +215,10 @@ rejects unknown keys and the format allowlist rejects non-webp
 extensions with a 400 before any disk write. nginx hosts should
 additionally deny PHP execution inside the cache location block as
 belt-and-braces.
+
+Purging the local cache never follows links: a per-hash cache directory
+that you deliberately replaced with a symlink is unlinked on purge, and
+its target is left on disk untouched.
 
 ## License
 

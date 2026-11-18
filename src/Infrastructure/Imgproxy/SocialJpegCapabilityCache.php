@@ -49,6 +49,19 @@ final class SocialJpegCapabilityCache
     /** @var callable|null Clock injector for tests: returns int (unix timestamp). */
     private $now;
 
+    /**
+     * Per-process memo of the readOk() verdict, keyed by option name. The
+     * verdict lives in NON-autoloaded options, so a fresh read costs 1-2
+     * SELECTs — on the render path readOk() runs once per rewritten URL
+     * (5-10+ per page). Static because several instances (one per
+     * registrar/probe/rewriter) read the same option: a write through one
+     * must reset all of them. Not blog-aware under switch_to_blog() and
+     * not cross-process: another request's write is seen on its next read.
+     *
+     * @var array<string, bool>
+     */
+    private static array $readOkMemo = [];
+
     public function __construct(
         ?callable $now = null,
         private string $option = self::OPTION,
@@ -56,6 +69,30 @@ final class SocialJpegCapabilityCache
         private bool $expires = true
     ) {
         $this->now = $now;
+
+        // Reset the memo on ANY write to the verdict options, from any
+        // instance. has_action() is the once-guard (and re-heals after a
+        // harness resets the hook table while the static memo persists).
+        foreach ([$this->option, $this->checkedAtOption] as $opt) {
+            foreach (['add_option_', 'update_option_', 'delete_option_'] as $prefix) {
+                $hook = $prefix . $opt;
+                if (function_exists('add_action') && has_action($hook, [self::class, 'resetMemo']) === false) {
+                    add_action($hook, [self::class, 'resetMemo'], 10, 3);
+                }
+            }
+        }
+    }
+
+    /**
+     * Drop every memoised verdict. Registered on the add/update/delete
+     * option hooks (they pass differing args, ignored); also the seam for
+     * isolating the static between tests.
+     *
+     * @param mixed ...$ignored Hook arguments.
+     */
+    public static function resetMemo(...$ignored): void
+    {
+        self::$readOkMemo = [];
     }
 
     /**
@@ -88,17 +125,21 @@ final class SocialJpegCapabilityCache
      */
     public function readOk(): bool
     {
+        if (isset(self::$readOkMemo[$this->option])) {
+            return self::$readOkMemo[$this->option];
+        }
+
         $value = get_option($this->option, null);
         if ($value !== 'ok') {
-            return false;
+            return self::$readOkMemo[$this->option] = false;
         }
         if (!$this->expires) {
-            return true;
+            return self::$readOkMemo[$this->option] = true;
         }
 
         $checkedAt = get_option($this->checkedAtOption, null);
         if (!is_string($checkedAt) || !ctype_digit($checkedAt)) {
-            return false;
+            return self::$readOkMemo[$this->option] = false;
         }
 
         $now = $this->now !== null ? (int) ($this->now)() : time();
@@ -107,7 +148,7 @@ final class SocialJpegCapabilityCache
         // or an over-PHP_INT_MAX digit string → negative elapsed) must NOT
         // be trusted as fresh. Require now >= checked_at AS WELL as the
         // upper-bound TTL check. Future stamp → false → degrade to webp.
-        return $now >= $checkedAtInt && ($now - $checkedAtInt) <= self::TTL;
+        return self::$readOkMemo[$this->option] = $now >= $checkedAtInt && ($now - $checkedAtInt) <= self::TTL;
     }
 
     /**
@@ -126,6 +167,7 @@ final class SocialJpegCapabilityCache
         $now = $this->now !== null ? (int) ($this->now)() : time();
         update_option($this->option, $verdict, false);
         update_option($this->checkedAtOption, (string) $now, false);
+        unset(self::$readOkMemo[$this->option]);
     }
 
     /**
@@ -136,5 +178,6 @@ final class SocialJpegCapabilityCache
     {
         delete_option($this->option);
         delete_option($this->checkedAtOption);
+        unset(self::$readOkMemo[$this->option]);
     }
 }
