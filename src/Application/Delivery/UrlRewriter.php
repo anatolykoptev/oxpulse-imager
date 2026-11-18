@@ -593,6 +593,11 @@ final class UrlRewriter
      */
     private static function isFeedOrSitemap(): bool
     {
+        // Prewarm runs from cron callbacks that can fire inside a feed or
+        // sitemap request (ALTERNATE_WP_CRON); it must still rewrite.
+        if (function_exists('wp_doing_cron') && wp_doing_cron()) {
+            return false;
+        }
         // is_feed()/get_query_var() dereference $wp_query unchecked: a
         // rewrite triggered before the main query exists (plugins_loaded,
         // early REST, another plugin calling wp_get_attachment_url) would

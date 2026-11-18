@@ -110,6 +110,22 @@ class FeedSitemapRewriteTest extends TestCase
         $this->assertSame($baseline->reason, $result->reason);
     }
 
+    /**
+     * Prewarm runs from cron; with ALTERNATE_WP_CRON a callback can fire
+     * inside a feed request. The gate must not preserve every URL then.
+     */
+    public function test_cron_context_rewrites_even_when_is_feed(): void
+    {
+        $GLOBALS['__oxpulse_is_feed'] = true;
+        $GLOBALS['__oxpulse_doing_cron'] = true;
+        $url = 'https://example.com/wp-content/uploads/photo.jpg';
+
+        $result = $this->rewriter->rewrite($url, 800, 600);
+
+        $this->assertTrue($result->rewritten, 'cron (prewarm) must rewrite even inside a feed request');
+        $this->assertNotSame('feed_or_sitemap', $result->reason);
+    }
+
     private function attachmentRewrite(string $url): string
     {
         return (new AttachmentUrlRewriter($this->rewriter))->rewrite($url, 1);
