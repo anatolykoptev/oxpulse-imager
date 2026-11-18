@@ -332,6 +332,102 @@ class AsyncPrewarmServiceTest extends TestCase
         );
     }
 
+    /**
+     * Build a service whose HTTP client runs $onWarm mid-batch, to
+     * simulate another worker acting while this one holds the lock.
+     */
+    private function serviceWithWarmHook(callable $onWarm): AsyncPrewarmService
+    {
+        $client = new class ($onWarm) implements \OXPulse\Imager\Application\Prewarm\PrewarmHttpClient {
+            public function __construct(private $onWarm)
+            {
+            }
+
+            public function headBatch(array $imgproxyUrls, int $timeoutSeconds): array
+            {
+                ($this->onWarm)();
+                return array_map(
+                    fn () => ['status' => 200, 'error' => null, 'elapsed_ms' => 5],
+                    $imgproxyUrls
+                );
+            }
+        };
+        $delivery = new DeliveryConfig(
+            enabled: true,
+            endpoint: 'https://imgproxy.example.com',
+            allowedSources: ['https://example.com/uploads/'],
+        );
+        $signing = new SigningConfig(
+            hex2bin('a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'),
+            hex2bin('f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3')
+        );
+        return new AsyncPrewarmService(
+            new PrewarmService(new UrlRewriter(new SourcePolicy(), $delivery, $signing), $client),
+            $this->store,
+        );
+    }
+
+    /**
+     * An overlong holder (its lock was reclaimed by another worker
+     * mid-batch) must not delete the new holder's lock when it finishes.
+     */
+    public function test_release_does_not_delete_a_lock_taken_over_by_another_token(): void
+    {
+        $jobId = $this->asyncService->createJob(['https://example.com/uploads/photo.jpg'], [0]);
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId;
+        $theirs = (time() + AsyncPrewarmService::LOCK_STALE_SECONDS) . '|their-token';
+
+        $service = $this->serviceWithWarmHook(static function () use ($lockOption, $theirs): void {
+            // A reclaimer replaced our (apparently stale) lock mid-batch.
+            update_option($lockOption, $theirs, false);
+        });
+        $service->processNextBatch($jobId);
+
+        $this->assertSame(
+            $theirs,
+            get_option($lockOption),
+            "release must delete only its own token, never another holder's lock",
+        );
+    }
+
+    public function test_stale_reclaim_writes_a_fresh_unique_token(): void
+    {
+        $jobId = $this->asyncService->createJob(['https://example.com/uploads/photo.jpg'], [0]);
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . $jobId;
+        add_option($lockOption, (time() - 10) . '|dead-worker', '', false);
+
+        $seen = null;
+        $service = $this->serviceWithWarmHook(static function () use ($lockOption, &$seen): void {
+            $seen = get_option($lockOption);
+        });
+        $service->processNextBatch($jobId);
+
+        $this->assertIsString($seen);
+        $this->assertMatchesRegularExpression('/^\d+\|[0-9a-f]{16}$/', $seen, 'lock value is <expiry>|<token>');
+        $this->assertStringNotContainsString('dead-worker', $seen, 'the stale holder value must be replaced');
+    }
+
+    /**
+     * The stale-reclaim delete is conditional on the observed value: a
+     * value that changed meanwhile (someone else already reclaimed) is
+     * left alone, and the caller must back off.
+     */
+    public function test_compare_delete_removes_only_an_unchanged_value(): void
+    {
+        $lockOption = AsyncPrewarmService::LOCK_OPTION_PREFIX . 'job-x';
+        $m = new \ReflectionMethod(AsyncPrewarmService::class, 'deleteLockIfValue');
+
+        add_option($lockOption, '100|new-holder', '', false);
+        $this->assertFalse(
+            $m->invoke($this->asyncService, $lockOption, '1|stale-observed'),
+            'a changed value must not be deleted',
+        );
+        $this->assertSame('100|new-holder', get_option($lockOption));
+
+        $this->assertTrue($m->invoke($this->asyncService, $lockOption, '100|new-holder'));
+        $this->assertFalse(get_option($lockOption), 'an unchanged value is deleted');
+    }
+
     public function test_job_id_is_uuid_format(): void
     {
         $jobId = $this->asyncService->createJob(

@@ -344,6 +344,12 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             return true;
         }
     }
+    if (!function_exists('wp_cache_delete')) {
+        function wp_cache_delete($key, $group = '') {
+            unset($GLOBALS['__oxpulse_obj_cache'][$group][$key]);
+            return true;
+        }
+    }
     if (!function_exists('update_post_meta')) {
         function update_post_meta($post_id, $key, $value) {
             $GLOBALS['__oxpulse_post_meta'][$post_id][$key] = $value;
@@ -1024,6 +1030,15 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
             }
 
             public function query($sql) {
+                // Compare-and-delete: returns rows affected like real $wpdb.
+                if (preg_match("/DELETE FROM \S+ WHERE option_name = '([^']*)' AND option_value = '(.*)'\s*$/s", (string) $sql, $m)) {
+                    $opts = $GLOBALS['__oxpulse_options'] ?? [];
+                    if (array_key_exists($m[1], $opts) && (string) $opts[$m[1]] === $m[2]) {
+                        unset($GLOBALS['__oxpulse_options'][$m[1]]);
+                        return 1;
+                    }
+                    return 0;
+                }
                 if (preg_match("/option_name LIKE '([^']+)'/i", (string) $sql, $m)) {
                     $like = $m[1];
                     $regex = '';

@@ -46,6 +46,15 @@ final class AsyncPrewarmService
     private PrewarmService $syncService;
     private PrewarmJobStore $store;
 
+    /**
+     * Lock value this instance wrote per job (`<expiry>|<random hex>`).
+     * Release deletes the row only while it still holds OUR value, so an
+     * overlong holder never removes the lock a reclaimer now owns.
+     *
+     * @var array<string, string>
+     */
+    private array $lockValues = [];
+
     public function __construct(PrewarmService $syncService, PrewarmJobStore $store)
     {
         $this->syncService = $syncService;
@@ -181,7 +190,7 @@ final class AsyncPrewarmService
 
             $this->store->save($jobId, $job);
         } finally {
-            delete_option(self::LOCK_OPTION_PREFIX . $jobId);
+            $this->releaseLock($jobId);
         }
     }
 
@@ -189,26 +198,81 @@ final class AsyncPrewarmService
      * Take the per-job processing mutex. Returns false when a live
      * worker holds an unexpired lock; a stale or corrupt lock is
      * reclaimed for this worker.
+     *
+     * The lock value is `<expiry>|<random hex>`: the token makes every
+     * holder's value unique, so reclaim and release can compare-then-
+     * delete instead of deleting whatever is there.
      */
     private function acquireLock(string $jobId): bool
     {
         $option = self::LOCK_OPTION_PREFIX . $jobId;
-        $expires = time() + self::LOCK_STALE_SECONDS;
-        if (add_option($option, $expires, '', false)) {
+        $value = (time() + self::LOCK_STALE_SECONDS) . '|' . bin2hex(random_bytes(8));
+        if (add_option($option, $value, '', false)) {
+            $this->lockValues[$jobId] = $value;
             return true;
         }
 
         // The row exists. An unexpired lock in the horizon we write
         // means a live worker owns it — bail with no work. Anything
         // else (expired, or a corrupt far-future/negative value no
-        // writer of ours produces) is stale and reclaimed.
-        $ttl = (int) get_option($option, 0) - time();
+        // writer of ours produces) is stale and reclaimed. (int) of
+        // `<expiry>|<token>` reads the expiry; a legacy bare-int value
+        // parses the same way.
+        $observed = get_option($option, 0);
+        $ttl = (int) $observed - time();
         if ($ttl > 0 && $ttl <= self::LOCK_STALE_SECONDS) {
             return false;
         }
 
-        delete_option($option);
-        return add_option($option, $expires, '', false);
+        // Reclaim only the exact stale value we observed. Two reclaimers
+        // both saw it, but only one DELETE matches a row; the loser (or
+        // anyone facing a value that changed meanwhile) backs off.
+        if (!$this->deleteLockIfValue($option, (string) $observed)) {
+            return false;
+        }
+        if (add_option($option, $value, '', false)) {
+            $this->lockValues[$jobId] = $value;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Release the lock, but only while the row still holds the value
+     * this instance wrote.
+     */
+    private function releaseLock(string $jobId): void
+    {
+        if (!isset($this->lockValues[$jobId])) {
+            return;
+        }
+        $this->deleteLockIfValue(self::LOCK_OPTION_PREFIX . $jobId, $this->lockValues[$jobId]);
+        unset($this->lockValues[$jobId]);
+    }
+
+    /**
+     * Atomic compare-then-delete of an option row: removes it only when
+     * option_value still equals $expected. Mirrors core delete_option()'s
+     * cache cleanup (the row is autoload=no) so a following add_option()
+     * does not see the stale cached value. True when this call deleted it.
+     */
+    private function deleteLockIfValue(string $option, string $expected): bool
+    {
+        global $wpdb;
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- atomic compare-and-delete mutex; delete_option() cannot condition on the value, and a DELETE is not cacheable.
+        $deleted = $wpdb->query(
+            $wpdb->prepare(
+                "DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s",
+                $option,
+                $expected
+            )
+        );
+
+        wp_cache_delete($option, 'options');
+        wp_cache_delete('notoptions', 'options');
+
+        return (int) $deleted > 0;
     }
 
     /**
