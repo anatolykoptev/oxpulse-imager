@@ -56,41 +56,4 @@ final class PrewarmJobStore
     {
         delete_transient(self::TRANSIENT_PREFIX . $jobId);
     }
-
-    /**
-     * Get all pending/running job IDs by scanning the options table
-     * for transient names. This is used by the cron handler to find
-     * jobs that need processing.
-     *
-     * @return array<int,string>
-     */
-    public function getPendingJobIds(): array
-    {
-        // Transients are stored in options as _transient_<name>.
-        // We query the options table directly for efficiency.
-        global $wpdb;
-        if (!isset($wpdb) || !is_object($wpdb) || !property_exists($wpdb, 'options')) {
-            return [];
-        }
-
-        $prefix = '_transient_' . self::TRANSIENT_PREFIX;
-        $like = $wpdb->esc_like($prefix) . '%';
-
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- job-queue state must bypass object cache; stale reads would double-run/skip jobs.
-        $rows = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
-                $like
-            )
-        );
-
-        $ids = [];
-        foreach ($rows as $row) {
-            $name = $row->option_name;
-            if (str_starts_with($name, $prefix)) {
-                $ids[] = substr($name, strlen($prefix));
-            }
-        }
-        return $ids;
-    }
 }
