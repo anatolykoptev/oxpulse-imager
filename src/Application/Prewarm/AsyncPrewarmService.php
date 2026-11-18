@@ -140,6 +140,12 @@ final class AsyncPrewarmService
         // mutex two workers process (and double-warm) the same batch.
         // add_option() is the atomic acquisition.
         if (!$this->acquireLock($jobId)) {
+            // The event that fired us is consumed. Re-arm the follow-up so
+            // a holder that crashed (lock stale after LOCK_STALE_SECONDS,
+            // follow-ups fire at +60 s) is retried instead of leaving the
+            // job 'running' forever. Reached only for a pending/running
+            // job; scheduleFollowUp() is dedup-guarded.
+            $this->scheduleFollowUp($jobId);
             return;
         }
 
