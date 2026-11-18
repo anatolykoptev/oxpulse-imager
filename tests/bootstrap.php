@@ -1031,6 +1031,28 @@ if ($_tests_dir && file_exists($_tests_dir . '/includes/functions.php')) {
                 return $query;
             }
 
+            // #165: conditional delete used by the seed-lock stale
+            // steal — removes the row only while it still holds the
+            // expected value, so two concurrent stealers cannot both
+            // pass. $GLOBALS['__oxpulse_wpdb_delete_hook'] lets a test
+            // interpose "another request committed" between the
+            // caller's stale-read and this delete.
+            public function delete($table, $where, $where_format = null) {
+                $name = $where['option_name'] ?? null;
+                if (is_callable($GLOBALS['__oxpulse_wpdb_delete_hook'] ?? null)) {
+                    ($GLOBALS['__oxpulse_wpdb_delete_hook'])($name, $where);
+                }
+                if ($name === null || !array_key_exists($name, $GLOBALS['__oxpulse_options'] ?? [])) {
+                    return 0;
+                }
+                if (array_key_exists('option_value', $where)
+                    && (string) $GLOBALS['__oxpulse_options'][$name] !== (string) $where['option_value']) {
+                    return 0;
+                }
+                unset($GLOBALS['__oxpulse_options'][$name]);
+                return 1;
+            }
+
             public function query($sql) {
                 // Compare-and-delete: returns rows affected like real $wpdb.
                 if (preg_match("/DELETE FROM \S+ WHERE option_name = '([^']*)' AND option_value = '(.*)'\s*$/s", (string) $sql, $m)) {
