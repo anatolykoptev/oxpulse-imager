@@ -216,6 +216,10 @@ extensions with a 400 before any disk write. nginx hosts should
 additionally deny PHP execution inside the cache location block as
 belt-and-braces.
 
+Purging the local cache never follows links: a per-hash cache directory
+that you deliberately replaced with a symlink is unlinked on purge, and
+its target is left on disk untouched.
+
 ## License
 
 GPL-2.0-or-later

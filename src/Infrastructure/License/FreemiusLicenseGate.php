@@ -31,7 +31,10 @@ final class FreemiusLicenseGate implements LicenseGate
 {
     private const GRANDFATHERED_OPTION = 'oxpulse_grandfathered';
 
-    /** Per-request memo of the grandfathered flag (null = not yet read). */
+    /**
+     * Per-request memo of the grandfathered flag (null = not yet read).
+     * Not blog-aware under switch_to_blog() and not cross-process.
+     */
     private static ?bool $grandfathered = null;
 
     public function __construct()
