@@ -20,9 +20,20 @@
  * mtime/size and therefore the version; regenerate-thumbnails rewrites the
  * size files likewise.
  *
+ * Caveats of the file-derived version:
+ * - mtime+size: replacing a file with one of identical byte size inside the
+ *   same mtime second keeps the old version (the old ms stamp had no such
+ *   gap). ctime is deliberately NOT part of it: a routine `chown -R` /
+ *   `chmod -R` on uploads would bust every image's cache at once.
+ * - Multi-node deployments without shared storage have per-node mtimes, so
+ *   the version can differ by node (the DB stamp fallback is node-independent).
+ * - Any regular file under uploads now gets a version, not only attachment
+ *   files and their size variants: a one-time URL change for those too.
+ *
  * Only when the URL is not a readable file under the uploads directory
  * (offloaded media, foreign URL, missing file) does the attachment path run:
- * the stamp, then (for attachments never stamped, i.e. uploaded before this
+ * the stamp (written by stamp(); it now serves only this fallback, i.e.
+ * offloaded media), then (for attachments never stamped, i.e. uploaded before this
  * version of the plugin) a checksum of the stored file metadata (filesize|
  * width|height).
  *
@@ -53,6 +64,9 @@ final class AttachmentContentVersion implements ContentVersionResolver
 
     /** @var array<string,string> */
     private array $memo = [];
+
+    /** @var array{prefix:string,basedir:string,real:string}|false|null */
+    private array|false|null $uploadsCtx = null;
 
     public function versionFor(string $sourceUrl): string
     {
@@ -85,25 +99,19 @@ final class AttachmentContentVersion implements ContentVersionResolver
      */
     private function localFileVersion(string $url): ?string
     {
-        if (!function_exists('wp_get_upload_dir')) {
-            return null;
-        }
-        $uploads = wp_get_upload_dir();
-        if (!is_array($uploads) || !empty($uploads['error'])
-            || !is_string($uploads['basedir'] ?? null) || $uploads['basedir'] === ''
-            || !is_string($uploads['baseurl'] ?? null) || $uploads['baseurl'] === '') {
+        $ctx = $this->uploadsContext();
+        if ($ctx === null) {
             return null;
         }
 
         // Scheme-insensitive: http:// content on an https:// site, and
         // protocol-relative URLs, still point at the same uploads file.
-        $prefix = preg_replace('#^https?:#i', '', rtrim($uploads['baseurl'], '/')) . '/';
-        $bare = preg_replace('#^https?:#i', '', $url);
-        if (!str_starts_with((string) $bare, $prefix)) {
+        $bare = (string) preg_replace('#^https?:#i', '', $url);
+        if (!str_starts_with($bare, $ctx['prefix'])) {
             return null;
         }
 
-        $relative = rawurldecode(substr((string) $bare, strlen($prefix)));
+        $relative = rawurldecode(substr($bare, strlen($ctx['prefix'])));
         if ($relative === ''
             || str_contains($relative, "\0")
             || str_contains($relative, '\\')
@@ -111,10 +119,9 @@ final class AttachmentContentVersion implements ContentVersionResolver
             return null;
         }
 
-        $base = realpath($uploads['basedir']);
-        $real = realpath(rtrim($uploads['basedir'], '/') . '/' . $relative);
-        if ($base === false || $real === false || !is_file($real)
-            || !str_starts_with($real, $base . DIRECTORY_SEPARATOR)) {
+        $real = realpath($ctx['basedir'] . '/' . $relative);
+        if ($real === false || !is_file($real)
+            || !str_starts_with($real, $ctx['real'] . DIRECTORY_SEPARATOR)) {
             return null;
         }
 
@@ -125,6 +132,40 @@ final class AttachmentContentVersion implements ContentVersionResolver
         }
 
         return base_convert(sprintf('%u', crc32($mtime . '|' . $size)), 10, 36);
+    }
+
+    /**
+     * Uploads dir facts, computed once per instance: URL prefix (scheme
+     * stripped), basedir and its realpath. Null when uploads reports an
+     * error or lacks basedir/baseurl.
+     *
+     * @return array{prefix:string,basedir:string,real:string}|null
+     */
+    private function uploadsContext(): ?array
+    {
+        if ($this->uploadsCtx !== null) {
+            return $this->uploadsCtx ?: null;
+        }
+        $this->uploadsCtx = false;
+        if (!function_exists('wp_get_upload_dir')) {
+            return null;
+        }
+        $uploads = wp_get_upload_dir();
+        if (!is_array($uploads) || !empty($uploads['error'])
+            || !is_string($uploads['basedir'] ?? null) || $uploads['basedir'] === ''
+            || !is_string($uploads['baseurl'] ?? null) || $uploads['baseurl'] === '') {
+            return null;
+        }
+        $real = realpath($uploads['basedir']);
+        if ($real === false) {
+            return null;
+        }
+        $this->uploadsCtx = [
+            'prefix' => preg_replace('#^https?:#i', '', rtrim($uploads['baseurl'], '/')) . '/',
+            'basedir' => rtrim($uploads['basedir'], '/'),
+            'real' => $real,
+        ];
+        return $this->uploadsCtx;
     }
 
     /**

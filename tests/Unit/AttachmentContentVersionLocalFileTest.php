@@ -40,6 +40,7 @@ final class AttachmentContentVersionLocalFileTest extends TestCase
 
     protected function tearDown(): void
     {
+        @unlink($this->basedir . '/2026/11/my photo.jpg');
         @unlink($this->basedir . '/2026/11/escape.txt');
         @unlink($this->basedir . '/2026/11/photo.jpg');
         @unlink($this->root . '/outside.txt');
@@ -122,6 +123,16 @@ final class AttachmentContentVersionLocalFileTest extends TestCase
 
         $this->assertSame('v9stamp', (new AttachmentContentVersion())->versionFor($url));
         $this->assertGreaterThanOrEqual(1, $this->calls());
+    }
+
+    public function test_percent_encoded_url_for_a_filename_with_a_space_resolves_locally(): void
+    {
+        file_put_contents($this->basedir . '/2026/11/my photo.jpg', 'jpeg-bytes');
+
+        $v = (new AttachmentContentVersion())->versionFor(self::BASEURL . '/2026/11/my%20photo.jpg');
+
+        $this->assertNotSame('', $v, 'rawurldecode must map my%20photo.jpg to the file on disk');
+        $this->assertSame(0, $this->calls());
     }
 
     public function test_query_string_does_not_change_the_local_version(): void

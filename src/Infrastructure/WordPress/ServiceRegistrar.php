@@ -798,7 +798,9 @@ final class ServiceRegistrar
 
     /**
      * Stamp attachments on every metadata update so replaced files get a
-     * new content version (#132). See AttachmentContentVersion.
+     * new content version (#132). Local files are versioned from the file
+     * itself (mtime+size); this stamp now serves only the fallback path
+     * (offloaded media). See AttachmentContentVersion.
      */
     private static function registerContentVersionStamp(): void
     {
