@@ -10,12 +10,23 @@
  * calls wp_generate_attachment_metadata() + wp_update_attachment_metadata()
  * on the OLD attachment ID — it never touches post_modified).
  *
- * Attachments never stamped (uploaded before this version of the plugin)
- * fall back to a checksum of the stored file metadata (filesize|width|
- * height), so every library image carries a version from the first request
- * and the hot path never stats a file.
+ * Files on local disk are versioned from the file itself, with no database
+ * query: crc32 of `mtime|size` of the file the URL points at (see
+ * localFileVersion()). One stat is microseconds; the attachment lookup it
+ * replaces is `attachment_url_to_postid()`, an exact match on the un-indexed
+ * `_wp_attached_file` meta_value, which costs ~0.12 s per URL on a library
+ * of ~28k attachments and pushed cold-cache page renders past 10 s. ASE-style
+ * media replacement copies the new file over the old path, which changes its
+ * mtime/size and therefore the version; regenerate-thumbnails rewrites the
+ * size files likewise.
  *
- * URL -> attachment resolution starts from core's attachment_url_to_postid()
+ * Only when the URL is not a readable file under the uploads directory
+ * (offloaded media, foreign URL, missing file) does the attachment path run:
+ * the stamp, then (for attachments never stamped, i.e. uploaded before this
+ * version of the plugin) a checksum of the stored file metadata (filesize|
+ * width|height).
+ *
+ * That URL -> attachment resolution starts from core's attachment_url_to_postid()
  * (an EXACT `_wp_attached_file` match) and adds one metadata-verified
  * lookup for `-WxH` size variants and pre-`-scaled` originals; see
  * attachmentId(). Memoised per request and cached in the object cache
@@ -60,7 +71,60 @@ final class AttachmentContentVersion implements ContentVersionResolver
             return $this->memo[$url];
         }
 
+        $local = $this->localFileVersion($url);
+        if ($local !== null) {
+            return $this->memo[$url] = $local;
+        }
+
         return $this->memo[$url] = $this->resolve($url);
+    }
+
+    /**
+     * Version a URL from the file on local disk — zero database queries.
+     * Null when the URL is not a regular file inside the uploads directory.
+     */
+    private function localFileVersion(string $url): ?string
+    {
+        if (!function_exists('wp_get_upload_dir')) {
+            return null;
+        }
+        $uploads = wp_get_upload_dir();
+        if (!is_array($uploads) || !empty($uploads['error'])
+            || !is_string($uploads['basedir'] ?? null) || $uploads['basedir'] === ''
+            || !is_string($uploads['baseurl'] ?? null) || $uploads['baseurl'] === '') {
+            return null;
+        }
+
+        // Scheme-insensitive: http:// content on an https:// site, and
+        // protocol-relative URLs, still point at the same uploads file.
+        $prefix = preg_replace('#^https?:#i', '', rtrim($uploads['baseurl'], '/')) . '/';
+        $bare = preg_replace('#^https?:#i', '', $url);
+        if (!str_starts_with((string) $bare, $prefix)) {
+            return null;
+        }
+
+        $relative = rawurldecode(substr((string) $bare, strlen($prefix)));
+        if ($relative === ''
+            || str_contains($relative, "\0")
+            || str_contains($relative, '\\')
+            || in_array('..', explode('/', $relative), true)) {
+            return null;
+        }
+
+        $base = realpath($uploads['basedir']);
+        $real = realpath(rtrim($uploads['basedir'], '/') . '/' . $relative);
+        if ($base === false || $real === false || !is_file($real)
+            || !str_starts_with($real, $base . DIRECTORY_SEPARATOR)) {
+            return null;
+        }
+
+        $mtime = @filemtime($real);
+        $size = @filesize($real);
+        if ($mtime === false || $size === false) {
+            return null;
+        }
+
+        return base_convert(sprintf('%u', crc32($mtime . '|' . $size)), 10, 36);
     }
 
     /**
